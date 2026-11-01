@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「填链接」（链接型自定义项）的全部文案。
+
+  为什么单独一个文件：见 strings_fan_shortcut.xml 顶部那条理由（同一份 strings.xml
+  由多个人同时改必然互相覆盖，而且两边的构建都是过的）。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。所有键以 `link_import.` 开头。
+
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字；只说「是什么 / 做什么」；
+  不写「为什么」、不写实施细节、不用括号补第二句。需要长解释时写进代码注释。
+
+  ⚠️ 校验失败的那六条**必须分开写**（不是一句「格式不对」）：用户拿到「格式不对」
+  只能反复试同一串字符，而分开之后他自己就能改对（哪一种错、错在哪一段）。
+  理由与那张表写在 core 的 `LinkTargets.Rejection` 上。
+-->
+<resources>
+
+    <!-- ── 页面：固定区域（不随列表滚动）────────────────────────────── -->
+    <!-- 标题栏用（在 AppRoot 的 Dest.title 里引用） -->
+    <string name="link_import_title">自定义链接</string>
+    <string name="link_import_section_new">添加链接</string>
+    <!-- 安全收口在界面上的那一句：只放行隐式 + 带 scheme（细则见 LinkTargets 的类注释） -->
+    <string name="link_import_policy">支持网页地址与应用深层链接</string>
+    <string name="link_import_input_hint">例如 weixin://scanqrcode</string>
+    <string name="link_import_preset_hint">常用项</string>
+    <string name="link_import_preset_scan">微信扫一扫</string>
+    <string name="link_import_preset_web">网页链接</string>
+    <!-- 「识别优于回忆」：通过校验后当场把它在扇子里的名字显示出来，
+         用户不必先加进去、再去扇子里看它叫什么（理由见 LinkTargets.fallbackLabel） -->
+    <string name="link_import_preview">显示名称：%1$s</string>
+    <string name="link_import_add">添加</string>
+    <string name="link_import_remove">移除</string>
+
+    <!-- ── 清单页底部的入口行（接线在 FanItemsScreen 的「增」那张卡里）──────────
+         文案与它上面两行（添加应用 / 添加快捷方式）同一个句式：动词 + 对象，
+         副标题说清「填什么」。放在这个文件里而不是 strings_fan_items.xml，
+         是为了让入口那一行与它指向的页面共用一份文案来源 -->
+
+    <!-- ── 校验结果：必须分开写，见文件头那条 ⚠️ ─────────────────────── -->
+    <string name="link_import_state_need">请输入链接</string>
+    <string name="link_import_state_joined">已添加</string>
+    <string name="link_import_err_empty">请输入链接</string>
+    <string name="link_import_err_no_scheme">缺少协议头，如 weixin://</string>
+    <string name="link_import_err_bad_scheme">协议格式无效或缺少地址</string>
+    <string name="link_import_err_explicit">不能指定组件或包名</string>
+    <string name="link_import_err_unsafe_scheme">不支持该协议</string>
+    <string name="link_import_err_illegal_chars">不能含空格或控制字符</string>
+    <string name="link_import_err_too_long">长度不能超过 %1$d 个字符</string>
+
+    <!-- ── 清单里已有的链接 ───────────────────────────────────────── -->
+    <string name="link_import_section_current">已添加链接</string>
+    <string name="link_import_empty">暂无链接</string>
+    <string name="link_import_empty_hint">输入链接或选择预设</string>
+    <!-- 手改配置写进去的非法项也会列在清单里，但**明说它点了不会启动** ——
+         「填了却没反应」正是这一页要消灭的那类静默失败 -->
+    <string name="link_import_row_bad">链接无效，无法启动</string>
+    <!-- 删一项之后的可撤销提示（破坏性操作不弹二次确认，给一条能撤销的更好） -->
+    <string name="link_import_removed">已移除「%1$s」</string>
+    <string name="link_import_undo">撤销</string>
+    <string name="link_import_count">%1$d 个链接</string>
+
+</resources>

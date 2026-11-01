@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      主题只负责「窗口在 Compose 接管之前长什么样」。
+      真正的配色由 FpTheme 在 Compose 里决定，所以这里不定义 actionBar、不留标题栏。
+      DayNight 让系统在冷启动那一帧就用对深浅色，避免白闪。
+    -->
+    <style name="Theme.Tsuzuri" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+
+</resources>

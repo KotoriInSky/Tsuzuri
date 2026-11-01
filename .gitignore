@@ -1,0 +1,57 @@
+# 构建产物
+build/
+*/build/
+.cxx/
+*/.cxx/
+.gradle/
+.gradle-tmp/
+.kotlin/
+local.properties
+captures/
+*.apk
+*.aab
+
+# 签名材料
+keystore/
+*.jks
+*.keystore
+*.p12
+
+# IDE
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地开发资料
+research/
+experiments/
+miui-framework/
+artifacts/
+AGENTS.md
+.claude/
+.workbuddy/
+.zcode/
+hook/src/main/assets/models/
+*.onnx
+
+# 文档只保留构建输入
+docs/*
+!docs/artwork/
+docs/artwork/*
+!docs/artwork/express-badges/
+
+# 工具只保留构建和发布需要的脚本
+tools/*
+!tools/verify-release.sh
+!tools/migrate-config.py
+!tools/make_icon_from_bitmap.py

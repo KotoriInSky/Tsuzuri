@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tsuzuri 图标的**单色层**（monochrome），仅用于 Android 13+ / HyperOS 的
+  「主题化图标」（themed icon）：系统会把这一层整体染成壁纸主色，并和背景层一起
+  重新着色，所以这里只能有**形状**，不能有颜色，也不能依赖红色来区分丝带。
+
+  因此丝带在这里靠"镂空"表达：白色形体用 evenOdd 挖出盘孔/方块孔（同前景层），
+  丝带主干则**留空**（露出下层的系统染色），两端回折用实心补上 ——
+  这样在单色模式下依然能读出"一条带子穿两个孔"的结构。
+
+  形状与坐标系与 ic_launcher_foreground.xml 保持一致，改动时**两个文件必须同步**，
+  否则主题图标会和普通图标长得不一样。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#000000">
+
+    <!-- ② 白色圆盘：左上，中心 (36,36) 半径 19.5，挖孔半径 5.2 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M 36 16.5
+                          A 19.5 19.5 0 1 1 35.99 16.5 Z
+                          M 36 30.8
+                          A 5.2 5.2 0 1 1 35.99 30.8 Z" />
+
+    <!-- ③ 白色圆角方块：右下，顺时针 10°，挖孔 -->
+    <group
+        android:pivotX="74"
+        android:pivotY="68"
+        android:rotation="-10">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M 70 44
+                              L 96 44
+                              Q 102 44 102 50
+                              L 102 86
+                              Q 102 92 96 92
+                              L 70 92
+                              Q 64 92 64 86
+                              L 64 50
+                              Q 64 44 70 44
+                              Z
+                              M 73 68
+                              A 5.6 5.6 0 1 1 72.99 68 Z" />
+    </group>
+
+    <!-- ④ 丝带末端的回折（实心） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M 42 34.5
+                          C 51.5 35.5 60 43 63 53.5
+                          L 56.5 52
+                          C 54 44.5 49 39 42 37.5
+                          Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M 60 79.5
+                          L 68 84.5
+                          L 66 90
+                          L 57 84.5
+                          Z" />
+</vector>

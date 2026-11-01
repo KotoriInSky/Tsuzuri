@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  扇形「导入快捷方式」页 + 「单项图标」页的全部文案。
+
+  为什么单独一个文件（而不是接着往 strings.xml 里塞）：这两个页面在重做期间由一个人独占，
+  文案与实现一起改、一起评审；`strings.xml` 同一时刻有另一个协作者在改，
+  两边同时写一个文件必然互相覆盖（本项目踩过这类事故）。
+
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字；只说「是什么 / 做什么」，
+  不写「为什么」、不写实现细节（配置键、内部类名、图片尺寸一律不上界面）。
+  需要更长的解释时，写进代码注释而不是这里。
+-->
+<resources>
+
+    <!-- ── 列表的三个分类：已选 / 常用 / 按应用 ───────────────────────── -->
+    <string name="fan_shortcut_section_selected">已选</string>
+    <string name="fan_shortcut_section_quick">常用</string>
+    <string name="fan_shortcut_section_by_app">按应用</string>
+
+    <!-- ── 顶部状态（被忽略的清单必须显式标出来）── -->
+    <string name="fan_shortcut_banner_count">已选 %1$d 个快捷方式</string>
+    <string name="fan_shortcut_banner_none">未选择快捷方式</string>
+    <!-- `apps_mode = auto` 时清单仍然存着但不生效 —— 这句话就是那个事实 -->
+    <string name="fan_shortcut_banner_disabled">已选 %1$d 个 · 当前未启用</string>
+    <string name="fan_shortcut_banner_auto">扇形当前使用「自动选取」</string>
+
+    <string name="fan_shortcut_search_hint">搜索快捷方式名或应用名</string>
+
+    <!-- ── 空态：说清「哪里错了 + 怎么办」，但不写诊断步骤 ────────────── -->
+    <string name="fan_shortcut_absent">无法读取列表</string>
+    <string name="fan_shortcut_absent_hint">请检查系统界面加载状态后重试</string>
+    <string name="fan_shortcut_no_match">无搜索结果</string>
+    <string name="fan_shortcut_no_match_hint">尝试其他名称或包名</string>
+    <string name="fan_shortcut_empty">暂无快捷方式</string>
+    <string name="fan_shortcut_empty_hint">仅显示应用公开的快捷方式</string>
+    <!-- 应用清单本身读不到：手工添加那一段会因为没有候选应用而不可用，必须说出来 -->
+    <string name="fan_shortcut_no_apps">无法读取应用列表</string>
+
+    <!-- ── 手工添加（目录里查不到的快捷方式）────────────────────────── -->
+    <string name="fan_shortcut_manual">手动添加</string>
+    <string name="fan_shortcut_manual_sub">目录里没有的快捷方式</string>
+    <!-- 如实说明「这里不校验」：设置界面读不到别的应用的快捷方式，无从校验 -->
+    <string name="fan_shortcut_manual_hint">快捷方式 ID 是否有效由系统决定</string>
+    <string name="fan_shortcut_manual_app">所属应用</string>
+    <string name="fan_shortcut_manual_app_none">未选</string>
+    <string name="fan_shortcut_manual_app_chosen">当前</string>
+    <string name="fan_shortcut_manual_app_search">搜索应用</string>
+    <string name="fan_shortcut_manual_id_hint">快捷方式 ID</string>
+    <string name="fan_shortcut_manual_presets">预设 ID</string>
+    <string name="fan_shortcut_manual_add">添加</string>
+    <string name="fan_shortcut_manual_remove">移除</string>
+    <string name="fan_shortcut_manual_need_app">请选择应用</string>
+    <string name="fan_shortcut_manual_need_id">请输入快捷方式 ID</string>
+    <string name="fan_shortcut_manual_pending">未添加</string>
+    <string name="fan_shortcut_manual_joined">已添加</string>
+
+    <!-- 已知可用的 id（来源见 ShortcutImportScreen.PRESETS 的注释） -->
+    <string name="fan_shortcut_preset_scan">扫一扫</string>
+    <string name="fan_shortcut_preset_code">收付款</string>
+    <string name="fan_shortcut_preset_collect">收钱</string>
+
+    <!-- ── 页内入口 ────────────────────────────────────────────────── -->
+    <string name="fan_shortcut_icon_entry">单项图标</string>
+    <string name="fan_shortcut_icon_entry_hint">单独设置图标</string>
+    <string name="fan_shortcut_expand">展开</string>
+    <string name="fan_shortcut_collapse">收起</string>
+
+    <!-- ── 单项图标页 ─────────────────────────────────────────────── -->
+    <string name="fan_icon_section_custom">已单独指定</string>
+    <string name="fan_icon_section_apps">应用</string>
+    <string name="fan_icon_section_shortcuts">快捷方式</string>
+    <!-- 回答「给快捷方式换图标会不会连累宿主应用」这个必然的疑问 -->
+    <string name="fan_icon_shortcut_scope">仅影响当前快捷方式</string>
+    <string name="fan_icon_source_own">自带图标</string>
+    <string name="fan_icon_source_pack">整体图标包：%1$s</string>
+    <string name="fan_icon_follow_pack">未单独指定的项跟随整体图标包：%1$s</string>
+    <string name="fan_icon_source_uncovered">应用自带图标 · 图标包未覆盖</string>
+    <string name="fan_icon_source_custom_image">单独指定 · 图片</string>
+    <string name="fan_icon_source_custom_pack">单独指定 · 图标包</string>
+    <string name="fan_icon_from_pack">从图标包中选择</string>
+    <string name="fan_icon_from_pack_none">未选择图标包</string>
+    <string name="fan_icon_from_image">从图片中选择</string>
+    <string name="fan_icon_reset">恢复默认</string>
+    <string name="fan_icon_image_ok">图标已保存</string>
+    <string name="fan_icon_image_failed">图标保存失败，请重试</string>
+    <string name="fan_icon_empty">暂无项目</string>
+    <string name="fan_icon_empty_hint">请先添加应用或快捷方式</string>
+    <!-- 与「导入快捷方式」页同一条事实：清单没启用时，单项图标也还不生效 -->
+    <string name="fan_icon_not_enabled">切换至手动模式后生效</string>
+
+    <!-- ── 从图片选：裁剪那一步（选完图之后的中间步骤）──────────────────
+         它只交回一个裁剪框；取消 = 一个字节都不写盘（见 IconCropScreen 的注释）。 -->
+    <string name="fan_icon_crop_title">裁剪图标</string>
+    <!-- 两个动作各一句：拖动与缩放都要说，否则第二个没人会去试 -->
+    <string name="fan_icon_crop_hint">拖动调整位置，滑杆缩放</string>
+    <string name="fan_icon_crop_zoom">缩放</string>
+    <string name="fan_icon_crop_confirm">使用图片</string>
+    <string name="fan_icon_crop_cancel">取消</string>
+    <string name="fan_icon_crop_loading">正在读取图片</string>
+    <string name="fan_icon_crop_failed">无法读取这张图片</string>
+
+</resources>

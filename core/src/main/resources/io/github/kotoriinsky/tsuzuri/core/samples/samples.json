@@ -1,0 +1,72 @@
+[
+ {
+  "key": "instagram",
+  "text": "https://www.instagram.com/p/CmUv48DLvxd/",
+  "title": "CAMPEONES DEL MUNDO!!!!!!! 🌎🏆",
+  "subtitle": "Leo Messi",
+  "cover": "instagram.jpg"
+ },
+ {
+  "key": "youtube",
+  "text": "https://youtu.be/dQw4w9WgXcQ",
+  "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+  "subtitle": "Rick Astley",
+  "cover": "youtube.jpg"
+ },
+ {
+  "key": "reddit",
+  "text": "https://www.reddit.com/r/reddit/comments/tyjkzg",
+  "title": "r/Place: The Recap (Part 1)",
+  "subtitle": "r/reddit",
+  "final": "https://www.reddit.com/r/reddit/comments/tyjkzg/rplace_the_recap_part_1/"
+ },
+ {
+  "key": "bilibili",
+  "text": "【【炮姐/AMV】我永远都会守护在你的身边！-哔哩哔哩】 https://b23.tv/JXmt0vc",
+  "title": "【炮姐/AMV】我永远都会守护在你的身边！",
+  "subtitle": "暗猫の祝福",
+  "cover": "bilibili.jpg",
+  "final": "https://www.bilibili.com/video/BV1Js411o76u"
+ },
+ {
+  "key": "x",
+  "text": "https://x.com/sama/status/1598038815599661056",
+  "title": "today we launched ChatGPT. try talking with it here:",
+  "subtitle": "Sam Altman"
+ },
+ {
+  "key": "tieba",
+  "text": "https://tieba.baidu.com/p/3746839672",
+  "title": "七年了，我还是很想你",
+  "subtitle": "曼联吧"
+ },
+ {
+  "key": "hupu",
+  "text": "https://m.hupu.com/bbs/54277565.html",
+  "title": "荣获2021-22赛季NBA总决赛MVP，让我们恭喜斯蒂芬-库里！",
+  "subtitle": "赛场小助手",
+  "cover": "hupu.jpg"
+ },
+ {
+  "key": "netease",
+  "text": "https://163cn.tv/bjgolsS3",
+  "title": "スピカテリブル",
+  "subtitle": "内田彩",
+  "cover": "netease.jpg",
+  "final": "https://music.163.com/song?id=665343"
+ },
+ {
+  "key": "weibo",
+  "text": "https://weibo.com/2099708877/4302336342422693",
+  "title": "班师得胜，登峰造“極”！2018英雄联盟全球总决赛，iG在决赛中3:0战胜FNC，获得S8冠军！",
+  "subtitle": "iG电子竞技俱乐部",
+  "cover": "weibo.jpg"
+ },
+ {
+  "key": "zhihu",
+  "text": "https://www.zhihu.com/question/32189846/answer/158269981",
+  "title": "有哪些外行人看来很蠢的设计实际上却是精妙无比？",
+  "subtitle": "凉火的回答",
+  "cover": "zhihu.jpg"
+ }
+]

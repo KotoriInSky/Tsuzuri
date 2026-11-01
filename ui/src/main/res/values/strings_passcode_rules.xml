@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自定义口令规则页的全部文案。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字。
+  失败态必须解释（这条优先于简洁）：导入失败要说明「格式不对」，
+  导入的替换语义要写在入口提示里，不能等用户丢数据了才知道。
+-->
+<resources>
+
+    <string name="passcode_rules_title">自定义规则</string>
+    <string name="passcode_rules_import">导入规则</string>
+    <string name="passcode_rules_import_hint">支持本模块与 HyperCopy 规则格式</string>
+    <string name="passcode_rules_add">添加规则</string>
+    <string name="passcode_rules_edit">编辑规则</string>
+    <string name="passcode_rules_delete">删除规则</string>
+    <string name="passcode_rules_confirm_delete">确认删除规则</string>
+    <string name="passcode_rules_saved">规则已保存</string>
+    <string name="passcode_rules_save">保存</string>
+    <string name="passcode_rules_default_label">自定义规则</string>
+    <string name="passcode_rules_invalid_regex">正则表达式无效</string>
+    <string name="passcode_rules_risky_regex">写法可能让识别卡住：避免嵌套 + / *，或连用多个 .*</string>
+    <string name="passcode_rules_invalid_group">捕获组必须是 1 到 9</string>
+    <string name="passcode_rules_field_label">名称</string>
+    <string name="passcode_rules_field_regex">正则表达式</string>
+    <string name="passcode_rules_field_target">跳转目标</string>
+    <string name="passcode_rules_field_anchored">整段匹配</string>
+    <string name="passcode_rules_field_anchored_hint">关闭后允许在整段文本中查找</string>
+    <string name="passcode_rules_field_enabled">启用规则</string>
+    <string name="passcode_rules_field_enabled_hint">关闭后保留规则但不参与匹配</string>
+    <string name="passcode_rules_field_category">展示分类</string>
+    <string name="passcode_rules_field_category_hint">决定超级岛使用的内容模板</string>
+    <string name="passcode_rules_field_core_group">标题捕获组</string>
+    <string name="passcode_rules_field_platform">平台名称</string>
+    <string name="passcode_rules_field_package">应用包名</string>
+    <string name="passcode_rules_field_accent">强调色</string>
+    <string name="passcode_rules_preview">超级岛预览</string>
+    <string name="passcode_rules_preview_empty">填写跳转目标后显示预览</string>
+    <string name="passcode_rules_test">示例文本</string>
+    <string name="passcode_rules_test_hit">匹配结果</string>
+    <string name="passcode_rules_export">导出规则</string>
+    <string name="passcode_rules_export_hint">保存为 JSON 文件</string>
+    <string name="passcode_rules_clear">清空规则</string>
+    <string name="passcode_rules_confirm_clear">将删除全部自定义规则，且无法撤销</string>
+    <string name="passcode_rules_empty">暂无自定义规则</string>
+    <string name="passcode_rules_empty_hint">添加规则或导入规则文件</string>
+    <string name="passcode_rules_imported">已导入 %1$d 条，跳过 %2$d 条</string>
+    <string name="passcode_rules_exported">已导出 %1$d 条规则</string>
+    <string name="passcode_rules_failed">规则保存失败，请重试</string>
+    <string name="passcode_rules_source_label">来源</string>
+    <string name="passcode_rules_target_label">跳转</string>
+    <string name="passcode_rules_import_failed">无法导入规则，请检查文件格式</string>
+    <string name="passcode_rules_export_failed">无法导出规则，请检查保存位置</string>
+</resources>

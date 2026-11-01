@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「扇形里的项」（清单页）+「图标」二级页的全部文案。
+
+  为什么单独一个文件：见 strings_fan_shortcut.xml 顶部那条理由（同一份 strings.xml
+  由多个人同时改必然互相覆盖，而且两边的构建都是过的）。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。
+
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字；只说「是什么 / 做什么」；
+  不写「为什么」、不写实施细节、不用括号补第二句。需要长解释时写进代码注释。
+-->
+<resources>
+
+    <!-- ── 清单页：状态区（都在固定区域，不随列表滚动）────────────────────
+         只留两条（用户拍板 2026-09-18）：门槛 + 撤销。
+         迁移说明、分页、auto 模式三条横幅都已删除 —— 理由写在 FanItemsScreen 的
+         状态区注释里（迁移只是给个初始值、顺序本来就能改；auto 模式在详情页那行写着） -->
+    <!-- 低于门槛（`Catalog` 的 `OrderedList.minCount`）时扇子仍走自动挑选 ——
+         这是「加了没反应」的真实成因：写盘成功、界面上也加进去了，
+         所以必须把「还差几项」与「实际生效的是哪条路」摆在用户眼前（§9.0 第 1 条） -->
+    <string name="fan_items_below_min">还需选择 %1$d 项；当前使用最近应用</string>
+    <!-- `apps_mode = auto` 时清单存着但不生效。
+         ⚠️ 清单页已经不显示它了（状态区只留门槛 + 撤销），但**链接项 / 活动项两个导入页
+         还在用**（那两页写盘之后同样可能不生效），所以这条不能删 -->
+    <string name="fan_items_mode_auto">当前使用最近应用，手动清单未生效</string>
+    <!-- 删一项之后的可撤销提示（破坏性操作不弹二次确认，给一条能撤销的更好） -->
+    <string name="fan_items_removed">已移除「%1$s」</string>
+    <string name="fan_items_undo">撤销</string>
+
+    <!-- ── 清单页：列表 ──────────────────────────────────────────── -->
+    <string name="fan_items_section">清单</string>
+    <!-- 手势说明行已删：⊖、箭头、把手都画在行上了 -->
+    <string name="fan_items_empty">暂无项目</string>
+    <string name="fan_items_empty_hint">添加应用并调整顺序</string>
+    <!-- 置顶清单：没加进来的应用不会消失 -->
+    <string name="fan_items_pinned_rest">其余应用按系统顺序排在后面</string>
+    <!-- 读屏 customActions 的三个动作名（上移/下移视觉层转语义层）。
+         ⚠️ `fan_items_icon`（展开区「换图标」）与 `fan_items_config_key`（展开区配置键）
+         已随展开区一起删除：一点行体直达换图标，配置键在单项图标页那一列里。
+         `remove` 是行首 ⊖ 的读屏名 -->
+    <string name="fan_items_up">上移</string>
+    <string name="fan_items_down">下移</string>
+    <string name="fan_items_remove">移除</string>
+
+
+    <!-- ⚠️ 原来有 `fan_items_row_changed`（详情页那行的「N 项 · 已改」），已删：
+         用户拍板（2026-09-18）——「N 项设置」「已调整 N 项」这类计数右值
+         在进组之前没有信息量，进到组里一眼就看得见。 -->
+
+    <!-- ── 参数二级页里的内嵌预览 ──────────────────────────────────
+         预览画的是「这一页滑块控制的东西」，几何与真机同源（core 的 fanPreview()）。 -->
+    <string name="fan_preview_title">预览</string>
+    <!-- 参数读不到 / 几何求解失败时的唯一提示：不画假预览，也不白屏 -->
+    <string name="fan_preview_wallpaper_missing">无法读取壁纸，使用示意背景</string>
+    <!-- 系统壁纸由 SystemUI 读取后推过来，扇形小窗与侧滑索引都关着时它不运行 -->
+    <string name="fan_preview_wallpaper_not_pushed">还没收到系统壁纸，需开启扇形小窗或侧滑索引</string>
+    <string name="fan_preview_unavailable">无法生成预览</string>
+    <!-- 清单为空时按固定项数画，必须说明这是示意（被解释过的值要显式说明） -->
+    <!-- 几何算出来「整圆放不进屏幕」时明说一句 ——「屏内」是硬约束，破了要让用户看见 -->
+    <!-- 数据来源标签：挂在预览卡右上角，区分「真读到的」与「示意的」。
+         「看起来挺像」的预览最容易被当成真机效果，所以这件事必须在卡片上说清楚。 -->
+    <!-- 几何读数：把**算出来的**数写给用户，单位 px（与 hook 日志同一口径，可直接对）。
+         触发区那两个百分比是配置值，后面那两个是折算出来的像素。 -->
+    <!-- 小窗摆放：把**算出来的**几何直接写给用户。位置类参数本来就只挪一小段
+         （窗口占 80% 宽，x 只剩 20% 屏宽的自由度），没有这行数字，用户无法分辨
+         「参数没生效」和「生效了但变化很小」。单位是 px —— 与 hook 日志里
+         `小窗摆放：… [left,top][right,bottom]` 是同一组数，可以直接对。 -->
+    <string name="fan_preview_window_default">虚线为 Flyme 默认位置</string>
+    <!-- 三档各一句（`window_preset`）。`flyme` 与 `custom` 在没改过滑杆时
+         **画出来逐像素相同**，所以必须靠文字说清「你现在在哪一档」——
+         而这一档决定了他拖下面四个滑杆有没有用。 -->
+    <string name="fan_preview_window_preset_system">位置由系统决定</string>
+</resources>

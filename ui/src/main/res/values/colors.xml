@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      图标底色：深蓝黑。
+      原来是澎湃蓝 #3482FF，改为深蓝黑是因为图标前景（浅色形体 + 红色丝带）需要
+      一个暗底才立得住 —— 浅底会让白色形体失去边缘对比，丝带也不突出。
+      ⚠️ 这个色值只用于**图标**，不要跟着改 MiuiX 主色。
+    -->
+    <color name="ic_launcher_background">#141B27</color>
+</resources>
+

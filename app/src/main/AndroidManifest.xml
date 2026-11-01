@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      :app 是纯打包壳。它自己不写代码，只负责：
+        - APK 的身份（包名、版本、标签、描述）
+        - META-INF/xposed/module.prop 等元数据（在 resources/ 下）
+      所有功能代码在 :hook（后端）和 :ui（前端）。
+    -->
+    <application
+        android:label="Tsuzuri"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:description="@string/fp_module_description"
+        android:allowBackup="false"
+        android:hasCode="true" />
+
+</manifest>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 静态快捷方式。intent 的 targetPackage 是 :app 的 applicationId（ui 是库，namespace 不同） -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="global_recognition"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_global_recognition"
+        android:shortcutShortLabel="@string/global_recognition_shortcut">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.kotoriinsky.tsuzuri"
+            android:targetClass="io.github.kotoriinsky.tsuzuri.ui.tile.GlobalRecognitionShortcutActivity" />
+    </shortcut>
+</shortcuts>

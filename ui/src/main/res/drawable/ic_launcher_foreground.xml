@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tsuzuri 图标前景层（自适应图标 108×108dp，主体控制在中间 66dp 安全区）。
+
+  图标语义：左侧一个白色圆盘（原系统），右下角一个白色圆角方块（新特性），
+  两者各带一个"孔"，一条红色丝带从左盘孔中穿入、从方块孔中穿出，把它们缀在一起
+  —— disparate pieces being joined into one whole。
+
+  构成与绘制顺序都不可随意调换：
+    1) 白色圆盘 / 圆角方块各自用 fillType=evenOdd 挖出**真正的孔**（不是描边缺口）
+       —— 只有这样红丝带从孔里"穿过"才成立；做成缺口就变成"贴"在上面了。
+    2) 红丝带主干**先画**，随后被两个白色形体覆盖 → 形成"从孔洞后方穿过"的层次。
+    3) 丝带两端的回折补在白色形体**之上**，做出丝带翻面的厚度。
+    4) 丝带用线性渐变（深红→亮红→深红）模拟圆柱面受光，是全图唯一的非平涂元素。
+
+  自绘、无第三方素材，符合规范 §12「不随包分发厂商资源」的要求。
+  坐标系同 Android VectorDrawable：x 向右、y 向下，单位 dp。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ① 红丝带主干：自左上盘孔穿入，向下穿过右下方块孔。画在白形体之下 -->
+    <path
+        android:pathData="M 42 36
+                          C 57 36 69 47 71 60
+                          C 72 70 71 77 68 84
+                          L 60 79
+                          C 63 71 64 62 62 54
+                          C 59 44 51 37 42 36
+                          Z">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="48" android:startY="36"
+                android:endX="72" android:endY="86">
+                <item android:offset="0.00" android:color="#8F1E19" />
+                <item android:offset="0.16" android:color="#DB3129" />
+                <item android:offset="0.46" android:color="#FF6053" />
+                <item android:offset="0.78" android:color="#DB3129" />
+                <item android:offset="1.00" android:color="#9E211C" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- ② 白色圆盘：左上，中心 (36,36) 半径 19.5，挖孔半径 5.2 -->
+    <path
+        android:fillColor="#F0F3F5"
+        android:fillType="evenOdd"
+        android:pathData="M 36 16.5
+                          A 19.5 19.5 0 1 1 35.99 16.5 Z
+                          M 36 30.8
+                          A 5.2 5.2 0 1 1 35.99 30.8 Z" />
+
+    <!-- ③ 白色圆角方块：右下，顺时针 10°（还原参考图的倾斜），挖孔，丝带由此穿出 -->
+    <group
+        android:pivotX="74"
+        android:pivotY="68"
+        android:rotation="-10">
+        <path
+            android:fillColor="#F0F3F5"
+            android:fillType="evenOdd"
+            android:pathData="M 70 44
+                              L 96 44
+                              Q 102 44 102 50
+                              L 102 86
+                              Q 102 92 96 92
+                              L 70 92
+                              Q 64 92 64 86
+                              L 64 50
+                              Q 64 44 70 44
+                              Z
+                              M 73 68
+                              A 5.6 5.6 0 1 1 72.99 68 Z" />
+    </group>
+
+    <!-- ④ 丝带末端的回折：补在白形体之上，做出翻面厚度 -->
+    <path
+        android:fillColor="#C22A24"
+        android:pathData="M 42 34.5
+                          C 51.5 35.5 60 43 63 53.5
+                          L 56.5 52
+                          C 54 44.5 49 39 42 37.5
+                          Z" />
+    <path
+        android:fillColor="#C22A24"
+        android:pathData="M 60 79.5
+                          L 68 84.5
+                          L 66 90
+                          L 57 84.5
+                          Z" />
+</vector>

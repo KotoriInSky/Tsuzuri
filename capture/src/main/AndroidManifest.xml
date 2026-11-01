@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 没有任何组件：本 APK 只作为代码被系统加载进来源应用。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:hasCode="true"
+        android:label="Tsuzuri 识图采集" />
+</manifest>

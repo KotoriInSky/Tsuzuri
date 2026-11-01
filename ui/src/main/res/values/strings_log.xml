@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内日志查看器的全部文案。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字。
+-->
+<resources>
+
+    <string name="log_title">运行日志</string>
+    <string name="log_export">导出日志</string>
+    <string name="log_export_hint">查看与导出，报告问题时附上</string>
+    <string name="log_export_done">日志已导出</string>
+    <string name="log_export_failed">导出失败</string>
+    <string name="log_clear">清空日志</string>
+    <string name="log_cleared">日志已清空</string>
+    <string name="log_confirm_text">清空运行记录，配置保持不变</string>
+    <string name="log_empty">暂无日志</string>
+    <string name="log_empty_hint">模块运行记录将在此显示</string>
+</resources>

@@ -1,0 +1,931 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      i18n 键 = 资源名把点换成下划线。
+      strings.xml 里写 feature_corner_small_window_title，
+      代码里用 "feature.corner_small_window.title"。
+      构建时有校验任务扫全仓库，漏写会直接构建失败（见 ui/build.gradle.kts）。
+    -->
+
+    <string name="app_name">Tsuzuri</string>
+
+    <!-- 底部导航 -->
+    <string name="nav_about">关于</string>
+    <string name="nav_back">返回</string>
+
+    <!-- 特性分组 -->
+    <string name="group_GESTURE">手势与小窗</string>
+    <string name="group_NEGATIVE_SCREEN">负一屏与小部件</string>
+    <string name="group_SCREEN_RECOGNITION">识屏</string>
+<string name="group_APPS">杂项</string>
+
+    <!-- 作用域 -->
+    <string name="scope_SYSTEM_UI">系统界面</string>
+    <string name="scope_SYSTEM_UI_PLUGIN">系统界面插件</string>
+    <string name="scope_AOD">息屏显示</string>
+    <string name="scope_PERSONAL_ASSISTANT">负一屏</string>
+    <string name="scope_CONTENT_EXTENSION">传送门</string>
+    <string name="scope_CONTENT_CATCHER">传送门配置服务</string>
+    <string name="scope_VOICE_ASSIST">小爱同学</string>
+    <string name="scope_SUBSCREEN">背屏</string>
+    <string name="scope_SETTINGS">设置</string>
+    <string name="scope_SHARE_SHEET">分享面板</string>
+    <string name="scope_SYSTEM_SERVER">系统服务</string>
+
+    <!-- 成熟度 -->
+
+    <!-- 生效方式 -->
+    <string name="restart_HOT">即时生效</string>
+    <string name="restart_HOT_RELOAD">需重载目标进程</string>
+    <string name="restart_PROCESS_RESTART">需重启目标进程</string>
+
+    <!-- ── 特性 ────────────────────────────────────────────── -->
+
+    <string name="feature_corner_small_window_title">扇形小窗</string>
+    <string name="feature_corner_small_window_summary">从屏幕底角上滑，用小窗打开应用</string>
+    <string name="feature_side_index_title">侧滑索引</string>
+    <string name="feature_side_index_summary">边缘滑出字母条，快速找到应用</string>
+    <string name="widget_settings_title">负一屏完美小部件</string>
+    <string name="widget_settings_summary">添加小部件，不受尺寸限制</string>
+    <string name="feature_pa_widget_admission_title">解除 Hyper 小部件尺寸限制</string>
+    <string name="feature_pa_widget_admission_summary">允许添加受尺寸限制的 Hyper 和 Android 小部件</string>
+    <string name="feature_pa_widget_picker_inject_title">负一屏添加 Android 小部件</string>
+    <string name="feature_pa_widget_picker_inject_summary">在负一屏添加 Android 小部件</string>
+    <string name="feature_miui_widget_flag_title">小部件标志位</string>
+    <string name="feature_miui_widget_flag_summary">让第三方小部件使用系统布局规则</string>
+    <string name="feature_widget_style_title">小部件风格</string>
+    <string name="feature_widget_style_summary">第三方小部件与系统风格一致</string>
+    <string name="feature_agg_payment_title">聚合支付</string>
+    <string name="feature_agg_payment_summary">从锁屏指纹入口打开付款</string>
+    <string name="feature_keep_alive_title">模块保活</string>
+    <string name="feature_keep_alive_summary">目标进程被系统回收后自动恢复注入</string>
+
+    <!-- ── 参数：底角小窗 ────────────────────────────────── -->
+    <string name="pref_corner_small_window_corners">触发位置</string>
+    <string name="pref_corner_small_window_corners_both_bottom">左右底角</string>
+    <string name="pref_corner_small_window_corners_bottom_left">左下角</string>
+    <string name="pref_corner_small_window_corners_bottom_right">右下角</string>
+    <string name="pref_corner_icon_alpha">图标不透明度</string>
+    <string name="pref_corner_window_preset">小窗位置</string>
+    <!-- 提示要说清「三档是并列的」，否则用户会以为「系统默认」= 关掉这个功能 -->
+    <string name="pref_corner_window_preset_system">系统默认</string>
+    <string name="pref_corner_window_preset_flyme">Flyme</string>
+    <string name="pref_corner_window_preset_custom">自定义</string>
+    <string name="pref_corner_window_width">小窗宽度</string>
+    <string name="pref_corner_window_height">小窗高度</string>
+    <string name="pref_corner_window_x">水平位置</string>
+    <!-- 口径要说清是「在可移动范围内的位置」：窗口占 80% 宽时它在水平方向只有 20%
+         屏宽的自由行程，写成「屏幕的百分之几」会让用户按屏幕去心算，怎么算都对不上。 -->
+    <string name="pref_corner_window_x_hint">0% 靠左 · 100% 靠右</string>
+    <string name="pref_corner_window_y">垂直位置</string>
+    <string name="pref_corner_window_y_hint">0% 靠上 · 100% 靠下</string>
+    <!-- 四个滑杆只在「自定义」档出现。这句在两个地方用：分组页全组隐藏时的解释，
+         以及单项被禁用时的说明。所以措辞要能独立看懂，不能写「见上方」。 -->
+    <string name="pref_corner_window_dep_off">选择「自定义」后可调整</string>
+    <string name="pref_corner_row_stagger">多层错开</string>
+    <string name="pref_corner_row_stagger_hint">只影响中圈</string>
+    <string name="pref_corner_row_stagger_aligned">对齐</string>
+    <string name="pref_corner_row_stagger_half">错开半格</string>
+    <string name="pref_corner_hot_width">触发宽度</string>
+    <string name="pref_corner_hot_height">触发高度</string>
+    <string name="pref_corner_trigger_percent">展开距离</string>
+    <string name="pref_corner_trigger_percent_hint">上滑多远后展开</string>
+    <string name="pref_corner_portrait_enabled">竖屏可用</string>
+    <string name="pref_corner_landscape_enabled">横屏可用</string>
+    <string name="pref_corner_blocklist_portrait">竖屏排除应用</string>
+    <string name="pref_corner_blocklist_landscape">横屏排除应用</string>
+    <string name="pref_corner_blocklist_off_hint">该方向手势已关闭</string>
+    <string name="pref_corner_trigger_haptic">呼出时振动</string>
+    <string name="pref_corner_small_window_haptic">选中时振动</string>
+    <!-- 这一条原先是 96 字，把「现象 / 操作 / 前置条件 / 影响范围」四件事挤进一行说明，
+         列表行里必然折成四五行。改为一句话讲清「做什么」，前置条件挪进 hint 的第二句。 -->
+    <string name="pref_corner_root_activities">用 Root 打开页面</string>
+    <string name="pref_corner_root_activities_hint">部分受限页面需要，需授权 Root</string>
+    <string name="pref_corner_layout_mode">排列模式</string>
+    <string name="pref_corner_layout_mode_smart">智能排布</string>
+    <string name="pref_corner_layout_mode_custom">自定义排数</string>
+    <string name="pref_corner_custom_inner">内圈数量</string>
+    <string name="pref_corner_custom_inner_hint">放不下的移到外圈</string>
+    <string name="pref_corner_custom_middle">中圈数量</string>
+    <string name="pref_corner_custom_middle_hint">受内圈数量限制</string>
+    <string name="pref_corner_max_targets">每页数量</string>
+    <string name="pref_corner_max_targets_hint">更多的翻到下一页</string>
+    <string name="pref_corner_radius_percent">扇形半径</string>
+    <string name="pref_corner_radius_percent_hint">项目多时自动变大</string>
+    <string name="pref_corner_icon_size">图标大小</string>
+    <string name="pref_corner_icon_size_hint">空间不够时自动缩小</string>
+    <string name="pref_corner_rotation">展开时旋转</string>
+    <string name="pref_corner_motion">展开动画</string>
+    <string name="pref_corner_motion_flyme">Flyme</string>
+    <string name="pref_corner_motion_brisk">轻快</string>
+    <string name="pref_corner_motion_still">不旋转</string>
+    <!-- ⚠️ 这两行以前**漏了**（Catalog 声明了键、strings.xml 里没有），界面上直接把
+         `pref.corner.edge_margin` 显示给用户。`:ui:verifyStringKeys` 现在会拦住同类问题。 -->
+    <string name="pref_corner_edge_margin">边缘留距</string>
+    <string name="pref_corner_reveal_amount">展开行程</string>
+    <string name="pref_corner_reveal_amount_hint">越大起点越靠近圆心</string>
+    <string name="pref_corner_anim_speed">动画速度</string>
+    <string name="pref_corner_selection_scale">选中放大</string>
+    <string name="pref_corner_selection_ring">选中光环</string>
+    <string name="pref_corner_apps_mode">清单来源</string>
+    <string name="pref_corner_apps_mode_hint">自动时按最近使用补全</string>
+    <string name="pref_corner_apps_mode_auto">自动选取</string>
+    <string name="pref_corner_apps_mode_manual">手动指定</string>
+    <string name="pref_corner_apps">扇形应用</string>
+    <string name="pref_corner_apps_hint">未选择时使用最近应用</string>
+    <!-- 有序清单（应用 + 快捷方式混排）。老键 `apps` 的文案保留：迁移期两边都可能在用。 -->
+    <string name="pref_corner_items">快捷清单</string>
+    <!-- 图标形状的可调数值 + 白描边。文案规则：标题 ≤6 字、说明 ≤20 字 -->
+    <string name="pref_corner_icon_shape_corner">圆角大小</string>
+    <string name="pref_corner_icon_shape_corner_hint">0 为形状默认</string>
+    <string name="pref_corner_icon_shape_exponent">轮廓柔度</string>
+    <string name="pref_corner_icon_shape_exponent_hint">0 为形状默认</string>
+    <string name="pref_corner_icon_edge">图标描边</string>
+    <string name="pref_corner_icon_edge_width">描边宽度</string>
+    <string name="pref_corner_items_hint">应用、快捷方式与链接</string>
+    <!-- 图标形状（`icon_shape`）。取值与 core 的 IconShape 枚举逐字对应：circle /
+         rounded_square / squircle / teardrop / original —— 改了枚举就得同步改这里。
+         缺省是「圆形」，也就是加这个参数之前所有人看到的样子。 -->
+    <string name="pref_corner_icon_shape">图标形状</string>
+    <string name="pref_corner_icon_shape_circle">圆形</string>
+    <string name="pref_corner_icon_shape_rounded_square">圆角方形</string>
+    <string name="pref_corner_icon_shape_squircle">超椭圆</string>
+    <string name="pref_corner_icon_shape_teardrop">水滴</string>
+    <string name="pref_corner_icon_shape_original">原始形状</string>
+
+    <!-- ── 二级页分组 ────────────────────────────────────────
+         名字由 Catalog 里每个参数的 `group = "..."` 派生：pref.group.<id> → pref_group_<id>。
+         漏写一行不会崩，界面会直接显示键名本身（一眼能看出来）。
+
+         命名判据（2026-09-18 重排时定的，加新分组照这个走）：
+         分组按**参数的语义类别**切，不按「它属于哪个实现模块」切。
+         同一个语义维度被劈到两组，用户就会在两个地方各找一半。
+         四个基本类别：触发（怎么唤出）/ 内容（显示什么）/ 外观（长什么样）/ 反馈（手感）。
+         动画归「外观」不归「反馈」—— 动画是看出来的，反馈是摸出来的。 -->
+    <string name="pref_group_corner_trigger">触发与范围</string>
+    <string name="pref_group_corner_list">快捷内容</string>
+    <string name="pref_group_corner_layout">扇形排布</string>
+    <string name="pref_group_corner_window">小窗位置</string>
+    <string name="pref_group_corner_icon">图标外观</string>
+    <string name="pref_group_corner_selection">选中反馈</string>
+    <string name="pref_group_corner_motion">动画效果</string>
+    <string name="pref_group_corner_feedback">触觉反馈</string>
+    <!-- ⚠️ 这一条以前**漏了**：Catalog 里 `root_activities` 声明了 group = "corner_advanced"，
+         而这里没有对应文案。界面是 `fpString("pref.group.$id")`，查不到就回落键名本身 ——
+         于是这一页的**标题**直接显示 `pref.group.corner_advanced`。
+         同一条键还会出现在「模块」页搜索结果的副标题上。
+         `:ui:verifyStringKeys` 拦不住它：那个任务校验的是「代码里写的键有没有文案」，
+         而这里是拼接出来的键，静态扫不到。 -->
+    <string name="pref_group_corner_advanced">高级</string>
+    <string name="pref_group_other">其他</string>
+
+    <!-- ── 二级页本身 ── -->
+    <!-- ⚠️ 原来的 `section_summary`（「N 项设置」）与 `section_changed`（「已调整 N 项」）
+         已删（2026-09-18 用户拍板）：详情页里每个分组行右侧那两个计数右值，
+         进组之前没有信息量，进到组里一眼就看得见。代码里已不再引用这两条 -->
+    <!-- 分组级「恢复默认」：只在真的改过时出现（没改过就没有可恢复的东西）。
+         为什么要有它：滑杆变成无极之后，用户很容易拖到一个「回不去」的状态 ——
+         他不记得出厂值是多少，而这一组的出厂值恰好是实测出来的几个小数。 -->
+    <string name="section_reset_group">恢复本组默认</string>
+    <string name="section_live_on">已保存，立即生效</string>
+    <string name="section_live_off">已保存，开启功能后生效</string>
+
+    <!-- ── 配置通道降级（改动没到真机） ──
+         写进本地草稿之后，界面照样显示新值、而真机读的是另一份存储。这条提示是
+         这个通道唯一的诚实出口：显示出来了，就说明界面上的一切新值真机都还没收到。
+         口径要说「真机读到的仍是旧值」，不能只说「未同步」——「同步」是什么，用户不知道。 -->
+    <string name="config_channel_degraded">%1$d 项设置待生效，连接 LSPosed 后应用</string>
+    <string name="config_channel_retry">立即同步</string>
+
+    <!-- ── 应用多选页（Preference 参数类型 AppList 的界面） ── -->
+    <string name="app_picker_title">选择应用</string>
+    <string name="app_picker_search_hint">搜索应用名或包名</string>
+    <string name="app_picker_search_count">搜索 %1$d 个应用</string>
+    <string name="app_picker_section_added">%1$d 个已添加</string>
+    <string name="app_picker_section_rest">未添加</string>
+    <string name="app_picker_section_excluded">%1$d 个已排除</string>
+    <string name="app_picker_section_not_excluded">未排除</string>
+    <string name="app_picker_more">快捷方式、页面与链接</string>
+    <string name="app_picker_below_min">少于 %1$d 个时改用「最近使用」</string>
+    <string name="app_picker_state_auto">自动选取</string>
+    <!-- 黑名单（`PrefSpec.AppList.emptyIsValid = true`）在空集时的右值：
+         不是「自动选取」（那是白名单的语义，方向正好相反），而是「一个都不屏蔽」。 -->
+    <string name="app_picker_state_unblocked">不屏蔽</string>
+    <string name="app_picker_state_count">%1$d 个应用</string>
+    <string name="app_picker_empty">无匹配的应用</string>
+    <string name="app_picker_empty_hint">尝试其他应用名称或包名</string>
+    <string name="app_picker_loading_hint">正在读取应用名称与图标</string>
+    <string name="app_picker_failed">无法读取应用列表</string>
+    <string name="app_picker_failed_hint">无法读取应用列表，请重试</string>
+
+    <!-- ── 图标包 ────────────────────────────────────────── -->
+    <string name="icon_pack_title">图标包</string>
+    <string name="icon_pack_entry">图标包</string>
+    <string name="icon_pack_entry_hint">为当前面板统一应用图标包</string>
+    <string name="icon_pack_none">应用自带图标</string>
+    <string name="icon_pack_current">当前：%1$s</string>
+    <string name="icon_pack_hint_fallback">未覆盖的应用用应用自带图标</string>
+    <string name="icon_pack_hint_preview">当前图标包：%1$s</string>
+    <string name="icon_pack_row_summary">%1$s · 预览 %2$s</string>
+    <string name="icon_pack_loading_hint">正在读取图标包</string>
+    <string name="icon_pack_empty">没有找到图标包</string>
+    <string name="icon_pack_empty_hint">安装兼容的图标包后重试</string>
+    <string name="icon_pack_failed">无法读取图标包列表</string>
+    <string name="icon_pack_failed_hint">请稍后重试或检查图标包安装状态</string>
+    <string name="icon_pack_none_action">不套用图标包</string>
+    <string name="icon_pack_none_summary">使用应用自带图标</string>
+    <string name="icon_pack_none_action_hint">恢复当前面板的应用默认图标</string>
+
+    <!-- ── 单项图标（图片 / 单项图标包覆盖） ─────────────── -->
+    <string name="icon_override_title">单项图标</string>
+    <string name="icon_override_entry">单项图标</string>
+    <string name="icon_override_entry_hint">单独设置图标</string>
+    <string name="icon_override_from_pack">从图标包中选择</string>
+    <string name="icon_override_pick_for">正在为「%1$s」选择图标</string>
+    <string name="icon_override_pick_hint">为当前项目选择图标</string>
+    <string name="icon_override_pick_no_pack">未选择图标包</string>
+    <string name="icon_override_pick_no_pack_hint">请先选择图标包</string>
+    <string name="icon_override_pick_loading">正在读取图标包</string>
+    <string name="icon_override_pick_empty">这个图标包没覆盖任何已装应用</string>
+    <string name="icon_override_pick_empty_hint">可更换图标包；部分图标包只提供底板</string>
+
+    <!-- ── 自动选取的说明（手动清单收起时显示） ───────────── -->
+
+    <!-- ── 快捷方式的常用入口与分组 ─────────────────────── -->
+
+    <!-- ── 导入快捷方式 ──────────────────────────────────── -->
+    <string name="shortcut_title">导入快捷方式</string>
+    <string name="shortcut_entry">导入快捷方式</string>
+    <string name="shortcut_entry_hint">把微信「扫一扫」这类快捷方式放进扇形</string>
+
+    <!-- ── 参数：侧滑索引 ────────────────────────────────── -->
+    <string name="pref_side_index_side">触发位置</string>
+    <string name="pref_side_index_side_right">右侧</string>
+    <string name="pref_side_index_side_left">左侧</string>
+    <string name="pref_side_index_side_both">两侧</string>
+    <string name="pref_side_index_trigger_width">触发宽度</string>
+    <string name="pref_side_index_trigger_width_hint">太宽会挡住返回手势</string>
+    <string name="pref_side_index_scope">生效范围</string>
+    <string name="pref_side_index_scope_launcher_only">仅桌面</string>
+    <string name="pref_side_index_scope_anywhere">任何界面</string>
+    <string name="pref_side_index_scope_exclude_launcher">除桌面外</string>
+    <!-- 需求 #8。文案里如实写了可靠性的不对称 —— 见 Catalog 里那一大段注释：
+         抽屉那条信号稳，文件夹那条只能靠桌面进程内的 hook，会被页保护抹掉。 -->
+    <string name="pref_side_index_drawer_gate">抽屉与文件夹里不响应</string>
+    <string name="pref_side_index_drawer_gate_hint">抽屉或文件夹展开时暂停手势；检测依赖系统版本</string>
+    <string name="pref_side_index_show_recent">最近使用</string>
+    <string name="pref_side_index_show_handle">边缘把手</string>
+    <string name="pref_side_index_haptic">振动反馈</string>
+    <string name="pref_side_index_haptic_mode">振动</string>
+    <string name="pref_side_index_haptic_mode_off">关</string>
+    <string name="pref_side_index_haptic_mode_light">轻（跟随系统）</string>
+    <string name="pref_side_index_haptic_mode_standard">标准</string>
+    <string name="pref_side_index_haptic_mode_strong">强</string>
+    <string name="pref_side_index_cell_height">行高</string>
+    <string name="pref_side_index_hide_app_names">隐藏应用名</string>
+    <string name="pref_side_index_blur_radius">模糊强度</string>
+    <string name="pref_side_index_bubble_anim_ms">气泡淡入</string>
+    <string name="pref_side_index_bubble_anim_ms_hint">0 为关闭</string>
+    <string name="pref_side_index_bubble_icon_slots">气泡显示图标</string>
+    <string name="pref_side_index_favorites">收藏</string>
+    <string name="pref_side_index_favorites_hint">未设置时不显示收藏入口</string>
+    <string name="pref_side_index_recent_count">最近使用个数</string>
+    <string name="pref_side_index_columns">每行列数</string>
+    <string name="pref_side_index_cell_width">列宽</string>
+    <string name="pref_side_index_material">背景</string>
+    <string name="pref_side_index_material_none">无</string>
+    <string name="pref_side_index_material_blur">高斯模糊</string>
+    <string name="pref_side_index_material_required">需选择模糊或玻璃背景</string>
+    <string name="pref_side_index_material_glass">液态玻璃</string>
+    <!-- 侧滑索引的二级页分组（prefGroups 由 PrefSpec.group 派生文案键）-->
+    <!-- ⚠️ 分组 id 保持不动的理由：id 进的是返回栈的 key 与搜索结果的定位目标，
+         改 id 要同步改 `Dest.FeatureSection` 的入参语义与 `previewGroups` / `iconToolsGroup`。
+         重排只用「把项挪到别的组 + 改组名」，id 一律不动 —— 配置键零迁移。 -->
+    <string name="pref_group_side_trigger">触发与范围</string>
+    <string name="pref_group_side_content">索引内容</string>
+    <string name="pref_group_side_panel">面板外观</string>
+    <!-- 第二轮再拆：`side_panel` 收干净材质之后仍有 12 项，超出「一组约 8 项」。
+         拆出来的判据是「把手与气泡」—— 它们是**可交互的那个东西本身**
+         （显示不显示、多高、在哪个位置、里面放不放图标），
+         而留在 `side_panel` 的是**面板内部怎么排版**（字号、图标尺寸圆角、格子宽高、列数、内边距、首字母位置）。 -->
+    <string name="pref_group_side_handle">把手与气泡</string>
+    <!-- 隐藏分组：界面不显示，文案只为通过构建期检查与日志 -->
+    <string name="pref_group_corner_internal">内部参数</string>
+    <string name="pref_group_side_internal">内部参数</string>
+    <!-- 2026-09-18 新拆：原来「材质 / 模糊 / 气泡动画 / 无字模式」全挤在「布局与外观」里，
+         那一组因此有 16 项，超出「一组约 8 项」的可读上限。
+         拆出来的判据是「渲染材质与视觉呈现」—— 它们不参与几何计算，只决定画成什么样。 -->
+    <string name="pref_group_side_material">材质与动效</string>
+    <string name="pref_group_side_feedback">触觉反馈</string>
+
+    <!-- 侧滑索引的「调整预览」 -->
+    <string name="side_index_preview_title">预览</string>
+    <string name="side_index_preview_unavailable">预览不可用：参数读取失败</string>
+    <string name="side_index_preview_scene_bar">手指在字母条上</string>
+    <string name="side_index_preview_scene_panel">手指拖到面板上</string>
+    <string name="side_index_preview_apps">假应用数量</string>
+    <string name="pref_side_index_letter_offset">字母条位置</string>
+    <string name="pref_side_index_letter_offset_hint">0% 靠上 · 100% 靠下</string>
+    <string name="pref_side_index_letter_scale">字母条大小</string>
+    <string name="pref_side_index_icon_size">图标大小</string>
+    <string name="pref_side_index_icon_radius">图标圆角</string>
+    <string name="pref_side_index_icon_radius_hint">0 为原始形状</string>
+    <string name="pref_side_index_panel_inset">面板边距</string>
+    <string name="pref_side_index_panel_inset_hint">始终避开字母条</string>
+    <string name="pref_side_index_handle_height">把手高度</string>
+    <string name="pref_side_index_handle_offset">把手位置</string>
+    <string name="pref_side_index_blur">背景模糊</string>
+
+    <!-- ── 参数：小部件元数据注入 ────────────────────────── -->
+    <string name="pref_miui_widget_flag_system_wide">全量生效</string>
+    <string name="pref_miui_widget_flag_system_wide_hint">关闭后仅对所选应用生效</string>
+
+    <!-- ── 参数：小部件统一风格 ──────────────────────────── -->
+    <string name="pref_group_buttons">显示按钮</string>
+    <string name="pref_widget_style_scale_mode">尺寸适配方式</string>
+    <string name="pref_widget_style_scale_mode_fit">等比缩放</string>
+    <string name="pref_widget_style_scale_mode_fill">拉伸铺满</string>
+    <string name="pref_widget_style_scale_mode_auto">自动判断</string>
+    <string name="pref_widget_style_unify_corner">统一圆角</string>
+    <string name="pref_widget_style_unify_corner_hint">将方角小部件裁为系统圆角</string>
+    <string name="pref_widget_style_blur_background">背景模糊</string>
+    <string name="pref_widget_style_hyperos_shell">统一第三方小部件外框</string>
+    <string name="pref_widget_style_hyperos_shell_hint">圆角与系统一致，按格子重排，内容不变</string>
+
+    <!-- ── 参数：聚合支付 ────────────────────────────────── -->
+    <string name="pref_agg_payment_entry">入口位置</string>
+    <string name="pref_agg_payment_entry_long_press_icon">长按桌面图标</string>
+    <string name="pref_agg_payment_entry_quick_tile">控制中心磁贴</string>
+    <string name="pref_agg_payment_entry_lock_screen">锁屏指纹快捷</string>
+    <string name="pref_agg_payment_code_first">优先付款码</string>
+    <string name="pref_agg_payment_code_first_hint">关闭后优先打开扫一扫</string>
+
+    <!-- ── 参数：模块保活 ────────────────────────────────── -->
+    <string name="pref_keep_alive_watchdog">后台守护</string>
+    <string name="pref_keep_alive_watchdog_hint">目标进程被杀后自动重新注入</string>
+    <string name="pref_keep_alive_poll_interval_ms">前台检测间隔</string>
+    <string name="pref_keep_alive_poll_interval_ms_hint">缩短间隔会增加耗电</string>
+
+    <!-- ── 概览 ──────────────────────────────────────────── -->
+    <string name="overview_row_framework">LSPosed 框架</string>
+    <string name="overview_row_framework_ok">%1$s %2$s 已连接</string>
+    <string name="overview_row_framework_missing">未连接</string>
+    <string name="overview_row_scope">作用域</string>
+    <string name="overview_row_targets">已加载进程</string>
+    <string name="overview_need_setup">%1$d 项待设置</string>
+    <string name="overview_stale_hint">%1$d 个进程需要重新加载</string>
+    <string name="overview_action_reload">重载目标进程</string>
+
+    <!-- ── 外观 ──────────────────────────────────────────── -->
+    <string name="appearance_title">外观</string>
+    <string name="appearance_style_title">界面风格</string>
+    <string name="appearance_style_hint">仅影响本应用设置界面，不影响系统界面</string>
+    <string name="appearance_style_miuix">澎湃</string>
+    <string name="appearance_style_miuix_desc">跟随澎湃原生设计</string>
+    <string name="appearance_style_m3">Material 3</string>
+    <string name="appearance_style_m3_desc">跟随 Google 原生设计</string>
+    <string name="appearance_dark_title">深浅色</string>
+    <string name="appearance_dark_system">跟随系统</string>
+    <string name="appearance_dark_light">浅色</string>
+    <string name="appearance_dark_dark">深色</string>
+    <string name="appearance_accent_title">主题色</string>
+    <string name="appearance_accent_system">跟随系统取色</string>
+    <string name="appearance_accent_miui_blue">澎湃蓝</string>
+    <string name="appearance_accent_custom">自定义</string>
+    <string name="appearance_accent_channel_r">红</string>
+    <string name="appearance_accent_channel_g">绿</string>
+    <string name="appearance_accent_channel_b">蓝</string>
+    <string name="appearance_amoled_title">纯黑深色</string>
+    <string name="appearance_amoled_hint">深色模式下背景与卡片用纯黑</string>
+    <string name="appearance_blur_title">半透明</string>
+    <!-- 必须写清「只有澎湃风格能用」：Material 3 的栏体没有模糊语义，打开也不会有变化。
+         不写这句，M3 用户会以为开关坏了 —— 那是我们不希望用户花时间去查的东西。 -->
+    <string name="appearance_blur_hint">顶栏与底栏透出下方内容</string>
+
+    <!-- ── 诊断 ──────────────────────────────────────────── -->
+
+    <!-- ── 引导 ──────────────────────────────────────────── -->
+    <string name="onb_title">模块状态</string>
+    <string name="onb_subtitle">LSPosed 作用域与 Android 权限</string>
+    <string name="onb_step1_title">启用模块</string>
+    <string name="onb_step1_desc">在 LSPosed 中启用本模块</string>
+    <string name="onb_step2_title">勾选作用域</string>
+    <string name="onb_step2_desc">勾选所需作用域，否则功能不生效</string>
+    <string name="onb_step3_title">检查加载状态</string>
+    <string name="onb_step3_desc">使用对应功能，确认模块已加载</string>
+    <string name="onb_action_open_lsposed">打开 LSPosed</string>
+    <string name="onb_action_reload">重载</string>
+    <string name="onb_action_skip">稍后设置</string>
+    <string name="onb_done">作用域与已运行进程检查通过</string>
+    <string name="onb_step_ok">已完成</string>
+    <string name="onb_step_todo">待处理</string>
+
+    <!-- ── 关于 ──────────────────────────────────────────── -->
+    <string name="about_title">关于</string>
+    <string name="about_version">版本</string>
+    <string name="about_version_line">版本 %1$s</string>
+    <string name="about_build">构建时间</string>
+    <string name="about_repo">GitHub 仓库</string>
+    <string name="about_author">作者</string>
+    <string name="about_author_value">KotoriInSky</string>
+    <string name="about_license">许可证</string>
+    <string name="about_license_value">MIT</string>
+    <string name="about_thanks">致谢与开源许可</string>
+    <string name="about_third_party">第三方许可</string>
+    <string name="about_thanks_value">libxposed · LSPosed · MiuiX</string>
+
+    <!-- ── 通用 ──────────────────────────────────────────── -->
+    <string name="common_disabled">已关闭</string>
+    <string name="common_reset">恢复默认</string>
+    <string name="common_undo">撤销</string>
+    <string name="common_detail">详情</string>
+    <string name="common_options">参数</string>
+    <string name="pref_category_trigger">触发</string>
+    <string name="pref_category_content">内容</string>
+    <string name="pref_category_appearance">外观</string>
+    <string name="pref_category_feedback">反馈</string>
+    <string name="pref_category_advanced">高级</string>
+    <string name="pref_category_other">其它</string>
+    <string name="feature_reload_pending">重载以生效</string>
+    <string name="feature_reload_chip">待重载</string>
+    <string name="feature_capability_empty">还没选择任何效果，在下面至少打开一项</string>
+    <string name="common_scope">作用域</string>
+    <string name="common_key">配置键</string>
+    <string name="common_effective">生效方式</string>
+    <string name="common_docs">设计文档</string>
+    <string name="common_scope_applies">作用于：%1$s</string>
+    <string name="common_unknown">未知</string>
+    <string name="common_loading">读取中…</string>
+    <string name="common_no_framework">未连接 LSPosed，改动暂存本地</string>
+    <string name="common_open">打开</string>
+    <string name="common_none">无</string>
+    <string name="common_config_source">配置来源</string>
+    <string name="common_config_remote">框架</string>
+    <string name="common_config_local">本地草稿</string>
+
+    <!-- ══ 底栏四段 ══════════════════════════════════════ -->
+    <string name="nav_home">首页</string>
+    <string name="nav_modules">功能</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_more">更多</string>
+    <string name="modules_search_hint">搜索功能或设置</string>
+    <string name="modules_search_none">无匹配的参数</string>
+    <string name="modules_search_none_hint">可搜索：图标、尺寸、振动、位置、触觉</string>
+
+    <!-- ══ 搜索 ══════════════════════════════════════════ -->
+    <string name="search_title">搜索</string>
+    <string name="search_hint">搜索功能或设置</string>
+    <string name="search_empty_title">无匹配的项</string>
+    <string name="search_empty_body">可换关键词，或直接搜索配置键</string>
+    <string name="search_idle_title">可搜索的内容</string>
+    <string name="search_idle_body">功能名、说明文字、配置键</string>
+    <string name="search_section_features">功能</string>
+    <string name="search_section_settings">设置</string>
+    <string name="search_history_title">最近搜索</string>
+    <string name="search_history_clear">清除</string>
+    <string name="search_clear">清除输入</string>
+
+    <!-- ══ 主页 ══════════════════════════════════════════ -->
+    <string name="home_title">Tsuzuri</string>
+    <string name="home_state_ready">已就绪</string>
+    <string name="home_state_partial">部分未就绪</string>
+    <string name="home_state_offline">未连接框架</string>
+    <string name="home_state_loading">正在读取状态</string>
+    <string name="home_active_title">已开启</string>
+    <string name="home_active_none">暂无已开启功能</string>
+    <string name="home_active_none_hint">在「模块」中选择需要的功能</string>
+    <string name="home_open_modules">全部模块</string>
+
+    <!-- ── 首页：运行环境 + 权限（重构后首页只回答「能不能用 / 还差什么」，
+             开关与参数全部归到「模块」页，不再在首页重复一遍）── -->
+    <string name="home_env_title">运行环境</string>
+    <string name="home_perm_title">启用与权限</string>
+    <string name="home_perm_root">Root</string>
+    <string name="home_perm_root_desc">可选，仅用于重启系统界面和打开受限页面</string>
+    <string name="home_perm_root_notfound">未检测到 Root 管理器</string>
+    <string name="home_perm_framework">LSPosed 框架</string>
+    <string name="home_perm_framework_ok">已激活</string>
+    <string name="home_perm_framework_desc">模块依赖它才能生效</string>
+    <!-- ⚠️ 原来的「作用域授权 / 已授权 N 项」一行汇总已退役（2026-09-19 用户拍板）：
+         现在每条必需进程各占一行（见 HomeScreen），缺的那一行直接可点去授权。 -->
+    <string name="home_perm_granted">已勾选</string>
+    <string name="home_perm_missing">未勾选</string>
+    <string name="home_perm_grant_all">授权剩余 %1$d 项</string>
+    <string name="home_perm_grant_failed">授权失败</string>
+    <string name="common_grant">去授权</string>
+    <string name="settings_about_hint">版本、更新日志、开源许可与致谢</string>
+
+    <!-- 首页右上角的「重载」按钮。%1$d = 实际下发请求的进程数。
+         「不闪屏」这句话是必要的：用户以为重载 = 系统界面重启（会黑一下），
+         而走的是 hotReload，不重启进程也不闪屏 —— 不说清楚用户反而不敢按。 -->
+    <string name="home_reload_pending">正在重载 %1$d 个进程…</string>
+    <string name="home_reload_done">已重载 %1$d 个进程</string>
+    <string name="home_reload_none">框架未连接，无法重载</string>
+    <string name="home_reload_unsupported">%1$d 个进程未重载：框架不支持。重启对应进程后生效</string>
+
+    <!-- ══ 设置 ══════════════════════════════════════════ -->
+    <string name="settings_interface_title">界面</string>
+    <string name="settings_density">信息密度</string>
+    <string name="settings_density_compact">紧凑</string>
+    <string name="settings_density_standard">标准</string>
+    <string name="settings_density_relaxed">宽松</string>
+    <string name="settings_font_scale">字号</string>
+    <string name="settings_font_scale_small">小</string>
+    <string name="settings_font_scale_normal">标准</string>
+    <string name="settings_font_scale_large">大</string>
+    <string name="settings_behavior_title">行为</string>
+    <string name="settings_keep_search_history">保留搜索历史</string>
+    <string name="settings_haptic">点击振动</string>
+    <string name="settings_auto_reload">自动重载</string>
+    <string name="settings_data_title">数据与备份</string>
+    <string name="settings_copy_config">复制当前配置</string>
+    <string name="settings_export_config">导出配置</string>
+    <string name="settings_restore_config">恢复配置</string>
+    <string name="settings_export_done">已导出</string>
+    <string name="settings_export_failed">导出失败</string>
+    <string name="settings_restore_failed">未能恢复配置，请检查文件或存储状态后重试</string>
+    <string name="settings_restored">已恢复 %1$d 项</string>
+    <string name="settings_reset_all">恢复全部默认</string>
+    <string name="settings_reset_all_hint">关闭全部功能并清除参数</string>
+    <string name="settings_reset_appearance">恢复外观与行为默认</string>
+    <string name="settings_reset_appearance_confirm_body">恢复应用外观与行为设置，模块开关保持不变</string>
+    <string name="settings_reset_done">已恢复默认</string>
+    <string name="settings_advanced_title">诊断与日志</string>
+    <string name="settings_open_lsposed">打开 LSPosed 管理器</string>
+    <string name="settings_open_lsposed_hint">查看模块日志与加载状态</string>
+    <string name="settings_copied">已复制</string>
+    <string name="settings_setup">模块状态</string>
+    <string name="settings_setup_hint">LSPosed、作用域与 Root 状态</string>
+    <string name="settings_reset_confirm_body">关闭全部功能并清除参数</string>
+    <string name="settings_reset_confirm_ok">恢复</string>
+    <string name="settings_cancel">取消</string>
+
+    <!-- ══ 关于（补充） ══════════════════════════════════ -->
+    <string name="about_env_title">运行环境</string>
+    <string name="about_scope_count">已授权作用域 %1$d 个</string>
+    <string name="about_target_count">已注入进程 %1$d 个</string>
+
+    <!-- ══ 空态 / 状态 ══════════════════════════════════ -->
+    <string name="empty_no_modules">没有可显示的模块</string>
+    <string name="empty_no_modules_hint">特性清单是打包进应用的</string>
+    <string name="empty_config_none">未修改配置</string>
+    <string name="empty_config_none_hint">修改设置后可查看当前配置</string>
+
+    <!-- ══ 预览标注 ══════════════════════════════════════
+         参数行上的补注：这一项不会改变本页预览的画面。硬要求 ——
+         「既不动也不说」是不允许的（用户会把它当成参数坏了）。判据在 core 的
+         `PrefSpec.feedsFanPreview()`，由 `FeatureSectionScreen` 逐行算好传进来。 -->
+
+    <!-- ══ 加载 / 错误 ══════════════════════════════════ -->
+    <string name="state_loading_framework_hint">正在读取框架状态</string>
+    <string name="state_framework_error">无法读取框架状态</string>
+    <string name="state_framework_error_hint">请确认 LSPosed 在运行且已启用本模块</string>
+    <string name="state_action_retry">重试</string>
+
+    <!-- ══ 变更日志 ══════════════════════════════════════
+         不再在本页渲染 Markdown 原文，只留一行跳 GitHub 的入口（理由见 AboutScreen 的类注释）。
+         原来的 loading / failed / empty / expand / collapse 五条随之删除。 -->
+    <string name="about_changelog_title">变更日志</string>
+
+    <string name="feature_state_on">已开启</string>
+    <string name="feature_state_off">未开启</string>
+    <!-- ⚠️ 原来的 `feature_help_title`「帮助与管理」/ `feature_help_details`「运行说明」/
+         `_hint` 三条已删（2026-09-18 用户拍板：详情页不要「运行说明」这一段）。
+         信息没有丢，只是搬了地方：作用范围与生效方式在「模块」页的特性卡片上，
+         配置键在导出里 —— 理由写在 FeatureDetailScreen
+         原来那段位置的注释里。 -->
+
+    <!-- 小窗多开（multi_freeform）：机制与安全论证见 MultiFreeformWhitelist -->
+    <string name="feature_multi_freeform_title">小窗多开</string>
+    <string name="feature_multi_freeform_summary">所有应用可同时开多个小窗</string>
+    <!-- 分享排序（share_order，C14） -->
+    <string name="feature_share_order_title">分享面板排序</string>
+    <string name="feature_share_order_summary">常用应用固定在分享面板最前</string>
+    <string name="pref_share_order_pinned">置顶应用</string>
+    <string name="pref_share_order_pinned_hint">按清单顺序排在最前，下次打开生效</string>
+    <string name="share_order_empty">系统顺序</string>
+    <!-- 选字工具栏（text_toolbar，C15）：system_server 改小爱 meta-data，两项只能一起去掉 -->
+    <string name="feature_text_toolbar_title">精简选字菜单</string>
+    <string name="feature_text_toolbar_summary">选中文字时不显示问小爱和 AI 写作</string>
+    <string name="feature_context_install_title">打开新应用</string>
+    <string name="feature_context_install_summary">安装新应用后，在胶囊中提示打开</string>
+    <string name="feature_context_music_title">打开音乐应用</string>
+    <string name="feature_context_music_summary">连接耳机后，在胶囊中推荐音乐应用</string>
+    <string name="feature_context_screen_on_title">临时屏幕常亮</string>
+    <string name="feature_context_screen_on_summary">屏幕变暗后轻触，提示临时常亮</string>
+
+    <!-- 完美状态栏（clean_statusbar）：演示模式 + 藏通知图标 -->
+    <string name="feature_clean_statusbar_title">完美状态栏</string>
+    <string name="feature_clean_statusbar_summary">信号电量满格，隐藏通知图标</string>
+    <string name="pref_clean_statusbar_hide_notification_icons">隐藏通知图标</string>
+    <string name="pref_clean_statusbar_hide_notification_icons_hint">去掉状态栏左侧的通知图标</string>
+    <string name="pref_clean_statusbar_hide_island">隐藏超级岛</string>
+    <string name="pref_clean_statusbar_hide_island_hint">岛上的通知暂时看不见，恢复后照常显示</string>
+    <string name="pref_clean_statusbar_auto_screenshot">截图时自动开启</string>
+    <string name="pref_clean_statusbar_auto_screenshot_hint">截图会晚约 0.3 秒，截完自动恢复</string>
+    <string name="pref_clean_statusbar_auto_recording">录屏时自动开启</string>
+    <string name="pref_clean_statusbar_auto_recording_hint">录屏结束后自动恢复</string>
+    <string name="clean_statusbar_tile">完美状态栏</string>
+
+    <!-- 口令上岛（passcode_island）。
+         语体：中性陈述；失败态（解析不到跳转目标）的行为必须写明。 -->
+    <string name="feature_passcode_island_title">复制直达</string>
+    <string name="feature_passcode_island_summary">复制链接或口令后，一点直达</string>
+    <string name="scope_AI_ENGINE">澎湃 AI 引擎</string>
+    <string name="pref_copy_direct_engine">原生增强</string>
+    <string name="pref_copy_direct_engine_hint">扩展原生应用支持与长按分享</string>
+    <string name="pref_copy_direct_engine_required">需开启原生增强</string>
+    <string name="pref_copy_direct_mode">提示方式</string>
+    <string name="pref_copy_direct_mode_hint">复制时仅显示所选提示</string>
+    <string name="pref_copy_direct_mode_native">原生胶囊</string>
+    <string name="pref_copy_direct_mode_island">超级岛</string>
+    <string name="pref_copy_direct_mode_island_note">超级岛由系统界面弹出，无需开启通知权限</string>
+    <string name="pref_copy_direct_mode_island_dnd">勿扰「完全静音」「仅闹钟」下可能不弹出</string>
+    <string name="pref_copy_direct_island_required">仅超级岛使用此设置</string>
+    <string name="pref_copy_direct_same_app">前台分享</string>
+    <string name="pref_copy_direct_same_app_hint">目标应用在前台时仍提示分享</string>
+    <string name="pref_copy_direct_icon_pack">应用图标包</string>
+    <string name="pref_copy_direct_icon_pack_hint">统一许可页和悬浮胶囊的应用图标</string>
+    <string name="pref_copy_direct_icon_pack_none">原生应用图标</string>
+    <string name="pref_copy_direct_icon_pack_fallback">未覆盖的应用用应用自带图标</string>
+    <string name="pref_copy_direct_icon_pack_restore">恢复原生应用图标</string>
+    <string name="pref_group_copy_direct_interaction">交互方式</string>
+    <string name="pref_group_copy_direct_content">识别内容</string>
+    <string name="add_item_title">添加</string>
+    <string name="add_item_kind_shortcut">快捷方式</string>
+    <string name="add_item_kind_page">页面</string>
+    <string name="add_item_added_extras">另加了 %1$d 项快捷方式或页面</string>
+    <string name="add_item_gestures">点一下添加应用 · 长按选择它的快捷方式与页面</string>
+    <string name="add_item_manual_link">手动输入链接</string>
+    <string name="add_item_manual_activity">手动输入页面</string>
+    <string name="fan_items_ring_inner">内圈</string>
+    <string name="fan_items_ring_middle">中圈</string>
+    <string name="fan_items_ring_outer">外圈</string>
+    <string name="fan_items_page">第 %1$d 页</string>
+    <string name="copy_direct_try">试一下</string>
+    <string name="copy_direct_try_hint">复制一条示例链接，看看提醒的样子</string>
+    <string name="pref_passcode_island_window_preset">打开方式</string>
+    <string name="pref_passcode_island_window_preset_system">澎湃小窗</string>
+    <string name="pref_passcode_island_window_preset_flyme">Flyme 小窗</string>
+    <string name="pref_passcode_island_window_preset_fullscreen">全屏</string>
+    <string name="pref_passcode_island_timeout_seconds">自动消失</string>
+    <string name="pref_passcode_island_long_press_chooser">长按换应用打开</string>
+    <string name="pref_passcode_island_long_press_chooser_hint">长按岛上的「打开」，可换用其他应用</string>
+
+    <string name="pref_passcode_island_generic_url">识别所有链接</string>
+    <string name="pref_passcode_island_generic_url_hint">关闭后只识别内置短链</string>
+    <string name="pref_passcode_island_numeric_tracking">快递单号</string>
+    <string name="pref_passcode_island_numeric_tracking_hint">识别 13–15 位数字单号，可能误认订单号</string>
+    <string name="pref_passcode_island_custom_rules">自定义规则</string>
+    <string name="pref_passcode_island_custom_rules_hint">优先于内置规则</string>
+    <string name="side_index_overrides_title">应用名称与图标</string>
+    <string name="link_import_input_label">链接地址</string>
+    <string name="activity_import_input_label">应用活动（包名/类名）</string>
+    <string name="common_edit">编辑</string>
+    <string name="about_feedback">报告问题</string>
+    <string name="external_open_failed">无法打开链接，请检查是否安装了浏览器</string>
+    <string name="onb_targets_waiting">等待相关系统功能启动</string>
+    <string name="onb_targets_loaded">%1$d 个进程已加载</string>
+    <string name="onb_action_done">返回首页</string>
+    <string name="onb_reload_hint">不重启进程；部分改动需 Root 重启</string>
+    <string name="onb_reload_partial">%1$d 个已重载，%2$d 个未完成；请检查 LSPosed</string>
+    <string name="onb_manager_unavailable">无法打开 LSPosed，请拨号 *#*#5776733#*#* 或在 Root 管理器的模块页打开</string>
+    <string name="settings_backup_scope">仅含模块开关与参数</string>
+    <string name="settings_restore_confirm">将覆盖 %1$d 项、新增 %2$d 项，其余保留</string>
+    <string name="settings_restore_local">已保存，连接 LSPosed 后生效</string>
+    <string name="preview_scene">预览场景</string>
+    <string name="preview_wallpaper_use">使用当前壁纸</string>
+    <string name="group_CLIPBOARD">主动智能</string>
+    <string name="proactive_summary">打开新应用、音乐推荐、临时常亮、复制直达</string>
+    <string name="config_channel_failed">保存失败，请重试</string>
+    <string name="passcode_rules_import_confirm">导入的 %2$d 条规则将替换当前 %1$d 条规则。</string>
+    <string name="passcode_rules_import_replace">替换规则</string>
+    <string name="passcode_rules_test_incomplete">请先填写匹配表达式与打开目标</string>
+    <string name="passcode_rules_test_empty">输入样本文本查看匹配结果</string>
+    <string name="passcode_rules_test_miss">当前规则未命中样本文本</string>
+    <string name="passcode_rules_test_disabled">规则已停用，当前不会匹配</string>
+    <string name="index_filter_empty_all">全部应用</string>
+    <string name="index_filter_notice_all">当前显示全部应用</string>
+    <string name="index_filter_notice_include">仅显示所选应用；未选择时显示全部</string>
+    <string name="index_filter_notice_exclude">排除所选应用；未选择时显示全部</string>
+    <string name="favorites_empty">未设置收藏</string>
+    <string name="scope_gate_title">需要勾选作用域</string>
+    <string name="scope_gate_body">勾选「%1$s」后才能开启</string>
+    <string name="scope_gate_action">去勾选</string>
+    <string name="scope_gate_inactive_title">模块未启用</string>
+    <string name="feature_scope_required">未勾选作用域：%1$s，本功能不会生效</string>
+    <string name="scope_manage_path">LSPosed → 模块 → Tsuzuri → 作用域</string>
+    <string name="permissions_android_title">Android 系统权限</string>
+    <string name="permissions_photos_title">选择图标图片</string>
+    <string name="permissions_picker_access">通过系统选择器授权所选图片</string>
+    <string name="permissions_files_title">导入与导出文件</string>
+    <string name="permissions_documents_access">通过系统选择器授权所选文件</string>
+    <string name="permissions_overlay_title">悬浮窗</string>
+    <string name="permissions_overlay_systemui">系统界面负责绘制，无需额外授权</string>
+    <string name="permissions_android_open">打开 Android 应用设置</string>
+    <string name="permissions_android_hint">查看与管理系统权限</string>
+    <string name="permissions_entry_hint">LSPosed、作用域与 Root 状态</string>
+
+    <!-- ── 2026-10-17 界面重写：状态页 / 功能页 / 通用数字 ──────────────────
+         文案纪律：标题 ≤ 6 字、说明 ≤ 20 字，只说「是什么 / 做什么」。
+         这几条全部是「用户此刻能不能用、差什么」的直接回答，不写实现原理。 -->
+    <string name="home_subtitle">HyperOS 4 交互增强</string>
+    <string name="home_hero_loading">正在读取运行状态</string>
+    <string name="home_hero_offline">未连接 LSPosed</string>
+    <string name="home_hero_setup">还差 %1$d 步</string>
+    <string name="home_hero_stale">%1$d 个进程待重载</string>
+    <string name="home_hero_ready">一切就绪</string>
+    <string name="home_hero_detail_loading">正在向 LSPosed 服务查询模块状态</string>
+    <string name="home_hero_detail_offline">确认模块已在 LSPosed 中启用</string>
+    <string name="home_hero_detail_setup">完成启用与作用域勾选后功能才会生效</string>
+    <string name="home_hero_detail_stale">这些进程还在用旧设置，重启后生效</string>
+    <string name="home_hero_detail_ready">%1$s · 作用域 %2$d/%3$d</string>
+    <string name="home_chip_framework_ok">框架已连接</string>
+    <string name="home_status_version">版本：%1$s</string>
+    <string name="home_status_mode">作用域 %1$d/%2$d · %3$d 个进程</string>
+    <string name="home_info_module">模块版本</string>
+    <string name="home_info_framework">框架</string>
+    <string name="home_info_scope">作用域</string>
+    <string name="home_info_scope_value">%1$d/%2$d</string>
+    <string name="home_info_targets">已加载进程</string>
+    <string name="home_info_stale">待重载</string>
+    <string name="home_info_device">设备型号</string>
+    <string name="home_info_system">系统版本</string>
+    <!-- 首页状态卡（KernelSU 两态） -->
+    <string name="home_status_ok">运行中</string>
+    <string name="home_status_inactive">模块未激活</string>
+    <string name="home_status_attention">有 %1$d 项需要处理</string>
+    <string name="home_status_tag">作用域 %1$d/%2$d</string>
+    <string name="home_issue_scope">未勾选作用域：%1$s</string>
+    <string name="home_issue_targets">还没有进程加载模块</string>
+    <!-- 模块状态页 -->
+    <string name="status_step_root">Root（可选）</string>
+    <string name="status_step_reload">进程</string>
+    <string name="status_root_open">打开 %1$s</string>
+    <string name="status_root_open_hint">放行后返回，自动重新检测</string>
+    <string name="status_info_title">版本与设备</string>
+    <!-- 设置一级入口的说明 -->
+    <string name="settings_section_appearance_hint">风格、深浅色、底栏与振动</string>
+    <string name="settings_section_preview_hint">预览台使用的背景图</string>
+    <string name="settings_section_data_hint">导出、恢复与重置配置</string>
+    <string name="settings_section_advanced_hint">模块状态与运行日志</string>
+    <string name="home_chip_framework_off">框架未连接</string>
+    <string name="home_chip_scope">作用域 %1$d/%2$d</string>
+    <string name="home_chip_stale">%1$d 个待重载</string>
+    <string name="home_chip_targets">%1$d 个进程运行中</string>
+    <string name="home_action_reload">重载目标进程</string>
+    <string name="home_action_setup">去完成配置</string>
+    <string name="home_action_retry">重试</string>
+    <string name="home_section_quick">常用功能</string>
+    <string name="home_section_diag">诊断与设置</string>
+    <string name="home_diag_permission">启用与权限</string>
+    <string name="home_diag_permission_hint">LSPosed、作用域与 Root 状态</string>
+    <string name="home_diag_logs">运行日志</string>
+    <string name="home_diag_logs_hint">查看模块近期动作，可导出</string>
+    <string name="home_diag_about">关于</string>
+    <string name="home_diag_about_hint">版本、许可与致谢</string>
+    <string name="modules_subtitle">%1$d 个功能 · %2$d 个已开启</string>
+    <string name="settings_subtitle">外观、数据与诊断</string>
+    <string name="common_count_items">%1$d 项</string>
+    <string name="chip_scope_missing">需要授权</string>
+    <string name="preview_title">预览底图</string>
+    <string name="feature_detail_enable">启用</string>
+    <string name="home_hero_detail_framework">%1$s %2$s</string>
+    <string name="modules_subtitle_all">%1$d 个功能</string>
+    <string name="setup_scopes_all_value">已全部勾选</string>
+    <string name="setup_targets_count">%1$d 个</string>
+    <string name="settings_restore_scope">从备份文件恢复开关与参数</string>
+    <string name="preview_wallpaper_pick">从相册选择图片</string>
+    <string name="preview_wallpaper_pick_hint">仅用于预览，不改系统壁纸</string>
+    <string name="preview_wallpaper_clear">恢复系统壁纸</string>
+    <string name="preview_wallpaper_saved">已设为预览底图</string>
+    <string name="preview_wallpaper_save_failed">读取图片失败</string>
+    <string name="preview_wallpaper_cleared">已恢复系统壁纸</string>
+    <string name="setup_hero_ready">全部就绪</string>
+    <string name="setup_hero_pending">还差 %1$d 步</string>
+    <string name="setup_action_request">申请缺失作用域（%1$d）</string>
+    <string name="setup_action_request_hint">在 LSPosed 弹窗中确认</string>
+    <string name="setup_request_done">已申请 %1$d 个作用域</string>
+    <string name="setup_request_failed">申请未通过：%1$s</string>
+    <string name="setup_scopes_all">所需作用域</string>
+    <string name="setup_scopes_deps">%1$d 个功能依赖</string>
+    <string name="setup_root_ok">可用</string>
+    <string name="setup_root_denied">未放行</string>
+    <string name="setup_root_absent">不可用</string>
+    <string name="setup_root_probe">重新检测 Root</string>
+    <string name="setup_root_probe_hint">在 Root 管理器放行后点这里</string>
+    <string name="setup_action_root_restart">Root 重启</string>
+    <string name="setup_action_root_restart_hint">结束目标进程，由系统重新拉起</string>
+    <string name="setup_root_confirm_title">重启目标进程？</string>
+    <string name="setup_root_confirm_body">将结束 %1$d 个进程，系统界面会短暂黑屏。</string>
+    <string name="setup_root_restarted">已重启 %1$d 个进程</string>
+    <string name="setup_root_failed">重启失败，请检查 Root 授权</string>
+    <string name="setup_reload_done">已重载 %1$d 个进程</string>
+    <string name="setup_reload_partial">重载 %1$d 个成功，%2$d 个未完成</string>
+    <string name="setup_reload_none">没有正在运行的目标进程</string>
+    <string name="settings_root_reload">用 Root 重启进程</string>
+    <string name="settings_root_reload_hint">重载无效时使用</string>
+    <string name="home_reload_failed">重载未全部成功（%1$d 个）</string>
+    <string name="home_action_fix">去处理</string>
+    <!-- 识屏三类（2026-10-25 重组）：子项标题前缀写明作用于传送门还是超级小爱 -->
+    <string name="feature_screen_text_title">识别屏幕文字</string>
+    <string name="feature_screen_text_summary">更多应用可识字，翻译、复制、分享</string>
+    <string name="feature_screen_image_title">识别屏幕图片</string>
+    <string name="feature_screen_image_summary">识图更准，卡片可编辑、分享、播放</string>
+    <string name="feature_global_recognition_title">全局识别</string>
+    <string name="feature_global_recognition_summary">控制中心磁贴一键识别整屏文字和图片</string>
+    <string name="global_recognition_tile">全局识别</string>
+    <string name="global_recognition_shortcut">全局识别</string>
+    <string name="feature_recognition_look_title">识屏样式</string>
+    <string name="feature_recognition_look_summary">结果页布局与复制提醒样式</string>
+    <string name="pref_screen_text_app_compat">更多应用</string>
+    <string name="pref_screen_text_app_compat_hint">未接入传送门的应用也能识字</string>
+    <string name="pref_screen_text_ocr">提取图中文字</string>
+    <string name="pref_screen_text_ocr_hint">图片卡片上增加提取文字</string>
+    <string name="pref_screen_text_translate">翻译</string>
+    <string name="pref_screen_text_translate_hint">用系统翻译整页文字</string>
+    <string name="pref_screen_text_copy_text">复制文字</string>
+    <string name="pref_screen_text_copy_text_hint">复制全部识别结果</string>
+    <string name="pref_screen_text_share_text">分享文字</string>
+    <string name="pref_screen_text_share_text_hint">分享全部识别结果</string>
+    <string name="pref_screen_text_external_trigger">允许外部调用</string>
+    <string name="pref_screen_text_external_trigger_hint">供自动化应用触发识屏</string>
+    <string name="pref_screen_image_expand_region">扩大选区</string>
+    <string name="pref_screen_image_expand_region_hint">选区扩大为整行</string>
+    <string name="pref_screen_image_screenshot_crop">图太小时用截图</string>
+    <string name="pref_screen_image_screenshot_crop_hint">应用给的图不清晰时，从截图裁取</string>
+    <string name="pref_screen_image_candidate_check">排除占位图</string>
+    <string name="pref_screen_image_candidate_check_hint">占位、纯色或与屏幕不符时改用截图</string>
+    <string name="pref_screen_image_press_snapshot">按下时截图</string>
+    <string name="pref_screen_image_press_snapshot_hint">避开应用自己的长按菜单</string>
+    <string name="pref_screen_image_source_bitmap">用应用里的原图</string>
+    <string name="pref_screen_image_source_bitmap_hint">需先安装识图采集组件</string>
+    <string name="pref_screen_image_edit">编辑</string>
+    <string name="pref_screen_image_edit_hint">用系统编辑器打开</string>
+    <string name="pref_screen_image_share_image">分享图片</string>
+    <string name="pref_screen_image_share_image_hint">不存图库</string>
+    <string name="pref_screen_image_original_media">播放动图和视频</string>
+    <string name="pref_screen_image_original_media_hint">卡片内直接播放，含实况照片</string>
+    <string name="pref_screen_image_animated_format">动图保存格式</string>
+    <string name="pref_screen_image_animated_format_hint">表情包等动图保存、分享时转成的格式</string>
+    <string name="pref_screen_image_animated_format_gif">GIF</string>
+    <string name="pref_screen_image_animated_format_webp">WebP</string>
+    <string name="pref_screen_image_animated_format_webp_note">画质更好、体积更小，部分应用可能不播放</string>
+    <string name="pref_screen_image_animated_format_off_hint">需先打开「播放动图和视频」</string>
+    <string name="pref_screen_image_object_to_xiaoai">识物交给超级小爱</string>
+    <string name="pref_screen_image_object_to_xiaoai_hint">点「识物」时改由超级小爱识别</string>
+    <string name="pref_recognition_look_full_bleed">截图铺满</string>
+    <string name="pref_recognition_look_full_bleed_hint">截图占满屏幕宽度</string>
+    <string name="pref_recognition_look_horizontal">结果横排</string>
+    <string name="pref_recognition_look_horizontal_hint">识别结果横向排列</string>
+    <string name="pref_recognition_look_compact">紧凑气泡</string>
+    <string name="pref_recognition_look_compact_hint">缩小气泡和间距</string>
+    <string name="pref_recognition_look_capsule">单行复制提醒</string>
+    <string name="pref_recognition_look_capsule_hint">改用超级小爱同款胶囊</string>
+    <string name="pref_group_portal">传送门</string>
+    <string name="pref_group_xiaoai">超级小爱</string>
+    <!-- 传送门胶囊显隐（recognition_look.hide_*，C18）。都是「不显示」：关着 = 原生 -->
+    <string name="pref_group_portal_capsules">传送门胶囊</string>
+    <string name="pref_recognition_look_hide_ner_url">不显示「打开链接」</string>
+    <string name="pref_recognition_look_hide_ner_tel">不显示「拨打电话」</string>
+    <string name="pref_recognition_look_hide_ner_loc">不显示「在地图中打开」</string>
+    <string name="pref_recognition_look_hide_ner_mail">不显示「写邮件」</string>
+    <string name="pref_recognition_look_hide_devices">不显示「发送到其他设备」</string>
+    <string name="pref_recognition_look_hide_devices_hint">也不再查找附近的手机、平板、电脑和汽车</string>
+    <string name="pref_recognition_look_hide_cloud">不显示云端推荐</string>
+    <string name="pref_recognition_look_hide_cloud_hint">不把选中文字发到云端，也不显示云端推荐</string>
+    <string name="pref_recognition_look_hide_commerce">不显示复制后的商品推荐</string>
+    <string name="pref_recognition_look_hide_commerce_hint">复制文字后不再请求商品推荐</string>
+    <string name="pref_recognition_look_hide_expanded_recommend">不显示展开面板的推荐</string>
+    <string name="pref_recognition_look_hide_expanded_recommend_hint">只隐藏展开面板底部的推荐</string>
+    <string name="pref_group_portal_capture">传送门 · 识图</string>
+    <string name="pref_group_portal_card">传送门 · 图片卡片</string>
+    <string name="status_section_framework">LSPosed</string>
+    <string name="status_section_scope">作用域</string>
+    <string name="home_scope_banner">%1$s 未勾选作用域，相关功能不会生效</string>
+    <string name="home_scope_banner_action">一键申请</string>
+    <string name="home_inactive_banner">模块未在 LSPosed 中启用，所有功能都不会生效</string>
+    <string name="home_inactive_banner_action">打开 LSPosed</string>
+    <string name="home_restart_desc">重启目标进程</string>
+    <string name="appearance_floating_bar_title">悬浮底栏</string>
+    <string name="appearance_floating_bar_hint">底栏离开屏幕边缘，呈胶囊状</string>
+    <string name="appearance_glass_bar_title">液态玻璃</string>
+    <string name="appearance_glass_bar_hint">悬浮底栏折射下方内容，选中项可拖动</string>
+    <string name="home_status_inactive_detail">所有功能都不会生效</string>
+    <string name="home_status_stale">%1$d 个进程仍在使用旧版本</string>
+    <string name="home_status_stale_detail">点右上角重启进程</string>
+    <string name="home_status_pending">%1$d 项改动待重载</string>
+    <string name="home_status_scope_partial">部分作用域未勾选</string>
+    <string name="home_status_scope_missing">未勾选：%1$s</string>
+    <string name="appearance_bars_title">顶栏与底栏 · 仅澎湃风格</string>
+    <string name="status_scopes_title">作用域 %1$d/%2$d</string>
+    <string name="status_scope_unchecked">未勾选</string>
+    <string name="status_scope_idle">未运行</string>
+    <string name="status_scope_stale">旧版本</string>
+    <string name="status_scope_running">运行中</string>
+    <string name="status_action_lsposed">打开 LSPosed</string>
+    <string name="credits_group_runtime">运行与界面</string>
+    <string name="credits_group_included">包含其代码或数据</string>
+    <string name="credits_group_reference">参考了其做法</string>
+    <string name="credits_full">完整声明（THIRD-PARTY.md）</string>
+</resources>

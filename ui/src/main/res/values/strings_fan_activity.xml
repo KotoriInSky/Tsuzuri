@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「填活动」（活动型自定义项）的全部文案。
+
+  为什么单独一个文件：见 strings_fan_shortcut.xml 顶部那条理由（同一份 strings.xml
+  由多个人同时改必然互相覆盖，而且两边的构建都是过的）。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。所有键以 `activity_import.` 开头。
+
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字；只说「是什么 / 做什么」；
+  不写「为什么」、不写实施细节、不用括号补第二句。需要长解释时写进代码注释。
+
+  ⚠️ 有一条**故意写得比别人长**：`activity_import_policy`。它是「包名与活动类名前缀
+  可以完全不同」这个反直觉事实的唯一告知点 —— 小爱就是活例子（安装包名
+  com.miui.voiceassist，类名前缀却是 com.xiaomi.voiceassistant）。
+  用户不看到这一句，就会认为「包名我明明填对了」而反复试同一串。
+
+  ⚠️ 校验失败的那七条**必须分开写**（不是一句「格式不对」）：用户拿到「格式不对」
+  只能反复试同一串字符，而分开之后他自己就能改对（哪一种错、错在哪一段）。
+  理由与那张表写在 core 的 `ActivityTargets.Rejection` 上。
+-->
+<resources>
+
+    <!-- ── 页面：固定区域（不随列表滚动）────────────────────────────── -->
+    <!-- 标题栏用（在 AppRoot 的 Dest.title 里引用） -->
+    <string name="activity_import_title">自定义页面</string>
+    <string name="activity_import_section_new">添加活动</string>
+
+    <!-- 输入框正上方这两行。`policy` 是「这类东西的规则」，`example` 是「具体长什么样」。 -->
+    <!-- ⚠️ 不要给 policy 加「一定能打开」的意思：本页只校验格式，能不能开由启动那一刻决定 -->
+    <string name="activity_import_policy">格式：包名/页面类名</string>
+    <string name="activity_import_example">如 com.tencent.mm/.ui.LauncherUI</string>
+    <string name="activity_import_input_hint">输入包名/活动类名</string>
+    <string name="activity_import_preset_hint">常用项</string>
+
+    <!-- ── 预置项（core/ActivityPresets.kt 收录，每条都在真机验过组件存在）── -->
+    <!-- ⚠️ 预置项**不标可信度**（用户拍板 2026-09-18）：等收到具体反馈再逐条更新，
+         比现在猜「哪条可能过期」更可靠。所以文案里也不写「已验证」之类的话。 -->
+    <string name="activity_import_preset_wx_scan">微信扫一扫</string>
+    <string name="activity_import_preset_wx_main">微信主界面</string>
+    <string name="activity_import_preset_xiaoai_ocr">小爱识屏</string>
+    <string name="activity_import_preset_settings">系统设置</string>
+    <string name="activity_import_preset_calculator">计算器</string>
+
+    <!-- ── 页面：输入与结果 ─────────────────────────────────────────── -->
+    <string name="activity_import_preview">显示名称：%1$s</string>
+    <string name="activity_import_add">添加</string>
+    <string name="activity_import_remove">移除</string>
+    <string name="activity_import_state_need">请输入活动</string>
+    <string name="activity_import_state_joined">已添加</string>
+
+    <!-- ── 校验失败的七条（逐条分开，见文件头注释）──────────────────── -->
+    <string name="activity_import_err_empty">请输入活动</string>
+    <string name="activity_import_err_no_separator">缺少分隔符，请使用「包名/活动类名」</string>
+    <string name="activity_import_err_empty_part">包名与活动类名均不能为空</string>
+    <string name="activity_import_err_bad_package">包名不合法</string>
+    <string name="activity_import_err_bad_activity">活动名不合法，应为完整的类名</string>
+    <string name="activity_import_err_extra_separator">活动类名不能包含「/」</string>
+    <string name="activity_import_err_too_long">长度不能超过 %1$d 个字符</string>
+
+    <!-- ── 页面：现有清单 ───────────────────────────────────────────── -->
+    <string name="activity_import_section_current">已添加活动</string>
+    <string name="activity_import_empty">暂无活动</string>
+    <string name="activity_import_empty_hint">输入活动或选择预设</string>
+    <string name="activity_import_row_bad">活动格式无效，无法启动</string>
+
+    <!-- ── 页面：临时状态 ───────────────────────────────────────────── -->
+    <string name="activity_import_removed">已移除「%1$s」</string>
+    <string name="activity_import_undo">撤销</string>
+    <string name="activity_import_count">%1$d 个活动</string>
+
+    <!-- ── 扇形页底部的入口（在 FanItemsScreen 里引用）──────────────── -->
+
+</resources>

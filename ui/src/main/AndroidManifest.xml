@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      ⚠️ 这一条是应用多选能不能用的**前提**，不是可选优化。
+
+      Android 11 起「查得到哪些应用」受包可见性过滤：没有 <queries> 时
+      queryIntentActivities(MAIN/LAUNCHER) **不会报错**，只会返回一个不全的清单。
+      症状是「应用多选里少了一大半应用」——用户以为是自己没装，或者以为模块坏了。
+      声明这个 intent 之后，凡是能响应该 intent 的应用对我们可见。
+
+      刻意不用 QUERY_ALL_PACKAGES：那个权限把「我能看到全机应用」写进清单，
+      而这里要的只是「有启动入口的应用」，两者不是一回事。
+    -->
+    <!--
+      2026-10-17：删掉了 READ_EXTERNAL_STORAGE 的声明。
+      旧注释说 `WallpaperManager` 内部会 checkCallingOrSelfPermission(READ_EXTERNAL_STORAGE)，
+      那是 API 32 及更早的行为；本模块 targetSdk 37，这条权限在 Android 13+ 已被
+      READ_MEDIA_* 取代、申请必被拒（运行时授权框点了「允许」也不会给权限）。
+      现在预览底图的两条来源都不需要这条权限（2026-10-21 起不再用 root）：
+        · 相册自选 → Photo Picker（系统代理读取，零权限）
+        · 系统壁纸 → 由 SystemUI 读取后推给本应用（PreviewWallpaperProvider，见 PreviewWallpaperContract）
+      少一条无效权限，也少一次注定失败的授权交互。
+    -->
+
+    <!--
+      2026-10-21 用户拍板：复制直达选「超级岛」时给一个「开启通知权限」的引导按钮。
+      岛本身由 SystemUI 发出（PasscodeIslandPresenter），不依赖这条权限；声明它是为了让
+      系统设置里本应用的通知开关能被打开（不声明时 Android 13+ 上那个开关可能不可用）。
+      本应用目前不发任何通知。
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <queries>
+        <package android:name="com.miui.voiceassist" />
+        <!-- 完美状态栏预览：现取系统状态栏的信号 / Wi-Fi / 电池图标（不复制素材进仓库） -->
+        <package android:name="com.android.systemui" />
+        <package android:name="org.lsposed.manager" />
+        <package android:name="com.lsposed.manager" />
+        <!-- 模块状态页「打开 Root 管理器」：与 SetupScreen.ROOT_MANAGER_PACKAGES 保持一致 -->
+        <package android:name="me.weishu.kernelsu" />
+        <package android:name="com.rifsxd.ksunext" />
+        <package android:name="com.sukisu.ultra" />
+        <package android:name="com.resukisu.resukisu" />
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="me.bmax.apatch" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+
+        <!--
+          ⚠️ 图标包受**同一套**包可见性过滤，而且更隐蔽：图标包的 activity 只声明
+          下面这些私有 action，不带 MAIN/LAUNCHER，所以上面那条 <intent> 看不到它。
+          这里逐条声明「图标包选择页」要查的 action（取值来自真机图标包的 manifest
+          实测，见 state/IconPackCatalog.kt 的注释）。漏掉哪一条，症状都是
+          「我装的图标包在列表里找不到」，而且不报任何错。
+        -->
+        <intent>
+            <action android:name="org.adw.launcher.THEMES" />
+        </intent>
+        <intent>
+            <action android:name="com.gau.go.launcherex.theme" />
+        </intent>
+        <intent>
+            <action android:name="com.novalauncher.THEME" />
+        </intent>
+        <intent>
+            <action android:name="com.anddoes.launcher.THEME" />
+        </intent>
+        <intent>
+            <action android:name="com.dlto.atom.launcher.THEME" />
+        </intent>
+        <intent>
+            <action android:name="com.teslacoilsw.launcher.THEME" />
+        </intent>
+        <intent>
+            <action android:name="com.zeroteam.zerolauncher.theme" />
+        </intent>
+        <intent>
+            <action android:name="ch.deletescape.lawnchair.ICONPACK" />
+        </intent>
+        <intent>
+            <action android:name="com.fede.launcher.THEME_ICONPACK" />
+        </intent>
+        <intent>
+            <action android:name="com.gridappsinc.launcher.theme.apk_action" />
+        </intent>
+    </queries>
+
+    <!--
+      设置界面跑在模块 App 自己的进程里，和 hook 完全隔离。
+      Activity 声明在 :ui，让 :app 保持「纯打包壳」。
+    -->
+    <application>
+
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ui.state.PortalMediaProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.portalmedia"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+
+        <!--
+          后端 → 前端的**唯一**投递口（快捷方式目录）。
+
+          为什么需要它：设置界面没有权限查别的应用的快捷方式（必须 `ACCESS_SHORTCUTS`
+          或当桌面，见 state/ShortcutCatalogStore.kt 的注释），而项目的配置通道在 hook
+          侧只读（283`）。参考实现 HyperGesture 用的也是
+          同一个办法（它往模块 App 的 ContentProvider 里 call("report_shortcuts")）。
+
+          exported 是必须的（SystemUI 是另一个 uid）。安全靠 Provider 内部自查调用方：
+          只接受 uid 0 / 1000 / 属于 com.android.systemui 的 uid，且只实现 call() 一个方法
+          —— 这个 Provider 不是数据源，只是一个投递口。grantUriPermissions 之类的
+          一概不开。
+        -->
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ui.state.FanShortcutCatalogProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.shortcutcatalog"
+            android:exported="true"
+            android:enabled="true" />
+
+        <!--
+          自定义图标的**只读出口**：设置界面把裁剪好的 192×192 PNG 写进本 App 的
+          filesDir/icon_overrides/，SystemUI 用 contentResolver.openInputStream(uri) 读。
+
+          为什么需要它（不是设计偏好）：扇子跑在 SystemUI 进程，跨 uid 直接共享
+          file:// 是被禁的；而此前用的框架共享目录（openRemoteFile）在真机上**从来没有
+          成功过一次**，失败还是静默的（日志只剩一行类名）。换成 content:// 之后失败会
+          带异常与错误信息上浮，见 state/IconOverridesStore.kt 与 state/IconFileProvider.kt。
+
+          exported 是必须的（SystemUI 是另一个 uid）。安全靠 provider 内部：
+            - 只实现读（openFile 只接受 mode="r"；insert/update/delete 一概没有）；
+            - 调用方 uid 必须是 uid 0 / 1000 / com.android.systemui 的 uid / 本 App；
+            - 文件名两道校验（字符白名单 + canonicalPath 必须落在图标目录内）。
+          grantUriPermissions 也开着：设置界面写盘后会顺手 grantUriPermission 给
+          SystemUI，万一包可见性过滤把 provider 藏起来，有 URI 授权的一方仍读得到。
+        -->
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ui.state.IconFileProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.iconfile"
+            android:exported="true"
+            android:enabled="true"
+            android:grantUriPermissions="true" />
+
+        <!--
+          传送门编辑/分享的临时图片出口：源图只写进模块私有 filesDir，
+          通过一次性 content URI 交给编辑器或分享目标，不进入 MediaStore。
+          Provider 自己校验 contentextension 的写入和 Intent grant 的读取。
+        -->
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ui.state.PortalTempImageProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.portaltemp"
+            android:exported="true"
+            android:enabled="true"
+            android:grantUriPermissions="true" />
+
+        <activity
+            android:name="io.github.kotoriinsky.tsuzuri.ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Tsuzuri"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
+            android:enableOnBackInvokedCallback="true"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- 静态快捷方式「全局识别」：长按桌面图标可用，也能加进扇形小窗（LauncherApps.startShortcut） -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- 全局识别快捷方式的跳板：不显示界面，发完请求就结束，见 tile/GlobalRecognitionShortcutActivity.kt -->
+        <activity
+            android:name="io.github.kotoriinsky.tsuzuri.ui.tile.GlobalRecognitionShortcutActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- 完美状态栏快捷开关：给 SystemUI 发广播进入 / 退出演示模式，见 tile/CleanStatusBarTile.kt -->
+        <service
+            android:name="io.github.kotoriinsky.tsuzuri.ui.tile.CleanStatusBarTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_clean_statusbar"
+            android:label="@string/clean_statusbar_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- 全局识别快捷开关：给 SystemUI 发广播，由它收起控制中心后叫醒传送门截屏，见 tile/GlobalRecognitionTile.kt -->
+        <service
+            android:name="io.github.kotoriinsky.tsuzuri.ui.tile.GlobalRecognitionTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_global_recognition"
+            android:label="@string/global_recognition_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <provider android:name="io.github.kotoriinsky.tsuzuri.ui.state.HookStatusProvider" android:authorities="io.github.kotoriinsky.tsuzuri.hookstatus" android:exported="true" />
+        <!-- 预览底图：只接受 SystemUI 推送（provider 内按调用 uid 校验），见 PreviewWallpaperContract -->
+        <provider android:name="io.github.kotoriinsky.tsuzuri.ui.state.PreviewWallpaperProvider" android:authorities="io.github.kotoriinsky.tsuzuri.wallpaper" android:exported="true" />
+    </application>
+
+</manifest>

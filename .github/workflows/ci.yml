@@ -1,0 +1,194 @@
+name: CI
+
+# 触发：任意分支的 push + 所有 PR。
+# 不写 branches 过滤是有意的 —— 这条流水线同时也是「能不能推」的门槛，
+# 主干要靠它，feature 分支也要靠它在合并前就把问题暴露出来。
+on:
+  push:
+  pull_request:
+
+# 同一 ref 连续推送时取消上一次没跑完的任务，避免排队浪费额度。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 只要读仓库权限。CI 不签名、不发布、不写任何东西。
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    name: 构建 + 测试 + 产物校验
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # JDK 21 是硬性基线，不是随手挑的版本：
+      #   - core/build.gradle.kts 里 jvmToolchain(21)
+      #   - 三个 Android 模块 sourceCompatibility/targetCompatibility = VERSION_21
+      #   - AGP 9.3.1 要求 JDK ≥ 17
+      # 用 temurin 是因为 GitHub 托管 runner 上稳定可得。
+      - name: 装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          # 缓存 Gradle 依赖（~/.gradle/caches 与 wrapper dists）。
+          # 没有它每次都要重下 AGP 9.3.1 + Kotlin 2.4.10 + Compose BOM + Miuix，
+          # 而本项目已知的网络状况是 Maven Central 直连约 170KB/s，
+          # 冷启动一次构建要十几分钟。缓存在这里不是锦上添花，是能否用的差别。
+          cache: gradle
+
+      # Android SDK。两件事必须一起做：
+      #   1) compileSdk 37 —— Miuix 0.9.3 与 compose.ui 1.12.x 的 aar 里写着
+      #      minCompileSdk=37，用 36 编译 AGP 会直接报错。
+      #   2) build-tools 37.0.0 —— AGP 不会自动拉，缺了会构建失败。
+      # 两个包名已用本机 `sdkmanager --list` 核对，是稳定 channel 里真实存在的 id。
+      # `platform-tools` 要显式写出来：这个 input 会**覆盖** action 的默认值
+      # （默认是 `tools platform-tools`），不写就没有 adb。
+      # setup-android 还会装上 cmdline-tools（内含 apkanalyzer），
+      # 后面的产物校验步骤要用它 —— 它不受这个 input 影响。
+      - name: 装 Android SDK（platforms;android-37.0 / build-tools;37.0.0）
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-37.0 build-tools;37.0.0 platform-tools'
+
+      # 三个任务，各自防一件事。任务名已用 `./gradlew tasks --all` 在本仓库核对过。
+      #   :core:test          契约层单测。:core 是纯 Kotlin/JVM、不依赖 Android，
+      #                       所以它必须能脱离设备、脱离真机稳定跑 —— 这是契约层
+      #                       存在的意义之一。新特性的纯逻辑用例补在 core/src/test/。
+      #   :app:assembleDebug  LSPosed 平时装的就是 debug 包，必须能出。
+      #   :app:assembleRelease release 走 R8。**这一步不能省**：混淆规则配错时
+      #                       debug 永远是好的，问题只在 release 出现。而且
+      #                       release 才是产物校验的输入。
+      - name: 构建与测试
+        run: ./gradlew --no-daemon --stacktrace :core:test :app:assembleDebug :app:assembleRelease
+
+      # 产物校验：脚本里每一条都对应一种「构建绿了但模块装上没用」的故障。
+      # 构建成功 ≠ 模块可用，这一层是专门补那个缺口的。
+      - name: 产物校验（xposed 元数据 / dex 预算 / 入口类）
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?ANDROID_HOME 未设置，setup-android 没生效}"
+
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::没找到 release APK：$APK"
+            exit 1
+          fi
+          echo "release APK: $APK（$(stat -c%s "$APK") bytes）"
+
+          # --- 定位 apkanalyzer ---------------------------------------
+          # 不能写死 $ANDROID_HOME/cmdline-tools/latest/bin：setup-android 是按
+          # 版本号建目录的（如 cmdline-tools/20.0/bin），"latest" 这个名字只在
+          # 手工装过 SDK 的机器上才存在。所以先试 latest，再回退到版本号目录。
+          AA=""
+          if [ -x "${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer" ]; then
+            AA="${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer"
+          else
+            AA="$(ls -d "${ANDROID_HOME}"/cmdline-tools/*/bin/apkanalyzer 2>/dev/null | sort -V | tail -n1 || true)"
+          fi
+          if [ -z "$AA" ] || [ ! -x "$AA" ]; then
+            echo "::error::找不到 apkanalyzer（$ANDROID_HOME/cmdline-tools 下有：$(ls "${ANDROID_HOME}/cmdline-tools" 2>/dev/null | tr '\n' ' ')）"
+            exit 1
+          fi
+          echo "apkanalyzer: $AA"
+
+          PKG_ENTRIES="$(unzip -Z1 "$APK")"
+
+          # === 校验 1：META-INF/xposed/ 必须真的进包 =====================
+          # 防的是「资源收缩 / 打包配置把元数据吃了」。模块的 json 元数据
+          # 没有任何代码引用它，收缩器看不见引用者，最容易被误删。
+          # 症状是模块装上后 LSPosed 里根本看不到，或者看到了但永远不加载。
+          # 注意 module.prop 里的 description= 是无效键，
+          # 这里只校验文件存在，不校验它写了什么。
+          for f in META-INF/xposed/module.prop META-INF/xposed/java_init.list; do
+            if ! grep -qxF "$f" <<<"$PKG_ENTRIES"; then
+              echo "::error::$f 不在 release APK 里 —— 模块会被 LSPosed 当成普通 APK 忽略"
+              exit 1
+            fi
+            echo "OK   $f 已进包"
+          done
+
+          # === 校验 2：dex 总体积预算 6MB ==============================
+          # 为什么需要这个预算（不是「包大一点」那么轻）：
+          # 模块 APK 的 classes.dex 会被 LSPosed 注入并被 **mmap 进每一个 scope 进程**。
+          # 本仓库 scope.list 含 `system`，也就是 system_server —— 于是这份 dex
+          # 的页会被压进系统最核心进程的地址空间与页缓存里。dex 大多少，
+          # 每个被注入的进程就多背多少，这是拿系统内存换的。
+          # 真实教训：没开 R8 时全量 Compose + MiuiX 是 32.3MB dex；开 R8 后 2.08MB
+          # （commit 6057f37）。6MB 的量级是「R8 确实生效 + 又加了一两个新依赖」，
+          # 一旦越过它，基本只有两种原因：要么 proguard 规则被改坏导致混淆失效，
+          # 要么有人把大块库（典型是 material-icons-extended）引进了 :ui。
+          # 两种都该在合并前拦住。
+          DEX_BYTES="$(unzip -l "$APK" | awk '$NF ~ /\.dex$/ { s += $1 } END { print s + 0 }')"
+          DEX_BUDGET=$((6 * 1024 * 1024))
+          echo "dex 总体积：${DEX_BYTES} bytes（$(awk -v b="$DEX_BYTES" 'BEGIN { printf "%.2f", b/1048576 }') MB），预算 ${DEX_BUDGET} bytes（6 MB）"
+          if [ "$DEX_BYTES" -gt "$DEX_BUDGET" ]; then
+            echo "::error::dex 超预算 ${DEX_BYTES} > ${DEX_BUDGET}。先确认 R8 还在生效（isMinifyEnabled / proguard-rules.pro），再查是不是新引了大依赖。"
+            exit 1
+          fi
+
+          # === 校验 3：java_init.list 声明的入口类确实存在于 dex 中 ======
+          # 防的是最隐蔽的一种失败：R8 改了入口类名，而 java_init.list 里还是
+          # 旧名字。表现是模块能在 LSPosed 里勾选、scope 也配好了，但类永远
+          # 加载不到 —— 日志里什么都不打，看起来像「功能没实现」。
+          # 本仓库的做法是用 -keep 保住 HookEntry 原名（不用
+          # -adaptresourcefilecontents），所以「list 里的字符串」必须与
+          # 「dex 里的类名」逐字相等。这条断言就是在守这个不变式。
+          # apkanalyzer 输出格式：C d <methods> <fields> <bytes> <FQCN>，
+          # 类行的最后一个字段就是全限定类名，所以按 $1=="C" && $NF==名字 精确匹配。
+          TMP="${RUNNER_TEMP:-/tmp}"
+          INIT_LIST="$(unzip -p "$APK" META-INF/xposed/java_init.list | tr -d '\r')"
+          echo "java_init.list 内容："
+          echo "$INIT_LIST"
+
+          "$AA" dex packages "$APK" > "$TMP/dex-packages.txt"
+          echo "apkanalyzer dex packages 输出 $(wc -l < "$TMP/dex-packages.txt") 行"
+
+          FOUND=0
+          while IFS= read -r cls; do
+            cls="$(echo "$cls" | tr -d '[:space:]')"
+            [ -z "$cls" ] && continue
+            case "$cls" in
+              \#*) echo "warn 跳过注释行：$cls"; continue ;;
+            esac
+            if awk -v c="$cls" '$1 == "C" && $NF == c { found = 1 } END { exit !found }' "$TMP/dex-packages.txt"; then
+              echo "OK   入口类在 dex 中：$cls"
+              FOUND=$((FOUND + 1))
+            else
+              echo "::error::java_init.list 声明的入口类 $cls 不在 dex 里 —— 模块会「装上了但不生效」"
+              exit 1
+            fi
+          done <<< "$INIT_LIST"
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::error::java_init.list 里没有任何入口类，模块加载不起来"
+            exit 1
+          fi
+          echo "产物校验通过：$FOUND 个入口类全部命中。"
+
+      # 校验通过的 release APK 留一份，方便在设备上手工验证时不用重新构建。
+      - name: 上传 release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      # 失败时把构建报告一并留档 —— 这一步在 ubuntu runner 上排 Kotlin/AGP
+      # 的编译错误时很省时间。
+      - name: 上传构建报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            **/build/reports/**
+            **/build/outputs/logs/**
+          if-no-files-found: ignore
+          retention-days: 7

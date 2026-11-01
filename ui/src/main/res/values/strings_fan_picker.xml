@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  扇形小窗「选择应用」页的文案。
+
+  ⚠️ 单独一个文件，不是随手写的：`strings.xml` 由另一个协作者同时改着，
+  两边往同一个文件里加行只会在合并时互相覆盖（而且两边的构建都是过的，没有任何提示）。
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt），所以这里的
+  `fan_picker_index_title` 在代码里是 `fpString("fan.picker.index.title")`。
+
+  文案规则：标题 ≤ 6 字、说明 ≤ 20 字、不写「为什么」、不写实现细节。
+-->
+<resources>
+    <!-- 字母索引条的无障碍名。它只有手势、没有可见的按钮，不给名字读屏用户就完全不知道那是什么。 -->
+    <string name="fan_picker_index_title">字母索引</string>
+</resources>

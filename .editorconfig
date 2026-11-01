@@ -1,0 +1,84 @@
+# EditorConfig —— https://editorconfig.org
+#
+# 这份配置是给编辑器看的，用来保证任何人写出来的文件在仓库里是同一副样子，
+# diff 里不会出现「整文件重写」这种噪音。
+#
+# ⚠️ 它**不能**和仓库根的 .gitattributes 冲突。两者的分工：
+#   .gitattributes  -> 告诉 git 怎么存（入库时的换行）
+#   .editorconfig   -> 告诉编辑器怎么存（落盘时的换行）
+# 两者必须一致，否则会出现「编辑器写 CRLF / git 存 LF」的反复拉扯。
+# 当前 .gitattributes 的规则是：
+#   * text=auto eol=lf      <- 默认一律 LF，所以下面 [*] 也是 lf
+#   *.bat text eol=crlf     <- 批处理例外，所以下面 [*.{bat,cmd}] 也是 crlf
+
+root = true
+
+# ---------------------------------------------------------------- 全局默认
+[*]
+# utf-8（不带 BOM）。要带 BOM 得显式写 utf-8-bom，这里刻意不写。
+charset = utf-8
+# 与 .gitattributes 的 `* text=auto eol=lf` 对齐。
+end_of_line = lf
+# 文件末尾保留换行 —— 与 .gitattributes 同为全仓库默认，
+# 同时也能避开「No newline at end of file」这类无意义 diff。
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------- 源码
+# Kotlin 与 Java 一律 4 空格。
+# .kts 是 Gradle Kotlin DSL，跟 .kt 同规则。
+[*.{kt,kts,java}]
+indent_size = 4
+
+# ---------------------------------------------------------------- 数据/配置
+# YAML 与 JSON 用 2 空格。
+# 覆盖 .github/workflows/*.yml、tools/*.json、research 下的配置等。
+[*.{yml,yaml,json,jsonc}]
+indent_size = 2
+
+# TOML 惯例 2 空格。gradle/libs.versions.toml 是版本号的唯一来源。
+[*.toml]
+indent_size = 2
+
+# Android 资源 XML 惯例 4 空格。
+[*.xml]
+indent_size = 4
+
+# ---------------------------------------------------------------- 框架元数据
+# 这三个文件是 LSPosed 直接读的纯文本：
+#   app/src/main/resources/META-INF/xposed/java_init.list  入口类 FQCN，一行一个
+#   app/src/main/resources/META-INF/xposed/scope.list      作用域包名，一行一个
+#   app/src/main/resources/META-INF/xposed/module.prop     Properties 格式
+# 它们没有任何构建期校验，格式必须保持稳定：LF、末尾有换行、不带 BOM。
+# 显式写出来是为了让改这几个文件的人知道别乱动换行。
+[*.list]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+
+[module.prop]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+# ---------------------------------------------------------------- 平台例外
+# 与 .gitattributes 的 `*.bat text eol=crlf` 对齐：批处理必须是 CRLF，
+# 否则在某些环境下 cmd 解析会出问题。
+[*.{bat,cmd}]
+end_of_line = crlf
+
+# ---------------------------------------------------------------- 文档
+# Markdown 用行尾两个空格表示硬换行，所以这里必须关掉去尾空格。
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+
+# ---------------------------------------------------------------- 生成物
+# 构建输出、取证产物（research/ 已 gitignore）不参与任何风格约束，
+# 免得编辑器去「整理」第三方内容。
+[{build/**,**/build/**,research/**}]
+insert_final_newline = false
+trim_trailing_whitespace = false

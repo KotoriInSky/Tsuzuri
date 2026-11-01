@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「图标包选择页」与「从图标包里挑一张图」两页的**新增**文案（本次改动专用）。
+
+  为什么单独一个文件：同一份 strings.xml 由多个人同时改必然互相覆盖，而且两边的构建
+  都是过的（见 strings_fan_shortcut.xml 顶部那条理由）。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。
+
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字；只说「是什么 / 做什么」；
+  不写「为什么」、不写实施细节、不用括号补第二句。需要长解释时写进代码注释。
+-->
+<resources>
+
+    <!-- ── 图标包选择页────────────────────────────────
+         包名只用于存储与排障，界面上显示应用名（AppNames 负责解析）。 -->
+    <!-- 「正在读取名称」这一帧必须与「读取失败（显示包名）」分开：读名字要跨进程，
+         是一段真实的等待；而读不到时显示包名是对的 —— 把两者画成同一种样子，
+         用户看到的都是「这里怎么是个包名」（AppNames 的 KDoc 写了理由） -->
+    <string name="icon_pack_current_loading">当前：正在读取名称</string>
+    <string name="icon_pack_preview_loading">正在读取名称</string>
+    <!-- 清单为空时左侧画的是「图标包自己的图标」，不是预览 —— 不说清就会以为预览坏了 -->
+    <string name="icon_pack_preview_none">清单为空，预览用图标包自己的图标</string>
+    <!-- 行的副标题：说明左边那张预览图在讲什么（原来显示的是裸包名） -->
+    <string name="icon_pack_row_effect">套在「%1$s」上的效果</string>
+
+    <!-- ── 从图标包里挑一张图──────────────────────────── -->
+    <string name="icon_pack_pick_search_hint">搜应用名、包名或图标名</string>
+    <!-- 两段的段标题，都带数量：段收起来之后数量是「这里有东西」的唯一线索（§9.0 第 1 条） -->
+    <string name="icon_pack_pick_section_matched">匹配到的 %1$d 个</string>
+    <string name="icon_pack_pick_section_other">包内其他 %1$d 个</string>
+    <!-- 固定状态行：说明这一页有多少张可借、当前筛选命中多少（§9.0 第 1 条） -->
+    <string name="icon_pack_pick_status_pool">共 %1$d 张图标可选</string>
+    <string name="icon_pack_pick_status_match">匹配 %1$d 张</string>
+    <!-- 手输图标名：候选里没有命中时，去包里查这个名字到底有没有那张图 -->
+    <string name="icon_pack_pick_manual_checking">正在查包里有没有这张图</string>
+    <string name="icon_pack_pick_manual_missing">包里没有「%1$s」</string>
+    <string name="icon_pack_pick_no_match">没有匹配的图标</string>
+    <string name="icon_pack_pick_no_match_hint">可换关键词，或直接输入图标名</string>
+
+</resources>

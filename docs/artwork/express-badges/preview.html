@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>快递徽标预览</title>
+<style>
+  :root {
+    --page: #050505;
+    --card: #111111;
+    --text: #F2F2F2;
+    --muted: #8E8E93;
+    --line: #232323;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px;
+    background: var(--page); color: var(--text);
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 32px 0 12px; color: var(--muted); font-weight: 600; }
+  p.note { color: var(--muted); font-size: 13px; margin: 0; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; }
+  .tile { background: var(--card); border-radius: 20px; padding: 16px; text-align: center; border: 1px solid var(--line); }
+  .tile svg { width: 100%; max-width: 224px; height: auto; display: block; margin: 0 auto; }
+  .tile .name { margin-top: 10px; font-size: 14px; font-weight: 600; }
+  .tile .meta { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: ui-monospace, Consolas, monospace; }
+  .row { background: var(--card); border-radius: 20px; padding: 16px; display: flex; flex-wrap: wrap; gap: 12px; border: 1px solid var(--line); }
+  .row svg { width: 56px; height: 56px; display: block; }
+  .islands { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .island { background: var(--card); border-radius: 28px; padding: 14px 18px 14px 14px; display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); }
+  .cover { position: relative; width: 56px; height: 56px; flex: none; }
+  .cover svg { width: 56px; height: 56px; display: block; }
+  .cover .app {
+    position: absolute; top: -5px; right: -5px; width: 20px; height: 20px; border-radius: 6px;
+    background: #3A3A3C; border: 2px solid var(--card); color: #D1D1D6;
+    font-size: 8px; line-height: 16px; text-align: center; font-weight: 700;
+  }
+  .island .t { font-size: 17px; font-weight: 700; }
+  .island .s { font-size: 13px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; margin-top: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>快递岛 · 承运商自绘徽标</h1>
+  <p class="note">
+    与 <code>hook/.../ExpressBadgePainter.kt</code> 按同一份几何数据绘制（下面脚本里 SPEC 段由
+    <code>core</code> 单测逐字核对）。方图 224px，扁平风格（纯色底、无渐变投影），圆角 = 宽 × 0.25；底色接近黑（#111），模拟超级岛展开态。
+    右上角灰色小标是「负责打开的 App」占位，不是徽标的一部分。
+  </p>
+
+  <h2>224px 原尺寸</h2>
+  <div class="grid" id="big"></div>
+
+  <h2>56px（岛上实际显示大小）</h2>
+  <div class="row" id="small"></div>
+
+  <h2>岛上效果</h2>
+  <div class="islands" id="islands"></div>
+</main>
+
+<script>
+const SPEC = /*SPEC-BEGIN*/{"style":{"GRID":24.0,"CORNER":0.25,"GLYPH_SPAN":0.58,"DOT_ON":0.01},
+"glyphs":{
+  "CHEVRONS":[{"k":"p","d":"M4.5 6 L9.5 12 L4.5 18","role":"FG","fill":false,"sw":2.2,"a":0.35,"dot":0.0},{"k":"p","d":"M9.5 6 L14.5 12 L9.5 18","role":"FG","fill":false,"sw":2.2,"a":0.65,"dot":0.0},{"k":"p","d":"M14.5 6 L19.5 12 L14.5 18","role":"ACCENT","fill":false,"sw":2.2,"a":1.0,"dot":0.0}],
+  "ORBIT":[{"k":"c","cx":12.0,"cy":12.0,"r":7.5,"role":"FG","fill":false,"sw":2.2,"a":0.3,"dot":0.0},{"k":"p","d":"M12 4.5 C16.142 4.5 19.5 7.858 19.5 12 C19.5 16.142 16.142 19.5 12 19.5 C7.858 19.5 4.5 16.142 4.5 12","role":"FG","fill":false,"sw":2.2,"a":1.0,"dot":0.0},{"k":"c","cx":4.5,"cy":12.0,"r":2.6,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":12.0,"cy":12.0,"r":2.0,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "BOLT":[{"k":"p","d":"M13.6 2.8 L5.6 13.4 L11.4 13.4 L10.2 21.2 L18.4 10 L12.6 10 Z","role":"FG","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"c","cx":18.6,"cy":17.6,"r":1.7,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.6,"cy":6.4,"r":1.1,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "CUBE":[{"k":"p","d":"M12 3.75 L19.5 8 L12 12.25 L4.5 8 Z","role":"ACCENT","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"p","d":"M4.5 8.9 L11.4 12.8 L11.4 20.6 L4.5 16.7 Z","role":"FG","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"p","d":"M19.5 8.9 L19.5 16.7 L12.6 20.6 L12.6 12.8 Z","role":"FG","fill":true,"sw":1.2,"a":0.65,"dot":0.0}],
+  "WAREHOUSE":[{"k":"p","d":"M2.8 10.6 L12 5 L21.2 10.6 L21.2 19.6 L2.8 19.6 Z","role":"FG","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"r","x":6.8,"y":12.0,"w":10.4,"h":9.0,"rx":0.8,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"p","d":"M8.6 14.2 L15.4 14.2","role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"p","d":"M8.6 16.6 L15.4 16.6","role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"p","d":"M8.6 19 L15.4 19","role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0}],
+  "ENVELOPE":[{"k":"r","x":3.0,"y":6.0,"w":18.0,"h":13.0,"rx":2.4,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"p","d":"M4.8 7.8 L12 13 L19.2 7.8","role":"CUT","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"c","cx":12.0,"cy":13.4,"r":2.2,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "STAMP":[{"k":"r","x":5.5,"y":4.0,"w":13.0,"h":16.0,"rx":0.6,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.5,"cy":5.75,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":18.5,"cy":5.75,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.5,"cy":8.25,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":18.5,"cy":8.25,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.5,"cy":10.75,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":18.5,"cy":10.75,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.5,"cy":13.25,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":18.5,"cy":13.25,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.5,"cy":15.75,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":18.5,"cy":15.75,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":5.5,"cy":18.25,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":18.5,"cy":18.25,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":8.25,"cy":4.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":8.25,"cy":20.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":10.75,"cy":4.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":10.75,"cy":20.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":13.25,"cy":4.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":13.25,"cy":20.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":15.75,"cy":4.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":15.75,"cy":20.0,"r":0.85,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":12.0,"cy":10.6,"r":2.5,"role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"p","d":"M8.8 15 C10 14.1 11 15.9 12.2 15 C13.4 14.1 14.4 15.9 15.4 15","role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0}],
+  "MAILBOX":[{"k":"p","d":"M4 20 L4 12 C4 8.686 6.686 6 10 6 L14 6 C17.314 6 20 8.686 20 12 L20 20 Z","role":"FG","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"r","x":7.0,"y":11.3,"w":7.0,"h":1.4,"rx":0.7,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"r","x":15.6,"y":3.0,"w":1.8,"h":11.0,"rx":0.9,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"r","x":16.0,"y":3.4,"w":1.0,"h":10.0,"rx":0.5,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"r","x":16.0,"y":3.4,"w":5.0,"h":3.4,"rx":0.8,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "PARCEL":[{"k":"r","x":3.0,"y":4.5,"w":18.0,"h":5.0,"rx":1.6,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"r","x":4.5,"y":10.7,"w":15.0,"h":9.3,"rx":1.6,"role":"FG","fill":true,"sw":0.0,"a":0.8,"dot":0.0},{"k":"r","x":10.3,"y":4.5,"w":3.4,"h":15.5,"rx":0.6,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"r","x":6.5,"y":15.2,"w":2.6,"h":2.6,"rx":0.5,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "GLOBE":[{"k":"c","cx":12.0,"cy":12.5,"r":7.6,"role":"FG","fill":false,"sw":2.2,"a":1.0,"dot":0.0},{"k":"p","d":"M12 4.9 C14.1 4.9 15.7 8.3 15.7 12.5 C15.7 16.7 14.1 20.1 12 20.1 C9.9 20.1 8.3 16.7 8.3 12.5 C8.3 8.3 9.9 4.9 12 4.9 Z","role":"FG","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"p","d":"M4.4 12.5 L19.6 12.5","role":"FG","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"c","cx":19.6,"cy":4.6,"r":1.9,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "ROUTE":[{"k":"c","cx":6.0,"cy":18.0,"r":2.4,"role":"FG","fill":false,"sw":2.2,"a":1.0,"dot":0.0},{"k":"p","d":"M8.3 15.9 C12.5 12.5 7.5 8.5 13.6 7","role":"FG","fill":false,"sw":2.2,"a":1.0,"dot":2.4},{"k":"c","cx":17.8,"cy":6.2,"r":3.3,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":17.8,"cy":6.2,"r":1.2,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "CONVEYOR":[{"k":"r","x":7.0,"y":4.0,"w":10.0,"h":9.2,"rx":1.4,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"p","d":"M12 4 L12 7.8","role":"CUT","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"r","x":3.0,"y":15.2,"w":18.0,"h":4.6,"rx":2.3,"role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0},{"k":"c","cx":6.6,"cy":17.5,"r":0.95,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":12.0,"cy":17.5,"r":0.95,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":17.4,"cy":17.5,"r":0.95,"role":"ACCENT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "CLOUD":[{"k":"c","cx":8.8,"cy":12.6,"r":3.6,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":13.4,"cy":10.4,"r":4.6,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"c","cx":17.2,"cy":13.4,"r":3.0,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"r","x":5.6,"y":12.4,"w":14.6,"h":4.8,"rx":2.4,"role":"FG","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"p","d":"M5.2 20.4 C9 18.9 13 21.1 18.8 19.4","role":"ACCENT","fill":false,"sw":1.4,"a":1.0,"dot":0.0}],
+  "COMPASS":[{"k":"c","cx":12.0,"cy":12.0,"r":8.4,"role":"FG","fill":false,"sw":1.4,"a":0.35,"dot":0.0},{"k":"p","d":"M12 3 L14.1 9.9 L21 12 L14.1 14.1 L12 21 L9.9 14.1 L3 12 L9.9 9.9 Z","role":"FG","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"p","d":"M12 3 L14.1 9.9 L12 12 L9.9 9.9 Z","role":"ACCENT","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"c","cx":12.0,"cy":12.0,"r":1.5,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0}],
+  "TAG":[{"k":"p","d":"M11 3.5 L19 3.5 C19.828 3.5 20.5 4.172 20.5 5 L20.5 13 L12 21.5 L2.5 12 Z","role":"FG","fill":true,"sw":1.2,"a":1.0,"dot":0.0},{"k":"c","cx":16.2,"cy":7.8,"r":1.8,"role":"CUT","fill":true,"sw":0.0,"a":1.0,"dot":0.0},{"k":"p","d":"M8 12.5 L11.5 16","role":"CUT","fill":false,"sw":1.4,"a":1.0,"dot":0.0}]
+},
+"badges":[
+  {"carrier":"顺丰速运","text":"顺","bg":"#3A3A3C","fg":"#FFFFFF","accent":"#FFFFFF","glyph":"CHEVRONS"},
+  {"carrier":"圆通速递","text":"圆","bg":"#6A2C91","fg":"#FFFFFF","accent":"#FFC94D","glyph":"ORBIT"},
+  {"carrier":"极兔速递","text":"极","bg":"#E60012","fg":"#FFFFFF","accent":"#FFE08A","glyph":"BOLT"},
+  {"carrier":"德邦快递","text":"德","bg":"#0B4EA2","fg":"#FFFFFF","accent":"#FFC20E","glyph":"CUBE"},
+  {"carrier":"京东物流","text":"京","bg":"#E1251B","fg":"#FFFFFF","accent":"#FFFFFF","glyph":"WAREHOUSE"},
+  {"carrier":"中国邮政","text":"邮","bg":"#00703C","fg":"#FFFFFF","accent":"#FFC92E","glyph":"ENVELOPE"},
+  {"carrier":"香港邮政","text":"邮","bg":"#00703C","fg":"#FFFFFF","accent":"#FFC92E","glyph":"ENVELOPE"},
+  {"carrier":"中华邮政","text":"邮","bg":"#00703C","fg":"#FFFFFF","accent":"#FFC92E","glyph":"ENVELOPE"},
+  {"carrier":"澳门邮政","text":"邮","bg":"#00703C","fg":"#FFFFFF","accent":"#FFC92E","glyph":"ENVELOPE"},
+  {"carrier":"日本邮便","text":"〒","bg":"#D7102A","fg":"#FFFFFF","accent":"#D7102A","glyph":"STAMP"},
+  {"carrier":"美国邮政","text":"USPS","bg":"#333366","fg":"#FFFFFF","accent":"#FF4D5E","glyph":"MAILBOX"},
+  {"carrier":"UPS","text":"UPS","bg":"#5C3A26","fg":"#F4E9DC","accent":"#FFB500","glyph":"PARCEL"},
+  {"carrier":"DHL","text":"DHL","bg":"#FFCC00","fg":"#D40511","accent":"#D40511","glyph":"GLOBE"},
+  {"carrier":"FedEx","text":"FedEx","bg":"#4D148C","fg":"#FFFFFF","accent":"#FF6200","glyph":"ROUTE"},
+  {"carrier":"亚马逊物流","text":"亚","bg":"#33425A","fg":"#FFFFFF","accent":"#FF9900","glyph":"CONVEYOR"},
+  {"carrier":"云途物流","text":"云","bg":"#1E5CB3","fg":"#FFFFFF","accent":"#8FD8FF","glyph":"CLOUD"},
+  {"carrier":"国际件","text":"国际","bg":"#0F7F86","fg":"#FFFFFF","accent":"#FFE08A","glyph":"COMPASS"},
+  {"carrier":"通用","text":"快","bg":"#5B7CFF","fg":"#FFFFFF","accent":"#FFFFFF","glyph":"TAG"}
+]}/*SPEC-END*/;
+
+const SAMPLES = {
+  "顺丰速运": "SF1382024591123", "圆通速递": "YT1234567890123", "极兔速递": "JT1234567890123",
+  "德邦快递": "DPK1234567890", "京东物流": "JDX1234567890123", "中国邮政": "RA123456785CN",
+  "香港邮政": "RA123456785HK", "中华邮政": "RA123456785TW", "澳门邮政": "RA123456785MO",
+  "日本邮便": "RA123456785JP", "美国邮政": "9400111899223344556677", "UPS": "1Z5R89390357567127",
+  "DHL": "JJD0099999999", "FedEx": "123456789012", "亚马逊物流": "TBA000000000000",
+  "云途物流": "YT2229521272164446", "国际件": "LX123456789CN", "通用": "773312345678901",
+};
+
+const S = 224;
+const NS = "http://www.w3.org/2000/svg";
+let uid = 0;
+
+function el(name, attrs, kids) {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  (kids || []).forEach(k => e.appendChild(k));
+  return e;
+}
+
+// 一个部件 → SVG 元素（坐标在 24 网格里，外层 group 负责放大）
+function markEl(m, color) {
+  let e;
+  if (m.k === "p") e = el("path", { d: m.d });
+  else if (m.k === "c") e = el("circle", { cx: m.cx, cy: m.cy, r: m.r });
+  else e = el("rect", { x: m.x, y: m.y, width: m.w, height: m.h, rx: m.rx, ry: m.rx });
+  e.setAttribute("fill", m.fill ? color : "none");
+  if (m.sw > 0) {
+    e.setAttribute("stroke", color);
+    e.setAttribute("stroke-width", m.sw);
+    e.setAttribute("stroke-linecap", "round");
+    e.setAttribute("stroke-linejoin", "round");
+  }
+  if (m.dot > 0) e.setAttribute("stroke-dasharray", SPEC.style.DOT_ON + " " + m.dot);
+  if (m.a < 1) e.setAttribute("opacity", m.a);
+  return e;
+}
+
+// 按顺序画部件；CUT 擦掉它**之前**画过的内容（= Android 的 DST_OUT），用嵌套 mask 实现
+function glyphGroup(badge, defs, p) {
+  let content = el("g", {});
+  for (const m of SPEC.glyphs[badge.glyph]) {
+    if (m.role === "CUT") {
+      const id = p + "m" + (uid++);
+      const cut = markEl(m, "#000");
+      cut.removeAttribute("opacity");
+      defs.appendChild(el("mask", { id, maskUnits: "userSpaceOnUse", x: -4, y: -4, width: 32, height: 32 }, [
+        el("rect", { x: -4, y: -4, width: 32, height: 32, fill: "#fff" }), cut,
+      ]));
+      // 外面再包一层不带 mask 的 g：后面的部件画在 mask 之外，不会被这次镂空擦掉
+      content = el("g", {}, [el("g", { mask: "url(#" + id + ")" }, [content])]);
+    } else {
+      content.appendChild(markEl(m, m.role === "ACCENT" ? badge.accent : badge.fg));
+    }
+  }
+  const st = SPEC.style;
+  const k = S * st.GLYPH_SPAN / st.GRID, off = S * (1 - st.GLYPH_SPAN) / 2;
+  return el("g", { transform: "translate(" + off + " " + off + ") scale(" + k + ")" }, [content]);
+}
+
+// 扁平风格：纯色圆角底 + 图形，没有渐变 / 投影 / 高光 / 描边（与 ExpressBadgePainter 一致）
+function badgeSvg(badge) {
+  const st = SPEC.style, p = "b" + (uid++) + "_";
+  const defs = el("defs", {});
+  const glyph = glyphGroup(badge, defs, p);
+  const R = S * st.CORNER;
+  return el("svg", { viewBox: "0 0 " + S + " " + S, role: "img", "aria-label": badge.carrier }, [
+    defs,
+    el("rect", { width: S, height: S, rx: R, ry: R, fill: badge.bg }),
+    glyph,
+  ]);
+}
+
+// 四地邮政共用一个徽标，大图只放一次
+const seen = new Set();
+const unique = SPEC.badges.filter(b => {
+  const key = b.glyph + b.bg;
+  if (seen.has(key)) return false;
+  seen.add(key); return true;
+});
+const big = document.getElementById("big"), small = document.getElementById("small"), isl = document.getElementById("islands");
+for (const b of unique) {
+  const posts = SPEC.badges.filter(x => x.glyph === b.glyph && x.bg === b.bg).map(x => x.carrier);
+  const tile = document.createElement("div"); tile.className = "tile";
+  tile.appendChild(badgeSvg(b));
+  tile.insertAdjacentHTML("beforeend", '<div class="name"></div><div class="meta"></div>');
+  tile.querySelector(".name").textContent = posts.join(" / ");
+  tile.querySelector(".meta").textContent = b.glyph + "  " + b.bg + " · " + b.fg + " · " + b.accent;
+  big.appendChild(tile);
+  small.appendChild(badgeSvg(b));
+}
+for (const b of SPEC.badges) {
+  const card = document.createElement("div"); card.className = "island";
+  card.innerHTML = '<div class="cover"><span class="app">App</span></div><div><div class="t"></div><div class="s"></div></div>';
+  card.querySelector(".cover").prepend(badgeSvg(b));
+  card.querySelector(".t").textContent = b.carrier === "通用" ? "快递" : b.carrier;
+  card.querySelector(".s").textContent = SAMPLES[b.carrier] || "";
+  isl.appendChild(card);
+}
+</script>
+</body>
+</html>

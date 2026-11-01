@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「桌面应用自定义」这一批（1️⃣ 哪些包算桌面 / 2️⃣ 索引里显示哪些应用 / 3️⃣ 名字与图标）的文案。
+
+  为什么单独一个文件：见 strings_fan_shortcut.xml 顶部那条理由（同一份 strings.xml
+  由多人同时改必然互相覆盖，而且两边的构建都是过的）。
+
+  资源名 = i18n 键里把点换成下划线（见 ui/.../Strings.kt）。
+
+  文案规则：标题是名词短语、≤ 6 字；说明 ≤ 20 字；只说「是什么 / 做什么」；
+  不写「为什么」、不写实施细节、不用括号补第二句。
+
+  这一组文案的用途有三个，分开写、不合并：
+   1. 参数行（Catalog 里的 labelKey / hintKey）—— 一句说清这个开关管什么；
+   2. 选择页的状态条 —— 选了几个、少于下限时会怎样（§9.0 第 5 条：防错优先于报错）；
+   3. 覆盖页的状态 —— 这一项改没改过、当前用的是哪一层图标（第 1 条：状态可见）。
+-->
+<resources>
+
+    <!-- ── 1️⃣ 哪些包算桌面 ──────────────────────────────────────── -->
+    <!-- 标题 5 字；说明 12 字。不写「为什么换桌面要重新勾」——那是注释里的事。 -->
+    <string name="pref_side_index_launcher_packages">桌面应用</string>
+    <string name="pref_side_index_launcher_packages_hint">用第三方桌面时选择</string>
+
+    <!-- ── 2️⃣ 索引里显示哪些应用 ────────────────────────────────── -->
+    <string name="pref_side_index_index_filter_mode">索引范围</string>
+    <string name="pref_side_index_index_filter_mode_all">全部应用</string>
+    <string name="pref_side_index_index_filter_mode_exclude">排除所选</string>
+    <string name="pref_side_index_index_filter_mode_include">仅显示所选</string>
+    <string name="pref_side_index_index_filter_packages">所选应用</string>
+
+    <!-- ── 3️⃣ 名字与图标 ───────────────────────────────────────── -->
+    <string name="pref_side_index_name_overrides">应用名称与图标</string>
+    <string name="pref_side_index_name_overrides_hint">给单个应用改名字或换图标</string>
+
+    <!-- ── 应用多选页（1️⃣/2️⃣ 共用）────────────────────────────── -->
+    <string name="app_list_selected_count">已选 %1$d 个</string>
+    <string name="app_list_below_min">少于 1 个时按默认</string>
+
+    <!-- ── 覆盖页（3️⃣）────────────────────────────────────────── -->
+    <string name="side_index_override_intro">仅修改侧滑面板内的显示</string>
+    <string name="side_index_override_no_pack">请先选择图标包</string>
+    <string name="side_index_override_changed">已修改</string>
+    <string name="side_index_override_name">应用名称</string>
+    <string name="side_index_override_name_hint">使用原始应用名称</string>
+    <string name="side_index_override_name_current">当前：%1$s</string>
+    <string name="side_index_override_name_placeholder">输入显示名称</string>
+    <string name="side_index_override_name_save">保存</string>
+    <string name="side_index_override_name_reset">恢复原名</string>
+    <string name="side_index_override_name_saved">名称已保存</string>
+    <string name="side_index_override_reset_all">恢复本项默认</string>
+
+</resources>

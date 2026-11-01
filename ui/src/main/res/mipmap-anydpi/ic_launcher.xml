@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tsuzuri 自适应图标（Android 8.0+ / HyperOS）。
+
+  三层各自的取舍：
+
+  1) background —— 位图纯色层。用 @mipmap/ic_launcher_background，
+     色值是从源图内部采样出来的 #111C32。
+     为什么不用 @color/：前景是**位图**，它自带那层深蓝底改不了色；
+     如果背景跟着系统动态色（system_accent1_*）变成粉/绿，就会和前景的深蓝底
+     撞色。等前景哪天换成矢量，把这一行换成 system_accent1_* 就能跟随壁纸。
+
+  2) foreground —— 位图（各密度 PNG，由 tools/make_icon_from_bitmap.py 生成）。
+     源图是手工绘制的一张图。这里有一个**必须做**的预处理：抠掉源图自带的
+     圆角方形底色，只留「圆盘 + 方块 + 红丝带」的主体，占 108dp 画布的 48%。
+     不抠的话，源图那层方底色会跟着一起缩小，在深色背景上浮出一个
+     "方形套方形"的接缝 —— 实测踩到过，48px 下尤其脏。
+
+  3) monochrome —— 保留矢量版（@drawable/ic_launcher_monochrome）。
+     主题图标下系统会把这一层整体染色，位图的红色会被染色规则吃掉；
+     矢量单色层靠"镂空"表达结构，反而读得对。
+
+  ⚠️ 改动本文件时，ic_launcher_round.xml 必须同步 —— 两份不同步会让
+     方形/圆形图标长得不一样。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

@@ -1,0 +1,68 @@
+[versions]
+# 模块自身的版本号 —— **唯一来源**。
+# :app 的 versionName / versionCode 与 :ui 的 BuildConfig.MODULE_VERSION 都从这个值取，
+# 任何 build 文件里都**不许**再写第二份版本字面量：一旦有两份，用户截图里的版本
+# 就可能和 APK 里的不一致，排障时误导人，而且没人会发现漂移。
+# 改版本号只改这一行；versionCode 由它推出来（规则见 app/build.gradle.kts）：0.1.0 → 100。
+tsuzuri = "0.1.0"
+
+agp = "9.3.1"
+kotlin = "2.4.10"   # 由 AGP 9 内置的 Kotlin 支持使用；不再单独引 kotlin-android 插件
+libxposed = "102.0.0"
+libxposedService = "102.0.0"
+miuix = "0.9.4"
+composeBom = "2026.09.00"
+activityCompose = "1.13.0"
+coreKtx = "1.19.0"
+# M3 完整取色（HCT 色调盘）。**刻意只引最底层的算法库，不引 material-kolor**：
+# 后者是 Compose Multiplatform 库（依赖 org.jetbrains.compose.material3），
+# 和本项目用的 AndroidX Compose 不是同一条线，混进来会把 M3 组件的版本拉偏。
+# 而 material-color-utilities 是纯算法，零 UI 依赖（只依赖 kotlin-stdlib），
+# 结果由我们自己的代码映射成 androidx 的 ColorScheme —— 边界清楚。
+materialColorUtilities = "5.0.1"
+# instrumentation 测试（Kit 契约测试双跑）—— 只用稳定版，避免把预览/测试依赖带进 APK
+androidxTestJunit = "1.2.1"
+androidxTestRunner = "1.6.2"
+# 液态玻璃：Kyant Backdrop（Compose 多平台，Maven Central 可直连）。
+# 不要用 QWEA0/Liquid-Glass-Android —— 那是 View 体系，其 README 明确让 Compose 项目改用这个。
+backdrop = "2.0.1"
+
+[libraries]
+libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposed" }
+# 设置界面侧写配置用（hook 侧不需要）
+libxposed-service = { module = "io.github.libxposed:service", version.ref = "libxposedService" }
+
+# 双风格前端：Material 3 走 BOM，MiuiX 自带版本
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+# material3 1.4 起不再传递依赖图标库，Icons.Filled.* 必须自己引，
+# 否则 Unresolved reference 'icons'。只引 core（不用 extended，那个会给 APK 加几 MB dex）。
+compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+
+miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui", version.ref = "miuix" }
+miuix-preference = { module = "top.yukonga.miuix.kmp:miuix-preference", version.ref = "miuix" }
+miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons", version.ref = "miuix" }
+# 页面转场 / 跟手返回：参数与 HyperOS WMShell 的 Activity 转场一致
+miuix-nav = { module = "top.yukonga.miuix.kmp:miuix-nav", version.ref = "miuix" }
+kyant-backdrop = { module = "io.github.kyant0:backdrop", version.ref = "backdrop" }
+
+# M3 完整色调盘（纯 HCT 算法，不含 UI）—— 只为 :ui 的自定义取色用
+material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "materialColorUtilities" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestJunit" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
