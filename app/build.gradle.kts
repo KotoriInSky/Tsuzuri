@@ -126,6 +126,13 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+        // 测性能用：和 release 同样混淆、不可调试，但用 debug 签名，能直接覆盖装在 debug 包上。
+        // debug 包可调试，ART 会关掉不少优化，在它上面测出的掉帧不代表用户手里的版本。
+        create("profile") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
     }
 
     // java_init.list 里写的是入口类的全限定名，混淆会改类名，

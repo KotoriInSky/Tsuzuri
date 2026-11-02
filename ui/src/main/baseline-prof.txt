@@ -1,0 +1,8 @@
+# 启动配置文件：自己装 APK（不经应用商店）时没有云端配置，首次启动和首次进页面全靠解释执行，
+# 实测 debug 包 99 分位帧 300–500ms，提前编译后 16ms。profileinstaller 已经随 Compose 进来了，
+# 它只带了 Compose 自己的规则，这里补上界面代码和 miuix 组件。
+# 用通配而不是逐方法录制：界面代码整块都在启动和翻页路径上，录制要另建 macrobenchmark 模块，收益不抵维护。
+HSPLio/github/kotoriinsky/tsuzuri/ui/**->**(**)**
+Lio/github/kotoriinsky/tsuzuri/ui/**;
+HSPLtop/yukonga/miuix/**->**(**)**
+Ltop/yukonga/miuix/**;
