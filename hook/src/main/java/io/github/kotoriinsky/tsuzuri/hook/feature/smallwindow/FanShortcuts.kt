@@ -602,6 +602,10 @@ internal object FanShortcuts {
 
         val opts = freeformOptions(context, target.packageName)
             ?.also { SystemUiEnv.forceLaunchNewTask(hook, it) }
+            // 与应用项、直连映射同一份摆放规则：选「系统默认」时不覆写，交给 MIUI。
+            // 快捷方式多是跳板（支付宝 1002 → 另起 Task 显示付款码），后面的 Task
+            // 由 system_server 侧的 FreeformTrampolinePlacement 沿用这一块的位置。
+            ?.also { SystemUiEnv.applyFanPlacement(hook, context, it) }
         var notAShortcut = false
 
         if (la != null) {
