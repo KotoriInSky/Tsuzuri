@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,8 +44,8 @@ import io.github.kotoriinsky.tsuzuri.ui.fpString
  *
  * ## 几何只有一份
  *
- * 画出来的每一格和「手指碰到的那一格」都由**条的实际高度等分**算出（布局用 `weight(1f)`
- * 等分，命中用 `高度 / 格数`），两者是同一个除法的结果，不可能对不上。
+ * 画出来的每一格和「手指碰到的那一格」都由**字母列的高度等分**算出（布局用 `weight(1f)`
+ * 等分，命中用 `列高 / 格数`），两者是同一个除法的结果，不可能对不上。
  * 这与 hook 侧 `AppIndex.letterAt` 是同一个算法（照搬 Appindex 的 `calculateSelectedLetter`），
  * 所以设置页和屏上索引条的**手感一致**。
  */
@@ -54,7 +54,7 @@ import io.github.kotoriinsky.tsuzuri.ui.fpString
  * 卡片右缘到屏幕边的距离（有索引条时）：条放在卡片外，开关和勾选框留在卡片里贴行尾，
  * 两者不重叠（用户 2026-10-31）。比普通卡片外边距多出的部分见 [letterBarGutter]。
  */
-val LetterBarSpace: Dp = 36.dp
+val LetterBarSpace: Dp = 28.dp
 
 /** 有索引条时卡片右侧要额外让出的宽度。 */
 @Composable
@@ -66,17 +66,17 @@ const val LetterBarMinItems: Int = 30
 /** 条到屏幕边的留白。 */
 private val BarEdgeInset: Dp = 4.dp
 
-/** 条的宽度。28dp 与 hook 侧 `AppIndex.BAR_WIDTH_DP` 一致（那是参考实现的命中列宽）。 */
-private val BarWidth: Dp = 28.dp
+/** 条的宽度。比 hook 侧 `AppIndex.BAR_WIDTH_DP`(28) 窄：设置页有卡片，条挤在卡片外，宽了会压缩卡片。 */
+private val BarWidth: Dp = 20.dp
 
-/** 单格的最大高度。与 hook 侧 `BAR_ITEM_DP`(16)+1 同量级，格数少时不会拉成一长条。 */
-private val BarSlotMax: Dp = 17.dp
+/** 单格的高度（放不下时才缩）。与 hook 侧 `BAR_ITEM_DP`(16) 及 Flyme 实测一致。 */
+private val BarSlotMax: Dp = 16.dp
 
-/** 字母的最大字号。与 hook 侧 `BAR_TEXT_DP`(12dp) 一致。 */
+/** 字母的最大字号。与 hook 侧 `BAR_TEXT_DP`(12dp) 一致：Flyme 的条窄但字不小。 */
 private val BarTextMax: Dp = 12.dp
 
-/** 字号相对格高的比例（0.72 < hook 侧那个 0.8 的上限，留点余量）。 */
-private const val BarTextRatio = 0.72f
+/** 字号相对格高的比例（0.75 < hook 侧那个 0.8 的上限；16dp 格正好 12sp）。 */
+private const val BarTextRatio = 0.75f
 
 /** 条上下留一点空，免得字母贴到卡片圆角上。 */
 private val BarVerticalInset: Dp = 8.dp
@@ -121,36 +121,44 @@ fun LetterBar(
                 .padding(vertical = BarVerticalInset)
                 .width(BarWidth)
                 .fillMaxHeight()
-                .semantics { contentDescription = title }
-                .pointerInput(letters) {
-                    awaitEachGesture {
-                        try {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            pickLetter(letters, down.position.y, size.height, onPick)
-                            down.consume()
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) break
-                                pickLetter(letters, change.position.y, size.height, onPick)
-                                change.consume()
-                            }
-                        } finally {
-                            // 手势被打断（重组换了 key、协程取消）也必须收尾，
-                            // 否则气泡会一直留在屏幕上
-                            onRelease()
-                        }
-                    }
-                },
+                .semantics { contentDescription = title },
+            contentAlignment = Alignment.Center,
         ) {
-            // 等分格高：布局用 weight(1f)、命中用 高度/格数，两者是同一个除法
-            val slot = maxHeight / letters.size
-            val slotDp = slot.value.coerceAtMost(BarSlotMax.value).coerceAtLeast(0f)
+            // 格高固定、整列竖直居中（Flyme 的做法）：拉满高度时字母之间会空得发散。
+            // 放不下时才等分可用高度，这时格高与字号一起缩。
+            val slotDp = (maxHeight / letters.size).value
+                .coerceAtMost(BarSlotMax.value).coerceAtLeast(0f)
             val style = TextStyle(
                 fontSize = (slotDp * BarTextRatio).coerceAtMost(BarTextMax.value).sp,
                 fontWeight = FontWeight.Medium,
             )
-            Column(Modifier.fillMaxSize()) {
+            // 命中挂在字母列上而不是整条：布局用 weight(1f)、命中用 列高/格数，仍是同一个除法。
+            // 拖出列外时坐标越界，由 [LetterIndex.slotAt] 夹到两端
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height((slotDp * letters.size).dp)
+                    .pointerInput(letters) {
+                        awaitEachGesture {
+                            try {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                pickLetter(letters, down.position.y, size.height, onPick)
+                                down.consume()
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    pickLetter(letters, change.position.y, size.height, onPick)
+                                    change.consume()
+                                }
+                            } finally {
+                                // 手势被打断（重组换了 key、协程取消）也必须收尾，
+                                // 否则气泡会一直留在屏幕上
+                                onRelease()
+                            }
+                        }
+                    },
+            ) {
                 letters.forEach { letter ->
                     val active = letter == activeLetter
                     Box(
