@@ -3,7 +3,8 @@ package io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow
 import android.app.ActivityOptions
 import android.content.Intent
 import android.graphics.Rect
-import android.os.SystemClock
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import io.github.kotoriinsky.tsuzuri.core.Catalog
 import io.github.kotoriinsky.tsuzuri.core.Prefs
@@ -58,6 +59,18 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * ## 崩溃面
  *
+ * ## 跳板 Task 的清理（同日第二轮真机）
+ *
+ * 位置对齐之后，跳板 Task（支付宝 `SchemeLauncherActivity`）正好压在付款码小窗底下。
+ * 它自己不画内容，屏上是 MIUI 的 Task 底色（深色模式下是黑的）；支付宝约 2 秒后才
+ * 自己 finish 它，MIUI 再给它播关闭动画。用户 2 秒内关掉付款码小窗，就会先露出一块黑底、
+ * 再看它缩小消失（logcat 13:11：Task 2254 在付款码关闭后 0.5 秒才 finish → startCloseAnimation）。
+ *
+ * 在 SystemUI 里藏它的 leash 不管用：shell 每次起 transition 都会 `show(leash)`。
+ * 所以在这里收尾：规则命中后 [CLEANUP_DELAY_MS] 再看一眼，跳板 Task 还在、栈顶仍是当初那个
+ * 跳板 Activity、且前台是同包的另一个 Task（新页面已经盖住它）时，`removeTask` 掉它。
+ * 那时它被新页面挡着，关闭动画在底下播，用户看不见。三条任一不满足就不动。
+ *
  * 每次 Activity 启动都会经过这个方法，所以：先 proceed 拿到 MIUI 的结果，
  * 再在 try 里改；任何异常都吞掉、原样返回 MIUI 的结果。不做 Binder 调用、不做 IO。
  * 反射成员第一次用时解析并缓存，解析不到就整条规则停用（只记一次日志）。
@@ -71,6 +84,9 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
 
     /** 来源小窗「刚开」的上限。真机跳板链在 0.1~0.2 秒内完成，3 秒留足余量。 */
     private const val YOUNG_MS = 3_000L
+
+    /** 新页面通常 0.2 秒内盖上来；0.7 秒后跳板一定已经被挡住了。 */
+    private const val CLEANUP_DELAY_MS = 700L
 
     /** 生效日志只打前几次（这是每次 Activity 启动都会过的路径）。 */
     private const val LOG_LIMIT = 12
@@ -92,6 +108,12 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
 
     @Volatile
     private var broken = false
+
+    private val cleanups = AtomicInteger()
+
+    private val cleaner: Handler by lazy {
+        Handler(HandlerThread("fp-trampoline").apply { start() }.looper)
+    }
 
     override fun install(ctx: HookContext): InstallReport {
         val cls = try {
@@ -142,6 +164,10 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
         val age = System.currentTimeMillis() - m.createTime.getLong(root)
         if (age !in 0..YOUNG_MS) return
 
+        // 不论 bounds 要不要改都排一次清理：第二跳（Scheme → 付款码）MIUI 自己就沿用了位置，
+        // 但留在底下的正是那个会露黑底的 Scheme 跳板
+        cleaner.postDelayed({ cleanup(ctx, m, sourceTask, source, startPackage) }, CLEANUP_DELAY_MS)
+
         val bounds = m.getBounds.invoke(sourceTask) as? Rect ?: return
         if (bounds.isEmpty || bounds == current) return
         val rootTaskId = m.getRootTaskId.invoke(sourceTask) as Int
@@ -158,6 +184,28 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
                 "小窗跳板 #$n：$startPackage 从刚开 ${age}ms 的小窗起新 Task，" +
                     "bounds $current → $bounds scale=$scale（不再错开）",
             )
+        }
+    }
+
+    /** 见类注释「跳板 Task 的清理」。在 WM 全局锁里判定，锁外 removeTask。 */
+    private fun cleanup(ctx: HookContext, m: Members, task: Any, source: Any, pkg: String) {
+        try {
+            if (!active(HookRegistry.prefs())) return
+            val atm = m.atmService.get(task) ?: return
+            val lock = m.globalLockOf(atm) ?: return
+            val taskId = synchronized(lock) {
+                if (m.isAttached.invoke(task) != true) return
+                if (m.getWindowingMode.invoke(task) != WINDOWING_MODE_FREEFORM) return
+                if (m.getTopNonFinishing.invoke(task) !== source) return
+                val focused = m.focusedRootTaskOf(atm) ?: return
+                if (focused === task || m.basePackageOf(focused) != pkg) return
+                m.taskId.getInt(task)
+            }
+            m.removeTaskOf(atm, taskId)
+            val n = cleanups.incrementAndGet()
+            if (n <= LOG_LIMIT) ctx.log(Log.INFO, "小窗跳板清理 #$n：$pkg 的跳板 Task $taskId 已被新页面盖住，提前移除")
+        } catch (t: Throwable) {
+            if (cleanups.get() < LOG_LIMIT) ctx.log(Log.WARN, "小窗跳板清理失败，留给应用自己 finish", t)
         }
     }
 
@@ -198,6 +246,9 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
                 getRootActivity = findMethod(task, "getRootActivity"),
                 getBounds = findMethod(task, "getBounds"),
                 getRootTaskId = findMethod(task, "getRootTaskId"),
+                getTopNonFinishing = findMethod(task, "getTopNonFinishingActivity"),
+                isAttached = findMethod(task, "isAttached"),
+                taskId = findField(task, "mTaskId"),
                 atmService = findField(task, "mAtmService"),
                 getCallerApp = cls.declaredMethods.first { it.name == "getCallerApp" && it.parameterTypes.size == 3 }
                     .apply { isAccessible = true },
@@ -237,6 +288,8 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
 
     override fun uninstall() {
         super.uninstall()
+        cleaner.removeCallbacksAndMessages(null)
+        cleanups.set(0)
         hits.set(0)
     }
 
@@ -252,6 +305,9 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
         val getRootActivity: Method,
         val getBounds: Method,
         val getRootTaskId: Method,
+        val getTopNonFinishing: Method,
+        val isAttached: Method,
+        val taskId: Field,
         val atmService: Field,
         val getCallerApp: Method,
         val lastFreeform: Method,
@@ -263,6 +319,16 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
 
         @Volatile
         private var ffms: Field? = null
+
+        fun globalLockOf(atm: Any): Any? = findField(atm.javaClass, "mGlobalLock").get(atm)
+
+        fun focusedRootTaskOf(atm: Any): Any? = findMethod(atm.javaClass, "getTopDisplayFocusedRootTask").invoke(atm)
+
+        fun basePackageOf(task: Any): String? = findMethod(task.javaClass, "getBasePackageName").invoke(task) as? String
+
+        fun removeTaskOf(atm: Any, taskId: Int) {
+            findMethod(atm.javaClass, "removeTask", Int::class.javaPrimitiveType!!).invoke(atm, taskId)
+        }
 
         /** 与 MIUI 自己的 keep-bounds 分支同一个来源：`mAtmService.mMiuiFreeFormManagerService.getFreeformScale(rootTaskId)`。 */
         fun freeformScaleOf(task: Any, rootTaskId: Int): Float? = runCatching {
