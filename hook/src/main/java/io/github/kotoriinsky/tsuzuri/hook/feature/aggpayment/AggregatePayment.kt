@@ -202,6 +202,7 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
     private fun teardown() {
         generation++
         ours.clear()
+        PaymentWindow.teardown()
         panel?.release()
         panel = null
         repository = null
@@ -272,7 +273,7 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
             if (item != null && ours.contains(item)) {
                 // hook 回调本身就在主线程（View.OnClickListener），这里再 post 一层是双保险：
                 // show 对线程有硬要求，宁可在队列里多排一次
-                mainHandler.post { showPanel(ctx) }
+                mainHandler.post { openWindow(ctx) }
                 true
             } else {
                 chain.proceed()
@@ -319,6 +320,9 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
             return InstallReport(0, missingList, notes = listOf("fod hook 不完整，已回滚"))
         }
 
+        // Flyme 形态：呼出即小窗 + 挂在小窗下方的入口条。仓库 hook 缺失时小窗照开，只是没有入口条
+        hooked += PaymentWindow.install(ctx, app, { track(it) }) { mainHandler.post { openWindow(ctx) } }
+
         // shortcut 预加载放后台：install 跑在框架回调上，这里要 load 图标（几次 IPC/IO），
         // 同步做会把 SystemUI 的这次启动拖住。
         preload(ctx, force = true)
@@ -340,6 +344,11 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
     }
 
     // ── 面板 ──────────────────────────────────────────────────────────
+
+    /** 主线程。Flyme 形态：直接用小窗打开最近用的那项；还没有条目时退回面板（显示空态）。 */
+    private fun openWindow(ctx: HookContext) {
+        if (!PaymentWindow.open(cached)) showPanel(ctx) else preload(ctx, force = false)
+    }
 
     /** 弹面板。**主线程**。没有可用条目时也弹（显示空态），见 [PaymentPanel.show]。 */
     private fun showPanel(ctx: HookContext) {

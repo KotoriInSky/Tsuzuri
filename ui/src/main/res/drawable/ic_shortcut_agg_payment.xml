@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 快捷方式图标：橙底圆 + 白色付款码方框与「¥」（自绘） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="#FFFF8A00" android:pathData="M24,0a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z"/>
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M14,14h7v2.5h-4.5v4.5H14zM27,14h7v7h-2.5v-4.5H27zM14,27h2.5v4.5H21V34h-7zM31.5,27H34v7h-7v-2.5h4.5z"/>
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M19.6,17.5h2.6l1.8,3.3 1.8,-3.3h2.6l-2.9,4.6h2.3v1.9h-2.6v1.1h2.6v1.9h-2.6v2.5h-2.4v-2.5h-2.6v-1.9h2.6v-1.1h-2.6v-1.9h2.3z"/>
+</vector>

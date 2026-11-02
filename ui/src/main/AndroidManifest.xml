@@ -180,6 +180,15 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
 
+        <!-- 聚合支付快捷方式的跳板：不显示界面，发完请求就结束，见 tile/AggPaymentShortcutActivity.kt -->
+        <activity
+            android:name="io.github.kotoriinsky.tsuzuri.ui.tile.AggPaymentShortcutActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <!-- 完美状态栏快捷开关：给 SystemUI 发广播进入 / 退出演示模式，见 tile/CleanStatusBarTile.kt -->
         <service
             android:name="io.github.kotoriinsky.tsuzuri.ui.tile.CleanStatusBarTile"

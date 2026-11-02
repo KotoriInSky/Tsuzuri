@@ -836,6 +836,7 @@
     <string name="feature_global_recognition_summary">控制中心磁贴一键识别整屏文字和图片</string>
     <string name="global_recognition_tile">全局识别</string>
     <string name="global_recognition_shortcut">全局识别</string>
+    <string name="agg_payment_shortcut">聚合支付</string>
     <string name="feature_recognition_look_title">识屏样式</string>
     <string name="feature_recognition_look_summary">结果页布局与复制提醒样式</string>
     <string name="pref_screen_text_app_compat">更多应用</string>

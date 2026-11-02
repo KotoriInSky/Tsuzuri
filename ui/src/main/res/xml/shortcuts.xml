@@ -11,4 +11,14 @@
             android:targetPackage="io.github.kotoriinsky.tsuzuri"
             android:targetClass="io.github.kotoriinsky.tsuzuri.ui.tile.GlobalRecognitionShortcutActivity" />
     </shortcut>
+    <shortcut
+        android:shortcutId="agg_payment"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_agg_payment"
+        android:shortcutShortLabel="@string/agg_payment_shortcut">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.kotoriinsky.tsuzuri"
+            android:targetClass="io.github.kotoriinsky.tsuzuri.ui.tile.AggPaymentShortcutActivity" />
+    </shortcut>
 </shortcuts>
