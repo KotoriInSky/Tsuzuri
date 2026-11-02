@@ -62,6 +62,16 @@ import io.github.libxposed.api.XposedInterface
 internal object PaymentWindow {
 
     private const val REPO = "com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository"
+    private const val FREEFORM_ANIM = "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeAnimation"
+
+    /** 切换后这段时间内，本次切换涉及的小窗开 / 关都不播 MIUI 动画（跳板链 + 关旧窗都在这里面）。 */
+    private const val SWITCH_WINDOW_MS = 2_500L
+
+    // WindowManager.TRANSIT_*（隐藏常量）
+    private const val TRANSIT_OPEN = 1
+    private const val TRANSIT_CLOSE = 2
+    private const val TRANSIT_TO_FRONT = 3
+    private const val TRANSIT_TO_BACK = 4
 
     private const val MODULE_PACKAGE = "io.github.kotoriinsky.tsuzuri"
 
@@ -120,6 +130,12 @@ internal object PaymentWindow {
     @Volatile
     private var session: Session? = null
 
+    /** 正在进行的切换：新条目的包、要关的旧小窗、沿用的位置。在 shell 线程读。 */
+    private class Switch(val pkg: String, val oldTaskId: Int?, val bounds: Rect, val scale: Float, val radius: Float, val until: Long)
+
+    @Volatile
+    private var switching: Switch? = null
+
     @Volatile
     private var repo: Any? = null
 
@@ -170,6 +186,7 @@ internal object PaymentWindow {
                 hooked++
             }.onFailure { ctx.log(Log.WARN, "聚合支付：hook $name 失败", it) }
         }
+        hooked += installInstantSwitch(ctx, track)
         ctx.log(Log.INFO, "聚合支付：小窗仓库 hook=$hooked")
         return hooked
     }
@@ -226,6 +243,9 @@ internal object PaymentWindow {
         val now = attached
         // 沿用当前小窗的位置与缩放：切换不跳位置
         val exact = now?.let { FanShortcuts.ExactPlacement(Rect(it.bounds), it.scale) }
+        switching = now?.let {
+            Switch(item.packageName, it.taskId, Rect(it.bounds), it.scale, it.cornerRadius, System.currentTimeMillis() + SWITCH_WINDOW_MS)
+        }
         start(ordered(c, s.items), item, closeTaskId = now?.taskId, exact = exact)
     }
 
@@ -241,6 +261,109 @@ internal object PaymentWindow {
         )
         ctx.log(Log.INFO, "聚合支付：打开 ${item.key} → ${FanShortcuts.describeLevel(level)}")
         session?.let { refresh(it) }
+    }
+
+    // ── 原地快速切换（shell 线程） ────────────────────────────────────
+
+    /**
+     * Flyme 的切换是原地换内容。HyperOS 上换条目必然是另一个 Task（另一个 App / 跳板链），
+     * 默认会播 MIUI 的小窗打开动画（从小放大）和旧窗关闭动画，看起来是「关一个、弹一个」。
+     *
+     * 这里接管 `MiuiFreeformModeAnimation.startAnimation`：切换后 [SWITCH_WINDOW_MS] 内，
+     * 一次 transition 里**每个** Task 都是这次切换的（新条目的包 / 旧小窗）时，不播动画——
+     * 打开的直接摆到旧小窗的位置、缩放、圆角并显示，关闭的直接藏起来，然后结束 transition，
+     * 再同步 MIUI 的动画目标（否则之后拖动会按 scale 1.0 算而跳）。任何一项不满足就交还 MIUI。
+     */
+    private fun installInstantSwitch(ctx: HookContext, track: (XposedInterface.HookHandle) -> Unit): Int {
+        val m = runCatching {
+            ctx.classLoader.loadClass(FREEFORM_ANIM).declaredMethods.firstOrNull {
+                it.name == "startAnimation" && it.parameterTypes.size == 5 &&
+                    it.parameterTypes[1].name == "android.window.TransitionInfo"
+            }
+        }.getOrNull() ?: run {
+            ctx.log(Log.WARN, "聚合支付：没找到 $FREEFORM_ANIM#startAnimation，切换会播 MIUI 动画")
+            return 0
+        }
+        m.isAccessible = true
+        return runCatching {
+            track(ctx.module.hook(m).intercept { chain ->
+                val sw = switching
+                val handled = if (sw == null) false else try {
+                    instant(ctx, sw, chain.args)
+                } catch (t: Throwable) {
+                    ctx.log(Log.WARN, "聚合支付：原地切换处理失败，交还 MIUI 动画", t)
+                    false
+                }
+                if (handled) true else chain.proceed()
+            })
+            1
+        }.getOrElse {
+            ctx.log(Log.WARN, "聚合支付：hook startAnimation 失败", it)
+            0
+        }
+    }
+
+    /**
+     * @return true = 已处理（不播动画、已结束 transition）。
+     * `TransitionInfo` / `Change` 与 Transaction 的部分方法是隐藏 API，一律反射。
+     */
+    private fun instant(ctx: HookContext, sw: Switch, args: List<Any?>): Boolean {
+        if (System.currentTimeMillis() > sw.until) {
+            switching = null
+            return false
+        }
+        val info = args.getOrNull(1) ?: return false
+        val startT = args.getOrNull(2) as? SurfaceControl.Transaction ?: return false
+        val finish = args.getOrNull(4) ?: return false
+        @Suppress("UNCHECKED_CAST")
+        val changes = (call(info, "getChanges") as? List<Any?>)?.filterNotNull() ?: return false
+        if (changes.isEmpty()) return false
+        // 每个 change 都得是这次切换的 Task，否则交还 MIUI（别的 App 的小窗动画一律不碰）
+        val tasks = changes.map { call(it, "getTaskInfo") as? android.app.ActivityManager.RunningTaskInfo ?: return false }
+        for (ti in tasks) {
+            val pkg = ti.baseActivity?.packageName ?: ti.topActivity?.packageName
+            if (pkg != sw.pkg && ti.taskId != sw.oldTaskId) return false
+        }
+        val opened = ArrayList<Int>(2)
+        for ((i, ch) in changes.withIndex()) {
+            val leash = call(ch, "getLeash") as? SurfaceControl ?: return false
+            when (call(ch, "getMode") as? Int) {
+                TRANSIT_OPEN, TRANSIT_TO_FRONT -> {
+                    startT.setPosition(leash, sw.bounds.left.toFloat(), sw.bounds.top.toFloat())
+                        .setScale(leash, sw.scale, sw.scale)
+                        .setCrop(leash, Rect(0, 0, sw.bounds.width(), sw.bounds.height()))
+                        .setAlpha(leash, 1f)
+                        .setVisibility(leash, true)
+                    if (sw.radius > 0f) {
+                        runCatching {
+                            startT.javaClass.getMethod("setCornerRadius", SurfaceControl::class.java, Float::class.javaPrimitiveType)
+                                .invoke(startT, leash, sw.radius / sw.scale)
+                        }
+                    }
+                    opened.add(tasks[i].taskId)
+                }
+                TRANSIT_CLOSE, TRANSIT_TO_BACK -> startT.setVisibility(leash, false)
+                else -> startT.setVisibility(leash, true)
+            }
+        }
+        startT.apply()
+        finish.javaClass.methods.first { it.name == "onTransitionFinished" && it.parameterTypes.size == 1 }
+            .apply { isAccessible = true }
+            .invoke(finish, null)
+        // 同步 MIUI 的动画目标：它本来在打开动画里设，跳过动画就得我们补
+        val r = repo
+        if (r != null) for (id in opened) {
+            runCatching {
+                val ti = call(r, "getMiuiFreeformTaskInfo", id) ?: return@runCatching
+                val target = call(ti, "getBaseAnimTarget") ?: return@runCatching
+                target.javaClass.getMethod(
+                    "setBaseAnimTargetParam", Rect::class.java,
+                    Float::class.javaPrimitiveType, Float::class.javaPrimitiveType, Float::class.javaPrimitiveType,
+                ).invoke(target, Rect(sw.bounds), sw.scale, sw.scale, 0f)
+            }
+        }
+        ctx.log(Log.INFO, "聚合支付：原地切换（不播动画）${tasks.joinToString { it.taskId.toString() }}")
+        return true
     }
 
     // ── 找小窗（shell 线程或主线程都可能调） ─────────────────────────
