@@ -14,6 +14,7 @@ import io.github.kotoriinsky.tsuzuri.hook.HookRegistry
 import io.github.kotoriinsky.tsuzuri.hook.InstallReport
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -57,8 +58,6 @@ import java.util.concurrent.atomic.AtomicInteger
  * 用户自己开着一个小窗、几秒后再从里面开第二个窗口时，来源早已不「刚开」，
  * MIUI 原本的错开逻辑照常生效。所以这条规则对任何来源的跳板都成立，不只是扇形。
  *
- * ## 崩溃面
- *
  * ## 跳板 Task 的清理（同日第二轮真机）
  *
  * 位置对齐之后，跳板 Task（支付宝 `SchemeLauncherActivity`）正好压在付款码小窗底下。
@@ -67,9 +66,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * 再看它缩小消失（logcat 13:11：Task 2254 在付款码关闭后 0.5 秒才 finish → startCloseAnimation）。
  *
  * 在 SystemUI 里藏它的 leash 不管用：shell 每次起 transition 都会 `show(leash)`。
- * 所以在这里收尾：规则命中后 [CLEANUP_DELAY_MS] 再看一眼，跳板 Task 还在、栈顶仍是当初那个
- * 跳板 Activity、且前台是同包的另一个 Task（新页面已经盖住它）时，`removeTask` 掉它。
- * 那时它被新页面挡着，关闭动画在底下播，用户看不见。三条任一不满足就不动。
+ * 所以在这里收尾：跳板 Task 还在、栈顶仍是当初那个跳板 Activity、且前台是同包的另一个 Task
+ * 时，`removeTask` 掉它。三条任一不满足就不动。
+ *
+ * **时机 = 同包新页面画出第一帧**（`ActivityRecord.onFirstWindowDrawn`，真机约 0.2 秒）。
+ * 再早不行：新页面还没画，移走跳板会露出一瞬空白。那一刻新页面已经盖住跳板，
+ * 跳板的关闭动画在底下播，用户看不见。[CLEANUP_DELAY_MS] 只是兜底（首帧信号没接上时）。
+ *
+ * ## 崩溃面
  *
  * 每次 Activity 启动都会经过这个方法，所以：先 proceed 拿到 MIUI 的结果，
  * 再在 try 里改；任何异常都吞掉、原样返回 MIUI 的结果。不做 Binder 调用、不做 IO。
@@ -85,7 +89,7 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
     /** 来源小窗「刚开」的上限。真机跳板链在 0.1~0.2 秒内完成，3 秒留足余量。 */
     private const val YOUNG_MS = 3_000L
 
-    /** 新页面通常 0.2 秒内盖上来；0.7 秒后跳板一定已经被挡住了。 */
+    /** 兜底：首帧信号没接上时，0.7 秒后新页面一定已经盖住跳板了。 */
     private const val CLEANUP_DELAY_MS = 700L
 
     /** 生效日志只打前几次（这是每次 Activity 启动都会过的路径）。 */
@@ -115,6 +119,11 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
         Handler(HandlerThread("fp-trampoline").apply { start() }.looper)
     }
 
+    /** 等着被清理的跳板，按包名分组。首帧或兜底谁先到谁处理，处理完就摘掉。 */
+    private class Pending(val task: Any, val source: Any, val pkg: String)
+
+    private val pending = ConcurrentHashMap<String, MutableList<Pending>>()
+
     override fun install(ctx: HookContext): InstallReport {
         val cls = try {
             ctx.classLoader.loadClass(SERVICE_IMPL)
@@ -125,6 +134,8 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
         val method = cls.declaredMethods.firstOrNull { it.name == METHOD && it.parameterTypes.size == 8 }
             ?: return InstallReport(0, missing = listOf("$SERVICE_IMPL#$METHOD/8"))
         method.isAccessible = true
+
+        val firstDrawn = installFirstDrawn(ctx)
 
         track(ctx.module.hook(method).intercept { chain ->
             val result = chain.proceed()
@@ -138,7 +149,45 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
             }
             result
         })
-        return InstallReport(1)
+        return InstallReport(
+            1 + firstDrawn,
+            notes = if (firstDrawn == 0) listOf("首帧钩子缺失，跳板只靠 ${CLEANUP_DELAY_MS}ms 兜底清理") else emptyList(),
+        )
+    }
+
+    /** 同包另一个页面画出第一帧 → 立刻清它底下的跳板。这是每个 Activity 首帧都会过的路径，没登记就直接返回。 */
+    private fun installFirstDrawn(ctx: HookContext): Int {
+        val method = runCatching {
+            ctx.classLoader.loadClass("com.android.server.wm.ActivityRecord").declaredMethods
+                .firstOrNull { it.name == "onFirstWindowDrawn" && it.parameterTypes.size == 1 }
+        }.getOrNull() ?: run {
+            ctx.log(Log.WARN, "小窗跳板：没找到 ActivityRecord#onFirstWindowDrawn，只用兜底清理")
+            return 0
+        }
+        method.isAccessible = true
+        track(ctx.module.hook(method).intercept { chain ->
+            val result = chain.proceed()
+            if (pending.isNotEmpty()) {
+                try {
+                    val m = members
+                    val drawn = chain.thisObject
+                    if (m != null && drawn != null) {
+                        val list = pending[m.packageName.get(drawn) as? String]
+                        if (list != null) {
+                            val task = m.getTask.invoke(drawn)
+                            val due = synchronized(list) {
+                                list.filter { it.task !== task }.also { list.removeAll(it) }
+                            }
+                            for (p in due) cleaner.post { cleanup(ctx, m, p, "首帧") }
+                        }
+                    }
+                } catch (_: Throwable) {
+                    // 吞掉：首帧路径上抛出去等于 system_server 重启；没清掉还有兜底
+                }
+            }
+            result
+        })
+        return 1
     }
 
     /**
@@ -166,7 +215,13 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
 
         // 不论 bounds 要不要改都排一次清理：第二跳（Scheme → 付款码）MIUI 自己就沿用了位置，
         // 但留在底下的正是那个会露黑底的 Scheme 跳板
-        cleaner.postDelayed({ cleanup(ctx, m, sourceTask, source, startPackage) }, CLEANUP_DELAY_MS)
+        val p = Pending(sourceTask, source, startPackage)
+        val list = pending.getOrPut(startPackage) { mutableListOf() }
+        synchronized(list) { list.add(p) }
+        cleaner.postDelayed({
+            val due = synchronized(list) { list.remove(p) }
+            if (due) cleanup(ctx, m, p, "兜底")
+        }, CLEANUP_DELAY_MS)
 
         val bounds = m.getBounds.invoke(sourceTask) as? Rect ?: return
         if (bounds.isEmpty || bounds == current) return
@@ -188,7 +243,10 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
     }
 
     /** 见类注释「跳板 Task 的清理」。在 WM 全局锁里判定，锁外 removeTask。 */
-    private fun cleanup(ctx: HookContext, m: Members, task: Any, source: Any, pkg: String) {
+    private fun cleanup(ctx: HookContext, m: Members, p: Pending, trigger: String) {
+        val task = p.task
+        val source = p.source
+        val pkg = p.pkg
         try {
             if (!active(HookRegistry.prefs())) return
             val atm = m.atmService.get(task) ?: return
@@ -203,7 +261,7 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
             }
             m.removeTaskOf(atm, taskId)
             val n = cleanups.incrementAndGet()
-            if (n <= LOG_LIMIT) ctx.log(Log.INFO, "小窗跳板清理 #$n：$pkg 的跳板 Task $taskId 已被新页面盖住，提前移除")
+            if (n <= LOG_LIMIT) ctx.log(Log.INFO, "小窗跳板清理 #$n（$trigger）：$pkg 的跳板 Task $taskId 已被新页面盖住，提前移除")
         } catch (t: Throwable) {
             if (cleanups.get() < LOG_LIMIT) ctx.log(Log.WARN, "小窗跳板清理失败，留给应用自己 finish", t)
         }
@@ -289,6 +347,7 @@ internal object FreeformTrampolinePlacement : Feature(Catalog.require(Catalog.CO
     override fun uninstall() {
         super.uninstall()
         cleaner.removeCallbacksAndMessages(null)
+        pending.clear()
         cleanups.set(0)
         hits.set(0)
     }
