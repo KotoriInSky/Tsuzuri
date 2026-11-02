@@ -1,6 +1,5 @@
 package io.github.kotoriinsky.tsuzuri.hook.feature.aggpayment
 
-import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -29,25 +28,29 @@ import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FanTarget
 import io.github.libxposed.api.XposedInterface
 
 /**
- * 聚合支付的 Flyme 形态：**呼出即用小窗打开最近用的那项，小窗下方挂一条入口条，与小窗是一块**。
- *
- * ## Flyme 怎么做的（docs/101）
- *
- * 入口条是一个独立窗口，system_server 把它的 surface reparent 到小窗 task 的 leash 上
- * （`FlymeWindowModeManager.HandlerWindowState.postWindowToLeash`），于是进场、拖动、关闭
- * 动画里两者共享一个变换。
+ * 聚合支付的 Flyme 形态：**呼出即用小窗打开最近用的那项，小窗底部挂一条入口条，与小窗是一块**。
  *
  * ## 这里怎么做
  *
  * HyperOS 的小窗由 WM Shell 管，WM Shell 就跑在 SystemUI 进程里，task leash 在本进程可得：
  *
  *  1. hook `MultiTaskingTaskRepository` 的 task 出现 / 变化 / 消失，拿到仓库实例；
- *  2. 当前要显示的包的**最上层小窗** → `MiuiFreeformModeTaskInfo` 的 leash、逻辑 bounds、缩放；
- *  3. 入口条用 `SurfaceControlViewHost` 画，把它的 surface 挂成 leash 的子层，摆在小窗底边下方，
- *     `setScale(1/scale)` 抵消 leash 的缩放（屏上尺寸固定）。
+ *  2. 当前要显示的包的**最上层小窗** → `MiuiFreeformModeTaskInfo` 的 leash、逻辑 bounds、缩放、圆角；
+ *  3. 入口条用 `SurfaceControlViewHost` 画，surface 挂成 leash 的子层，`setScale(1/scale)` 抵消
+ *     leash 的缩放（屏上尺寸固定）。作为子层，进场 / 关闭 / 拖动 / 缩放动画与小窗同帧，圆角裁剪也一起。
  *
- * 子层不受 leash 的 windowCrop 裁剪：MIUI 自己的小窗阴影（`MiuiDecorationShadow`）就是 task leash
- * 的子层，且画在 task 范围外（真机 SF：阴影可见区 [-268,14,1486,2478]，task 只到 [122,404]-[1098,2090]）。
+ * ## 为什么在小窗底边以内（不像 Flyme 挂在窗外）
+ *
+ * task leash 的 windowCrop + 圆角会裁掉子层（真机 SF：摆在底边外时该层 geomLayerBounds 为空；
+ * 伸进 2px 时只剩那 2px）。MIUI 自己的小窗阴影能画到窗外，是因为它的 SurfaceFlinger 按图层名
+ * `Miui Shadow stack of Task` 放行（libsurfaceflinger.so 里硬编码），而且那类图层不吃 leash 的缩放 ——
+ * 冒用这个名字既脆弱又跟不上缩放动画，所以不用。条就放在窗内底部、四周留边、圆角与小窗同心，
+ * 压在内容上方：付款码、扫码框等主要信息都在小窗上部（用户确认）。
+ *
+ * ## 切换与生命周期
+ *
+ *  - 点条目：新条目按**当前小窗**的位置与缩放打开，新小窗出现后入口条挪过去、再关掉旧小窗；
+ *  - 入口条一直挂到小窗关闭（该包最上层小窗消失 / 退出小窗形态）为止。
  *
  * 跳板（支付宝 1002 会再起两个 Task）的位置与清理由 system_server 侧的
  * `FreeformTrampolinePlacement` 负责；这里只认「这个包最上层的那个小窗」。
@@ -57,8 +60,6 @@ import io.github.libxposed.api.XposedInterface
  * 与 Flyme 一致：呼出打开第 0 项；**只有在入口条上点了某项才把它挪到最前**。
  */
 internal object PaymentWindow {
-
-    private const val TAG = "FP-AggPay"
 
     private const val REPO = "com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository"
 
@@ -71,12 +72,20 @@ internal object PaymentWindow {
     private const val SETTLE_MS = 3_000L
 
     private const val BAR_HEIGHT_DP = 64f
-    private const val GAP_DP = 10f
+    /** 条与小窗左右、底边的间距；条的圆角 = 小窗圆角 − 这个值（同心）。 */
+    private const val MARGIN_DP = 8f
     private const val ICON_DP = 34f
     private const val LAYER = 1_000_000
 
-    /** Flyme 的四个标签（SystemUITools `wechat_money` / `wechat_scan` / `alipay_pay` / `alipay_scan`）：
-     *  支付宝 1002 自己发布的短标签也是「收付款」，与微信那项并排时分不出来。 */
+    /** 等 MIUI 动画播完：每隔多久看一次、最多等多久（超时就直接显示）。 */
+    private const val ANIM_POLL_MS = 50L
+    private const val ANIM_WAIT_MAX_MS = 1_500L
+    private const val FADE_MS = 150L
+
+    /**
+     * Flyme 的四个标签（SystemUITools `wechat_money` / `wechat_scan` / `alipay_pay` / `alipay_scan`）：
+     * 支付宝 1002 自己发布的短标签也是「收付款」，与微信那项并排时分不出来。
+     */
     private val LABELS = mapOf(
         "com.tencent.mm/launch_type_offline_wallet" to "收付款",
         "com.tencent.mm/launch_type_scan_qrcode" to "扫一扫",
@@ -84,27 +93,29 @@ internal object PaymentWindow {
         "com.eg.android.AlipayGphone/1001" to "扫一扫",
     )
 
-    /** 与 MIUI 自己那几条（index 0/1）错开。 */
-    private const val INSETS_INDEX = 7
-
     private val main = Handler(Looper.getMainLooper())
 
     private class Target(
         val taskId: Int,
-        /** `WindowContainerToken`，加 / 撤让位 insets 用。 */
-        val token: Any?,
         val leash: SurfaceControl,
+        /** task 逻辑 bounds（未乘缩放）。 */
         val bounds: Rect,
         val scale: Float,
+        /** 小窗屏上圆角（px），取不到是 0。 */
+        val cornerRadius: Float,
+        /** MIUI 的进场 / 恢复 / 缩放动画还在播。 */
+        val animating: Boolean,
     )
 
     private class Session(
         val items: List<PaymentShortcut>,
-        val pkg: String,
+        val current: PaymentShortcut,
         val startedAt: Long,
         /** 切换条目时要关掉的旧小窗；新小窗出现后才关。 */
         val closeTaskId: Int?,
-    )
+    ) {
+        val pkg: String get() = current.packageName
+    }
 
     @Volatile
     private var session: Session? = null
@@ -119,13 +130,13 @@ internal object PaymentWindow {
     // 以下只在主线程读写
     private var host: SurfaceControlViewHost? = null
     private var barSc: SurfaceControl? = null
-    private var attachedLeash: SurfaceControl? = null
-    private var attachedTaskId = -1
-    private var attachedToken: Any? = null
-
-    /** 让位 insets 的身份：同一个 owner + index 才能撤掉自己加的那一条。 */
-    private val insetsOwner = android.os.Binder()
+    private var barBackground: GradientDrawable? = null
+    private var attached: Target? = null
     private var barWidth = 0
+    private var barRadius = 0f
+    private var barShown = false
+    private var waitSince = 0L
+    private var fade: android.animation.ValueAnimator? = null
 
     // ── 安装 ──────────────────────────────────────────────────────────
 
@@ -148,9 +159,9 @@ internal object PaymentWindow {
                     val r = chain.proceed()
                     try {
                         repo = chain.thisObject
-                        val s = session
-                        val info = chain.args.firstOrNull() as? ActivityManager.RunningTaskInfo
-                        if (s != null && info != null && packageOf(info) == s.pkg) refresh(s)
+                        // 会话期间任何 task 事件都重找一次：消失的 task 拿不到 baseActivity，
+                        // 按包名筛会漏掉跳板消失那一下，入口条就停在被清掉的跳板上
+                        session?.let { refresh(it) }
                     } catch (t: Throwable) {
                         ctx.log(Log.WARN, "聚合支付：处理 $name 失败", t)
                     }
@@ -196,14 +207,14 @@ internal object PaymentWindow {
         }.onFailure { ctx.log(Log.WARN, "聚合支付：注册桌面快捷方式入口失败", it) }
     }
 
-    // ── 呼出 / 切换 ───────────────────────────────────────────────────
+    // ── 呼出 / 切换（主线程） ─────────────────────────────────────────
 
-    /** 主线程。打开最近用的那项。@return false = 没有条目，调用方退回面板。 */
+    /** 打开最近用的那项。@return false = 没有条目，调用方退回面板。 */
     fun open(items: List<PaymentShortcut>): Boolean {
         val c = app ?: return false
         if (items.isEmpty()) return false
         val ordered = ordered(c, items)
-        start(ordered, ordered.first(), closeTaskId = null)
+        start(ordered, ordered.first(), closeTaskId = null, exact = null)
         return true
     }
 
@@ -211,18 +222,22 @@ internal object PaymentWindow {
         val c = app ?: return
         val s = session ?: return
         remember(c, item)
-        val prev = attachedTaskId.takeIf { it >= 0 }
-        start(ordered(c, s.items), item, closeTaskId = prev)
+        if (item.key == s.current.key) return
+        val now = attached
+        // 沿用当前小窗的位置与缩放：切换不跳位置
+        val exact = now?.let { FanShortcuts.ExactPlacement(Rect(it.bounds), it.scale) }
+        start(ordered(c, s.items), item, closeTaskId = now?.taskId, exact = exact)
     }
 
-    private fun start(items: List<PaymentShortcut>, item: PaymentShortcut, closeTaskId: Int?) {
+    private fun start(items: List<PaymentShortcut>, item: PaymentShortcut, closeTaskId: Int?, exact: FanShortcuts.ExactPlacement?) {
         val ctx = ctxRef ?: return
         val c = app ?: return
-        session = Session(items, item.packageName, System.currentTimeMillis(), closeTaskId)
-        rebuildBar(items)
+        session = Session(items, item, System.currentTimeMillis(), closeTaskId)
+        ensureBar(items)
         val level = FanShortcuts.launch(
             ctx, c,
             FanTarget(label = item.label, packageName = item.packageName, icon = item.icon, shortcutId = item.id),
+            exact = exact,
         )
         ctx.log(Log.INFO, "聚合支付：打开 ${item.key} → ${FanShortcuts.describeLevel(level)}")
         session?.let { refresh(it) }
@@ -231,98 +246,154 @@ internal object PaymentWindow {
     // ── 找小窗（shell 线程或主线程都可能调） ─────────────────────────
 
     private fun refresh(s: Session) {
-        val target = runCatching { findTarget(s.pkg) }.getOrNull()
-        main.post { apply(s, target) }
+        val found = runCatching { findTarget(s.pkg) }.getOrDefault(Lookup.Hidden)
+        main.post { apply(s, found) }
     }
 
-    /** 这个包最上层、正常显示（mode 0）的小窗。 */
-    private fun findTarget(pkg: String): Target? {
-        val r = repo ?: return null
+    /** 找小窗的三种结果：正常显示 / 还在但不是正常小窗（缩成迷你窗、贴边等）/ 这个包没有小窗了。 */
+    private sealed interface Lookup {
+        class Found(val target: Target) : Lookup
+        object Hidden : Lookup
+        object Gone : Lookup
+    }
+
+    /** 这个包最上层的小窗。 */
+    private fun findTarget(pkg: String): Lookup {
+        val r = repo ?: return Lookup.Hidden
         @Suppress("UNCHECKED_CAST")
-        val ids = (call(r, "getFreeformTasksInZOrder") as? List<Any?>)?.toList() ?: return null
+        val ids = (call(r, "getFreeformTasksInZOrder") as? List<Any?>)?.toList() ?: return Lookup.Hidden
         for (id in ids) {
             val taskId = id as? Int ?: continue
             val info = call(r, "getMiuiFreeformTaskInfo", taskId) ?: continue
             if (call(info, "getPackageName") != pkg) continue
-            if ((call(info, "getMode") as? Int ?: 0) != 0) return null
-            val leash = call(info, "getLeash") as? SurfaceControl ?: return null
-            val bounds = call(info, "getTaskBounds") as? Rect ?: return null
+            // 缩小成迷你窗 / 贴边时 mode 不是 0：小窗还在，入口条只藏不收，放大回来再显示
+            if ((call(info, "getMode") as? Int ?: 0) != 0) return Lookup.Hidden
+            val leash = call(info, "getLeash") as? SurfaceControl ?: return Lookup.Hidden
+            val bounds = call(info, "getTaskBounds") as? Rect ?: return Lookup.Hidden
             // getFreeformScale 读的是动画目标，进场动画开始前还是 1.0（真机首次挂上时读到 1.0）；
             // getTaskScale 是 MIUI 给这个小窗定的缩放（日志里的 taskScale=0.7）
             val scale = (call(info, "getTaskScale") as? Float)?.takeIf { it > 0f && it < 1f }
-                ?: call(info, "getFreeformScale") as? Float ?: return null
-            if (!leash.isValid || bounds.isEmpty || scale <= 0f) return null
-            val token = (call(info, "getTaskInfo") as? ActivityManager.RunningTaskInfo)?.let { ti ->
-                runCatching { ti.javaClass.getField("token").get(ti) }.getOrNull()
-            }
-            return Target(taskId, token, leash, Rect(bounds), scale)
+                ?: call(info, "getFreeformScale") as? Float ?: return Lookup.Hidden
+            if (!leash.isValid || bounds.isEmpty || scale <= 0f) return Lookup.Hidden
+            val radius = (call(info, "getCornerRadius") as? Float)?.takeIf { it > 0f } ?: 0f
+            val animating = call(info, "isInAnimating") as? Boolean ?: false
+            return Lookup.Found(Target(taskId, leash, Rect(bounds), scale, radius, animating))
         }
-        return null
+        return Lookup.Gone
     }
 
     // ── 入口条（主线程） ──────────────────────────────────────────────
 
-    private fun apply(s: Session, target: Target?) {
+    private fun apply(s: Session, found: Lookup) {
         if (session !== s) return
         val ctx = ctxRef ?: return
-        if (target == null) {
-            if (System.currentTimeMillis() - s.startedAt > SETTLE_MS) {
-                ctx.log(Log.INFO, "聚合支付：${s.pkg} 的小窗没了，收起入口条")
-                session = null
-                detach()
+        val sc = barSc ?: return
+        val target = when (found) {
+            is Lookup.Found -> found.target
+            Lookup.Hidden -> {
+                if (barShown) {
+                    SurfaceControl.Transaction().setVisibility(sc, false).apply()
+                    barShown = false
+                }
+                return
             }
-            return
+            Lookup.Gone -> {
+                // 切换途中新小窗还没出来时，入口条留在旧小窗上；超过落地时限仍没有 = 小窗关了
+                if (System.currentTimeMillis() - s.startedAt > SETTLE_MS) {
+                    ctx.log(Log.INFO, "聚合支付：${s.pkg} 的小窗关了，收起入口条")
+                    session = null
+                    detach()
+                }
+                return
+            }
         }
         val c = app ?: return
-        val sc = barSc ?: return
-        val dm = c.resources.displayMetrics
-        val width = (target.bounds.width() * target.scale).toInt()
-        if (width != barWidth) {
+        // 从藏着到显示（刚呼出 / 从迷你窗放大回来）：等 MIUI 的动画播完再淡入，
+        // 否则条在放大动画半途突然冒出来，跳变很明显（真机）。动画结束不一定有 task 事件，所以自己轮询
+        if (!barShown && target.animating) {
+            if (waitSince == 0L) waitSince = System.currentTimeMillis()
+            if (System.currentTimeMillis() - waitSince < ANIM_WAIT_MAX_MS) {
+                main.postDelayed({ session?.takeIf { it === s }?.let { refresh(it) } }, ANIM_POLL_MS)
+                return
+            }
+        }
+        waitSince = 0L
+        val appearing = !barShown
+        // 拖动时 task 事件一串接一串，而 MIUI 每次 update 都 new 一个 leash 对象
+        // （MultiTaskingBaseTaskInfo.update：new SurfaceControl(leash, …)）。按对象身份比会以为换了窗，
+        // 每次都 reparent + 重设位置，与 MIUI 逐帧移动 leash 不同步 → 入口条一跳一跳（真机）。
+        // 改为按图层身份比；几何没变就完全不碰入口条：它是 leash 的子层，拖动本来就跟着走
+        val prev = attached
+        val sameLeash = prev != null && prev.leash.isValid && sameSurface(prev.leash, target.leash)
+        // 只比宽高：条在 leash 局部坐标里的位置与平移无关，拖动时 bounds 的 left/top 变了也不用动
+        if (barShown && sameLeash && prev!!.taskId == target.taskId &&
+            prev.bounds.width() == target.bounds.width() && prev.bounds.height() == target.bounds.height() &&
+            prev.scale == target.scale && prev.cornerRadius == target.cornerRadius && s.closeTaskId == null
+        ) {
+            return
+        }
+        val margin = dp(c, MARGIN_DP)
+        val width = (target.bounds.width() * target.scale).toInt() - margin * 2
+        if (width != barWidth && width > 0) {
             host?.relayout(width, dp(c, BAR_HEIGHT_DP))
             barWidth = width
         }
-        val t = SurfaceControl.Transaction()
-        if (attachedLeash !== target.leash) {
-            t.reparent(sc, target.leash)
-            attachedLeash = target.leash
+        val radius = (target.cornerRadius - margin).coerceAtLeast(dp(c, 12f).toFloat())
+        if (radius != barRadius) {
+            barRadius = radius
+            barBackground?.cornerRadius = radius
         }
+
+        // leash 的局部坐标是缩放前的逻辑像素：屏上的边距 / 条高都要乘 inv
         val inv = 1f / target.scale
+        val t = SurfaceControl.Transaction()
+        if (!sameLeash) t.reparent(sc, target.leash)
         t.setLayer(sc, LAYER)
-            // 放在小窗底边以内：task leash 的 windowCrop 会裁掉范围外的子层
-            // （真机 SF：摆在底边外时该层 geomLayerBounds 为空）。内容区由 [reserve] 的 insets 让出来
-            .setPosition(sc, 0f, target.bounds.height() - (dp(c, BAR_HEIGHT_DP) + dp(c, GAP_DP)) * inv)
+            .setPosition(sc, margin * inv, target.bounds.height() - (dp(c, BAR_HEIGHT_DP) + margin) * inv)
             .setScale(sc, inv, inv)
             .setVisibility(sc, true)
-        runCatching { t.javaClass.getMethod("setTrustedOverlay", SurfaceControl::class.java, Boolean::class.javaPrimitiveType).invoke(t, sc, true) }
+        if (appearing) t.setAlpha(sc, 0f)
+        runCatching {
+            t.javaClass.getMethod("setTrustedOverlay", SurfaceControl::class.java, Boolean::class.javaPrimitiveType)
+                .invoke(t, sc, true)
+        }
         t.apply()
+        barShown = true
+        if (appearing) fadeIn(sc)
 
-        if (attachedTaskId != target.taskId) {
-            reserve(ctx, attachedToken, add = false, 0)
-            reserve(ctx, target.token, add = true, ((dp(c, BAR_HEIGHT_DP) + dp(c, GAP_DP)) * inv).toInt())
-            attachedToken = target.token
+        if (prev?.taskId != target.taskId) {
             ctx.log(
                 Log.INFO,
                 "聚合支付：入口条挂到 task ${target.taskId}（bounds=${target.bounds} scale=${target.scale} " +
-                    "屏宽=${width}px density=${dm.density}）",
+                    "圆角=${target.cornerRadius}）",
             )
-            attachedTaskId = target.taskId
         }
+        attached = target
+
         val close = s.closeTaskId
         if (close != null && close != target.taskId) {
             removeTask(ctx, close)
-            session = Session(s.items, s.pkg, s.startedAt, null)
+            session = Session(s.items, s.current, s.startedAt, null)
         }
     }
 
-    private fun rebuildBar(items: List<PaymentShortcut>) {
+    private fun fadeIn(sc: SurfaceControl) {
+        fade?.cancel()
+        fade = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = FADE_MS
+            addUpdateListener {
+                if (sc.isValid) SurfaceControl.Transaction().setAlpha(sc, it.animatedValue as Float).apply()
+            }
+            start()
+        }
+    }
+
+    /** 呼出时建 SCVH。会话里切换条目不重建：条一直挂着，顺序等下次呼出再按最近使用排。 */
+    private fun ensureBar(items: List<PaymentShortcut>) {
         val c = app ?: return
         val ctx = ctxRef ?: return
+        if (host != null) return
         val bar = buildBar(c, items)
-        val h = host
-        if (h != null) {
-            h.setView(bar, barWidth.coerceAtLeast(1), dp(c, BAR_HEIGHT_DP))
-            return
-        }
         runCatching {
             val display = c.getSystemService(DisplayManager::class.java).getDisplay(0)
             val nh = SurfaceControlViewHost(c, display, null as IBinder?)
@@ -330,14 +401,14 @@ internal object PaymentWindow {
             nh.setView(bar, barWidth, dp(c, BAR_HEIGHT_DP))
             host = nh
             barSc = nh.surfacePackage?.surfaceControl
-            attachedLeash = null
-            attachedTaskId = -1
+            attached = null
         }.onFailure { ctx.log(Log.WARN, "聚合支付：入口条创建失败", it) }
     }
 
     private fun detach() {
-        ctxRef?.let { reserve(it, attachedToken, add = false, 0) }
-        attachedToken = null
+        fade?.cancel()
+        fade = null
+        waitSince = 0L
         val sc = barSc
         if (sc != null && sc.isValid) {
             runCatching { SurfaceControl.Transaction().reparent(sc, null).apply() }
@@ -345,21 +416,25 @@ internal object PaymentWindow {
         runCatching { host?.release() }
         host = null
         barSc = null
-        attachedLeash = null
-        attachedTaskId = -1
+        barBackground = null
+        attached = null
         barWidth = 0
+        barRadius = 0f
+        barShown = false
     }
 
     private fun buildBar(c: Context, items: List<PaymentShortcut>): View {
         val dark = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
+        val bg = GradientDrawable().apply {
+            cornerRadius = if (barRadius > 0f) barRadius else dp(c, 18f).toFloat()
+            setColor(if (dark) Color.rgb(0x2B, 0x2B, 0x2E) else Color.WHITE)
+        }
+        barBackground = bg
         val row = LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = dp(c, 24f).toFloat()
-                setColor(if (dark) Color.rgb(0x2B, 0x2B, 0x2E) else Color.WHITE)
-            }
+            background = bg
         }
         for (item in items) {
             val cell = LinearLayout(c).apply {
@@ -367,16 +442,21 @@ internal object PaymentWindow {
                 gravity = Gravity.CENTER
                 setOnClickListener { switchTo(item) }
             }
-            cell.addView(ImageView(c).apply { setImageDrawable(item.icon) }, LinearLayout.LayoutParams(dp(c, ICON_DP), dp(c, ICON_DP)))
-            cell.addView(TextView(c).apply {
-                text = LABELS[item.key] ?: item.label
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(if (dark) Color.rgb(0xDD, 0xDD, 0xDD) else Color.rgb(0x33, 0x33, 0x33))
-                gravity = Gravity.CENTER
-                maxLines = 1
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(c, 4f)
-            })
+            cell.addView(
+                ImageView(c).apply { setImageDrawable(item.icon) },
+                LinearLayout.LayoutParams(dp(c, ICON_DP), dp(c, ICON_DP)),
+            )
+            cell.addView(
+                TextView(c).apply {
+                    text = LABELS[item.key] ?: item.label
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextColor(if (dark) Color.rgb(0xDD, 0xDD, 0xDD) else Color.rgb(0x33, 0x33, 0x33))
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dp(c, 4f) },
+            )
             row.addView(cell, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         }
         return row
@@ -396,39 +476,12 @@ internal object PaymentWindow {
         prefs.edit().putString(PREF_ORDER, (listOf(item.key) + (order - item.key)).joinToString("\n")).apply()
     }
 
-    // ── 让位 ──────────────────────────────────────────────────────────
-
-    /**
-     * 在小窗 task 底部声明一条 captionBar insets，App 的内容排在入口条上方 ——
-     * 与 MIUI 自己的底部小横条同一个做法（`MiuiDecorationBase.DecorationInsets`：
-     * `addInsetsSource(token, owner, index, captionBar(), Insets.of(0,0,0,h), …)`）。
-     * [height] 是 task 逻辑像素（未乘 freeformScale）。
-     */
-    private fun reserve(ctx: HookContext, token: Any?, add: Boolean, height: Int) {
-        if (token == null) return
-        runCatching {
-            val wctCls = Class.forName("android.window.WindowContainerTransaction")
-            val wct = wctCls.getConstructor().newInstance()
-            val type = android.view.WindowInsets.Type.captionBar()
-            if (add) {
-                val m = wctCls.methods.first {
-                    it.name == "addInsetsSource" && it.parameterTypes.size == 7 &&
-                        it.parameterTypes[4] == android.graphics.Insets::class.java
-                }
-                m.invoke(wct, token, insetsOwner, INSETS_INDEX, type, android.graphics.Insets.of(0, 0, 0, height), null, 0)
-            } else {
-                val m = wctCls.methods.first { it.name == "removeInsetsSource" && it.parameterTypes.size == 4 }
-                m.invoke(wct, token, insetsOwner, INSETS_INDEX, type)
-            }
-            val organizer = Class.forName("android.window.WindowOrganizer").getConstructor().newInstance()
-            organizer.javaClass.getMethod("applyTransaction", wctCls).invoke(organizer, wct)
-        }.onFailure { ctx.log(Log.WARN, "聚合支付：${if (add) "加" else "撤"}让位 insets 失败", it) }
-    }
-
     // ── 工具 ──────────────────────────────────────────────────────────
 
-    private fun packageOf(info: ActivityManager.RunningTaskInfo): String? =
-        info.baseActivity?.packageName ?: info.topActivity?.packageName
+    /** `SurfaceControl.isSameSurface`（隐藏 API）：两个对象是不是同一个图层。取不到就退回对象身份。 */
+    private fun sameSurface(a: SurfaceControl, b: SurfaceControl): Boolean = runCatching {
+        SurfaceControl::class.java.getMethod("isSameSurface", SurfaceControl::class.java).invoke(a, b) as Boolean
+    }.getOrDefault(a === b)
 
     private fun removeTask(ctx: HookContext, taskId: Int) {
         runCatching {
