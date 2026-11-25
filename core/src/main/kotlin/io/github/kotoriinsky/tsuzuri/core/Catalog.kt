@@ -67,6 +67,9 @@ object Catalog {
     /** 截图 / 录屏完美状态栏（演示模式 + 藏通知图标）。契约见 [CleanStatusBar]。 */
     const val CLEAN_STATUSBAR = "clean_statusbar"
 
+    /** 状态栏通知图标：超级岛遮挡时直接消失、隐藏省略点。契约见 [StatusBarIcons]。 */
+    const val STATUSBAR_ICONS = "statusbar_icons"
+
     const val CONTEXT_INSTALL = ContextSuggestion.INSTALL
     const val CONTEXT_MUSIC = ContextSuggestion.MUSIC
     const val CONTEXT_SCREEN_ON = ContextSuggestion.SCREEN_ON
@@ -1325,6 +1328,28 @@ object Catalog {
                     key = p(CLEAN_STATUSBAR, CleanStatusBar.AUTO_RECORDING),
                     labelKey = "pref.clean_statusbar.auto_recording",
                     hintKey = "pref.clean_statusbar.auto_recording.hint",
+                    default = true,
+                ),
+            ),
+        ),
+
+        FeatureSpec(
+            key = STATUSBAR_ICONS,
+            group = FeatureGroup.APPS,
+            scope = listOf(ScopeTarget.SYSTEM_UI),
+            // 子项在 hook 里现读；总开关热装卸
+            restart = RestartPolicy.HOT,
+            maturity = Maturity.EXPERIMENTAL,
+            prefs = listOf(
+                PrefSpec.Toggle(
+                    key = p(STATUSBAR_ICONS, StatusBarIcons.ISLAND_INSTANT),
+                    labelKey = "pref.statusbar_icons.island_instant",
+                    hintKey = "pref.statusbar_icons.island_instant.hint",
+                    default = true,
+                ),
+                PrefSpec.Toggle(
+                    key = p(STATUSBAR_ICONS, StatusBarIcons.HIDE_OVERFLOW_DOT),
+                    labelKey = "pref.statusbar_icons.hide_overflow_dot",
                     default = true,
                 ),
             ),

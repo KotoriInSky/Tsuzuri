@@ -70,7 +70,7 @@ class SettingsPresentationTest {
             grouped.getValue(FeatureGroup.CLIPBOARD).map { it.key }.toSet(),
         )
         assertEquals(
-            setOf(Catalog.SHARE_ORDER, Catalog.TEXT_TOOLBAR, Catalog.CLEAN_STATUSBAR,
+            setOf(Catalog.SHARE_ORDER, Catalog.TEXT_TOOLBAR, Catalog.CLEAN_STATUSBAR, Catalog.STATUSBAR_ICONS,
                 Catalog.PA_WIDGET_ADMISSION, Catalog.PA_WIDGET_PICKER_INJECT, Catalog.WIDGET_STYLE),
             grouped.getValue(FeatureGroup.APPS).map { it.key }.toSet(),
         )

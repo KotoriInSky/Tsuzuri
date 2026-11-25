@@ -623,6 +623,12 @@
     <string name="pref_clean_statusbar_hide_island_hint">岛上的通知暂时看不见，恢复后照常显示</string>
     <string name="pref_clean_statusbar_auto_screenshot">截图时自动开启</string>
     <string name="pref_clean_statusbar_auto_screenshot_hint">截图会晚约 0.3 秒，截完自动恢复</string>
+    <!-- 状态栏通知图标（statusbar_icons） -->
+    <string name="feature_statusbar_icons_title">状态栏通知图标</string>
+    <string name="feature_statusbar_icons_summary">超级岛挡住时直接隐藏，不显示省略点</string>
+    <string name="pref_statusbar_icons_island_instant">超级岛挡住时直接隐藏</string>
+    <string name="pref_statusbar_icons_island_instant_hint">不播缩小变糊的动画</string>
+    <string name="pref_statusbar_icons_hide_overflow_dot">隐藏省略点</string>
     <string name="pref_clean_statusbar_auto_recording">录屏时自动开启</string>
     <string name="pref_clean_statusbar_auto_recording_hint">录屏结束后自动恢复</string>
     <string name="clean_statusbar_tile">完美状态栏</string>

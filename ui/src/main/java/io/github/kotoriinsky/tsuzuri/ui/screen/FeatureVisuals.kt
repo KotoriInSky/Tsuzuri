@@ -1,6 +1,7 @@
 package io.github.kotoriinsky.tsuzuri.ui.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ internal fun featureIcon(spec: FeatureSpec): FpIcon = when (spec.key) {
     // 杂项：支付 / 状态栏 / 选字菜单 / 分享排序
     Catalog.AGG_PAYMENT -> FpIcon(FpGlyphs.Payment, PlateColors.Orange)
     Catalog.CLEAN_STATUSBAR -> FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Indigo)
+    Catalog.STATUSBAR_ICONS -> FpIcon(Icons.Rounded.Notifications, PlateColors.Indigo)
     Catalog.TEXT_TOOLBAR -> FpIcon(FpGlyphs.TextFields, PlateColors.Gray)
     Catalog.SHARE_ORDER -> FpIcon(Icons.Rounded.Share, PlateColors.Green)
     // 负一屏小部件归入杂项后仍使用小部件图标。

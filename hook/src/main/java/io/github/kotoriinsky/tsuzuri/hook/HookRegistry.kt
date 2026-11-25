@@ -40,6 +40,7 @@ import io.github.kotoriinsky.tsuzuri.hook.feature.shareorder.ShareOrder
 import io.github.kotoriinsky.tsuzuri.hook.feature.contextsuggestion.ListenPickerFilter
 import io.github.kotoriinsky.tsuzuri.hook.feature.cleanstatusbar.CleanStatusBarFeature
 import io.github.kotoriinsky.tsuzuri.hook.feature.cleanstatusbar.CleanStatusBarScreenshot
+import io.github.kotoriinsky.tsuzuri.hook.feature.statusbaricons.StatusBarIconsFeature
 import io.github.kotoriinsky.tsuzuri.hook.feature.sideindex.SideIndex
 import io.github.kotoriinsky.tsuzuri.hook.feature.texttoolbar.TextToolbarAiOff
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.CornerSmallWindow
@@ -108,6 +109,7 @@ object HookRegistry {
         TextToolbarAiOff,
         CleanStatusBarFeature,
         CleanStatusBarScreenshot,
+        StatusBarIconsFeature,
     )
 
     /**
