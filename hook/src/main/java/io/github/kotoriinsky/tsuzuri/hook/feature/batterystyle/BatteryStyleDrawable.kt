@@ -33,8 +33,6 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
 
     var style: String = BatteryStyle.NUMBER
     var colored = true
-    /** 环形的数字画在环右侧（[BatteryStyle.NUMBER_OUTSIDE]）。 */
-    var numberOutside = false
     var batteryLevel = 0
     var charging = false
     var powerSave = false
@@ -98,6 +96,33 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     /** 闪电图左侧透明边（按可见闪电居中估）。 */
     private fun boltInset(): Float = hostBoltSize()?.let { max(0f, (it.first - boltWPx) / 2f) } ?: 0f
 
+    /**
+     * 宿主闪电图里**可见部分**的外接框（固有尺寸坐标）。宿主图的闪电并不居中，
+     * 放进环里按整张图居中会看着偏左（真机 2026-11-25，快充图偏 3px）。画一次位图量 alpha 外接框并缓存。
+     */
+    private fun visibleBox(quick: Boolean): RectF? = boxCache.getOrPut(quick) {
+        val d = hostBolt(quick) ?: return@getOrPut null
+        val iw = d.intrinsicWidth; val ih = d.intrinsicHeight
+        if (iw <= 0 || ih <= 0) return@getOrPut null
+        runCatching {
+            val bmp = android.graphics.Bitmap.createBitmap(iw, ih, android.graphics.Bitmap.Config.ARGB_8888)
+            val old = d.copyBounds()
+            d.setBounds(0, 0, iw, ih); d.setTint(Color.WHITE); d.draw(Canvas(bmp)); d.bounds = old
+            var l = iw; var t = ih; var r = -1; var b = -1
+            for (y in 0 until ih) for (x in 0 until iw) {
+                if (Color.alpha(bmp.getPixel(x, y)) > 0x40) {
+                    if (x < l) l = x
+                    if (x > r) r = x
+                    if (y < t) t = y
+                    if (y > b) b = y
+                }
+            }
+            bmp.recycle()
+            if (r < 0) null else RectF(l.toFloat(), t.toFloat(), (r + 1).toFloat(), (b + 1).toFloat())
+        }.getOrNull()
+    }
+    private val boxCache = HashMap<Boolean, RectF?>()
+
     /** 闪电占多宽（不含左透明边，它算进间距里）。 */
     private fun boltWidth(): Float = hostBoltSize()?.let { it.first - boltInset() } ?: boltWPx
 
@@ -127,7 +152,7 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     private val ringD get() = capsuleH
     private val capW get() = max(1.5f * dp1, capsuleW * 0.07f)
 
-    /** 环与外置数字的间距，与电池到闪电的可见间距相同。 */
+    /** 环与右侧数字的间距，与电池到闪电的可见间距相同。 */
     private val ringNumberGap get() = boltGapPx
 
     private fun numberWidth(): Float {
@@ -135,9 +160,9 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
         return measurePaint.measureText(lvl().toString())
     }
 
-    /** 电池图形本身多宽（不含左侧留白与闪电；环形外置数字算在图形里，闪电接在数字后面）。 */
+    /** 电池图形本身多宽（不含左侧留白与闪电；环形右侧的数字算在图形里）。 */
     private fun shapeWidth(): Float = when (style) {
-        BatteryStyle.RING -> if (numberOutside) ringD + ringNumberGap + numberWidth() else ringD
+        BatteryStyle.RING -> ringD + ringNumberGap + numberWidth()
         BatteryStyle.VERTICAL -> vertW
         BatteryStyle.HORIZONTAL -> capsuleW + capW + dp1
         else -> numberWidth()
@@ -145,7 +170,10 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
 
     /** 这个样式要多宽（px，不含宿主 padding）：留白 + 图形 + 充电时的间距与闪电。 */
     fun contentWidth(): Int =
-        (leadPx + shapeWidth() + (if (charging) boltGapPx + boltWidth() else 0f) + 1f).toInt()
+        (leadPx + shapeWidth() + (if (sideBolt()) boltGapPx + boltWidth() else 0f) + 1f).toInt()
+
+    /** 闪电画在右侧（环形的闪电在环里，不占右侧位置）。 */
+    private fun sideBolt() = charging && style != BatteryStyle.RING
 
     private val shapeLeft get() = bounds.left + leadPx
 
@@ -157,7 +185,7 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
             BatteryStyle.HORIZONTAL -> drawHorizontal(canvas)
             else -> drawNumber(canvas)
         }
-        if (charging) drawBolt(canvas)
+        if (sideBolt()) drawBolt(canvas)
     }
 
     /** 与宿主一致：右侧独立闪电，与电池同一个基准色（深浅色都跟着走）。 */
@@ -195,6 +223,9 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     }
 
     // ── 环形 ──────────────────────────────────────────────────────────
+    //
+    // 状态色画在环上（充电绿 / 低电红 / 省电橙），充电时闪电在环里，数字在环右侧。
+    // 环里不写数字：14dp 的环里「100」字号只有直径的 0.34，看不清（用户 2026-11-25）。
 
     private fun drawRing(c: Canvas) {
         val d = ringD
@@ -212,22 +243,40 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
         paint.color = stateColor()
         val sweep = 360f * lvl() / 100f
         if (sweep > 0f) c.drawArc(rect, -90f, sweep, false, paint)
-        paint.style = Paint.Style.FILL
+
+        if (charging) drawRingBolt(c, cx, cy, d / 2f - stroke * 1.3f)
+
+        fresh()
         paint.color = baseColor
-        if (numberOutside) {
-            // 与纯数字同字号、同色（宿主百分比文字），环只表示电量
-            paint.typeface = typeface
-            paint.textSize = textPx
-            val fm = paint.fontMetrics
-            c.drawText(lvl().toString(), shapeLeft + d + ringNumberGap, cy - (fm.ascent + fm.descent) / 2f, paint)
+        paint.typeface = typeface
+        paint.textSize = textPx
+        paint.textAlign = Paint.Align.LEFT
+        val fm = paint.fontMetrics
+        c.drawText(lvl().toString(), shapeLeft + d + ringNumberGap, cy - (fm.ascent + fm.descent) / 2f, paint)
+    }
+
+    /** 环里的闪电：宿主闪电图按可见闪电撑满内圆高度缩放，居中；取不到宿主图就自绘。 */
+    private fun drawRingBolt(c: Canvas, cx: Float, cy: Float, innerR: Float) {
+        // 可见闪电约为内圆直径的 0.95（520dpi 上约 23px，真机看着与环比例合适）
+        val visH = innerR * 2f * 0.95f
+        val host = hostBolt(quickCharging)
+        val size = hostBoltSize()
+        val box = visibleBox(quickCharging)
+        if (host != null && size != null && box != null) {
+            val (iw, ih) = size
+            // 按**可见闪电**的高度缩放，并让可见闪电（而不是整张图）落在环心
+            val scale = visH / box.height()
+            val l = cx - box.centerX() * scale
+            val t = cy - box.centerY() * scale
+            host.setBounds(l.toInt(), t.toInt(), (l + iw * scale).toInt(), (t + ih * scale).toInt())
+            host.setTint(baseColor)
+            host.draw(c)
             return
         }
-        paint.typeface = Typeface.create(typeface, Typeface.BOLD)
-        val text = lvl().toString()
-        paint.textSize = d * (if (text.length >= 3) 0.34f else 0.44f)
-        paint.textAlign = Paint.Align.CENTER
-        val fm = paint.fontMetrics
-        c.drawText(text, cx, cy - (fm.ascent + fm.descent) / 2f, paint)
+        fresh(); paint.color = baseColor
+        val w = visH * boltWPx / boltHPx
+        bolt(cx - w / 2f, cy - visH / 2f, w, visH)
+        c.drawPath(path, paint)
     }
 
     // ── 竖条（AOSP 竖电池尺寸）────────────────────────────────────────
