@@ -67,6 +67,12 @@ internal object BatteryStyleFeature : Feature(Catalog.require(Catalog.BATTERY_ST
         null
     }
 
+    private fun numberOutside(): Boolean = try {
+        HookRegistry.prefs().rawBoolean(Keys.pref(key, BatteryStyle.NUMBER_OUTSIDE), false)
+    } catch (_: Throwable) {
+        false
+    }
+
     private fun colored(): Boolean = try {
         HookRegistry.prefs().rawBoolean(Keys.pref(key, BatteryStyle.COLORED), true)
     } catch (_: Throwable) {
@@ -195,6 +201,7 @@ internal object BatteryStyleFeature : Feature(Catalog.require(Catalog.BATTERY_ST
         }
         d.style = style
         d.colored = colored()
+        d.numberOutside = numberOutside()
         refresh(view, d)
         return d
     }
@@ -212,6 +219,7 @@ internal object BatteryStyleFeature : Feature(Catalog.require(Catalog.BATTERY_ST
             }
             currentStyle()?.let { d.style = it }
             d.colored = colored()
+            d.numberOutside = numberOutside()
         }
     }
 

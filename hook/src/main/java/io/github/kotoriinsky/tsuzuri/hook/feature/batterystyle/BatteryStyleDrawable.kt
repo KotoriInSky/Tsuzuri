@@ -33,6 +33,8 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
 
     var style: String = BatteryStyle.NUMBER
     var colored = true
+    /** 环形的数字画在环右侧（[BatteryStyle.NUMBER_OUTSIDE]）。 */
+    var numberOutside = false
     var batteryLevel = 0
     var charging = false
     var powerSave = false
@@ -125,15 +127,20 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     private val ringD get() = capsuleH
     private val capW get() = max(1.5f * dp1, capsuleW * 0.07f)
 
-    /** 电池图形本身多宽（不含左侧留白与闪电）。 */
+    /** 环与外置数字的间距，与电池到闪电的可见间距相同。 */
+    private val ringNumberGap get() = boltGapPx
+
+    private fun numberWidth(): Float {
+        measurePaint.typeface = typeface; measurePaint.textSize = textPx
+        return measurePaint.measureText(lvl().toString())
+    }
+
+    /** 电池图形本身多宽（不含左侧留白与闪电；环形外置数字算在图形里，闪电接在数字后面）。 */
     private fun shapeWidth(): Float = when (style) {
-        BatteryStyle.RING -> ringD
+        BatteryStyle.RING -> if (numberOutside) ringD + ringNumberGap + numberWidth() else ringD
         BatteryStyle.VERTICAL -> vertW
         BatteryStyle.HORIZONTAL -> capsuleW + capW + dp1
-        else -> {
-            measurePaint.typeface = typeface; measurePaint.textSize = textPx
-            measurePaint.measureText(lvl().toString())
-        }
+        else -> numberWidth()
     }
 
     /** 这个样式要多宽（px，不含宿主 padding）：留白 + 图形 + 充电时的间距与闪电。 */
@@ -207,6 +214,14 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
         if (sweep > 0f) c.drawArc(rect, -90f, sweep, false, paint)
         paint.style = Paint.Style.FILL
         paint.color = baseColor
+        if (numberOutside) {
+            // 与纯数字同字号、同色（宿主百分比文字），环只表示电量
+            paint.typeface = typeface
+            paint.textSize = textPx
+            val fm = paint.fontMetrics
+            c.drawText(lvl().toString(), shapeLeft + d + ringNumberGap, cy - (fm.ascent + fm.descent) / 2f, paint)
+            return
+        }
         paint.typeface = Typeface.create(typeface, Typeface.BOLD)
         val text = lvl().toString()
         paint.textSize = d * (if (text.length >= 3) 0.34f else 0.44f)
