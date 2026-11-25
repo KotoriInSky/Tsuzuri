@@ -65,20 +65,6 @@ class CatalogTest {
         }
     }
 
-    @Test
-    fun derivedKeysStayInsideTheirFeatureNamespace() {
-        // 这两个键没有对应的 PrefSpec（界面暂时不给白名单多选控件），前端和后端都直接
-        // 引用常量读写。`system_wide` 同时又在 prefs 里声明了一份（界面上的开关）——
-        // 两份一旦漂移，就是「前端写的键后端不读」，用户看到开关打开了但没反应。
-        assertTrue(Catalog.MIUI_WIDGET_PACKAGES_KEY.startsWith("${Catalog.MIUI_WIDGET_FLAG}."))
-        assertTrue(Catalog.MIUI_WIDGET_SYSTEM_WIDE_KEY.startsWith("${Catalog.MIUI_WIDGET_FLAG}."))
-        // 后端 `MiuiWidgetFlagInjector` 读的是常量，界面上的开关来自 prefs —— 两者必须指同一个键。
-        val declaredOnUi = Catalog.require(Catalog.MIUI_WIDGET_FLAG).prefs
-            .filterIsInstance<PrefSpec.Toggle>()
-            .firstOrNull { it.key == Catalog.MIUI_WIDGET_SYSTEM_WIDE_KEY }
-        assertNotNull(declaredOnUi, "MIUI_WIDGET_SYSTEM_WIDE_KEY 在 prefs 里没有对应的开关")
-    }
-
     /**
      * 参数之间的依赖声明（`PrefSpec.dependsOn`）。
      *

@@ -9,7 +9,6 @@ import io.github.kotoriinsky.tsuzuri.core.Prefs
 import io.github.kotoriinsky.tsuzuri.core.RestartPolicy
 import io.github.kotoriinsky.tsuzuri.core.ScopeTarget
 import io.github.kotoriinsky.tsuzuri.hook.feature.drawersignal.LauncherDrawerObserver
-import io.github.kotoriinsky.tsuzuri.hook.feature.miuiwidget.MiuiWidgetFlagInjector
 import io.github.kotoriinsky.tsuzuri.hook.feature.multifreeform.MultiFreeformWhitelist
 import io.github.kotoriinsky.tsuzuri.core.PasscodeIsland
 import io.github.kotoriinsky.tsuzuri.hook.feature.passcodeisland.PasscodeIslandPresenter
@@ -75,7 +74,6 @@ object HookRegistry {
         PaWidgetAdmission,
         PaWidgetPickerFeature,
         WidgetUnifiedStyle,
-        MiuiWidgetFlagInjector,
         // 与手势无关，所以放最后 —— 不影响 SwipeEventHub 的优先级
         PortalAppCompat,
         PortalMediaCapture,

@@ -3,13 +3,14 @@ package io.github.kotoriinsky.tsuzuri.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SettingsPresentationTest {
     @Test
     fun unavailableFeaturesStayOutOfSettingsWithoutRemovingBackendContracts() {
         val visible = Catalog.settingsFeatures.map { it.key }
-        assertFalse(Catalog.MIUI_WIDGET_FLAG in visible)
+        assertNull(Catalog.find("miui_widget_flag"))
         assertTrue(Catalog.find(Catalog.WIDGET_STYLE) != null)
         assertTrue(Catalog.features.filter { it.group == FeatureGroup.SCREEN_RECOGNITION }.all { it.key in visible })
     }

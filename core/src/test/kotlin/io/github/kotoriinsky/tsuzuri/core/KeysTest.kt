@@ -47,7 +47,7 @@ class KeysTest {
         // `f.<key>` 等于另一份 `Keys.pref(feature, pref)`，总开关就会去读某个参数的布尔值 ——
         // 比如某天有人把滑杆参数命名成 "f" 下的东西，勾选状态就会被数值读串。
         val switchKeys = Catalog.features.map { Keys.enabled(it.key) }
-        val prefKeys = Catalog.features.flatMap { f -> f.prefs.map { it.key } } + Catalog.MIUI_WIDGET_PACKAGES_KEY
+        val prefKeys = Catalog.features.flatMap { f -> f.prefs.map { it.key } }
         assertTrue(
             switchKeys.intersect(prefKeys.toSet()).isEmpty(),
             "总开关键与参数键重叠：${switchKeys.intersect(prefKeys.toSet())}",

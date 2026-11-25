@@ -58,8 +58,6 @@
     <string name="feature_pa_widget_admission_summary">允许添加受尺寸限制的 Hyper 和 Android 小部件</string>
     <string name="feature_pa_widget_picker_inject_title">负一屏添加 Android 小部件</string>
     <string name="feature_pa_widget_picker_inject_summary">在负一屏添加 Android 小部件</string>
-    <string name="feature_miui_widget_flag_title">小部件标志位</string>
-    <string name="feature_miui_widget_flag_summary">让第三方小部件使用系统布局规则</string>
     <string name="feature_widget_style_title">小部件风格</string>
     <string name="feature_widget_style_summary">第三方小部件与系统风格一致</string>
     <string name="feature_desktop_widget_style_title">桌面小部件风格统一</string>
@@ -354,10 +352,6 @@
     <string name="pref_side_index_handle_height">把手高度</string>
     <string name="pref_side_index_handle_offset">把手位置</string>
     <string name="pref_side_index_blur">背景模糊</string>
-
-    <!-- ── 参数：小部件元数据注入 ────────────────────────── -->
-    <string name="pref_miui_widget_flag_system_wide">全量生效</string>
-    <string name="pref_miui_widget_flag_system_wide_hint">关闭后仅对所选应用生效</string>
 
     <!-- ── 参数：小部件统一风格 ──────────────────────────── -->
     <string name="pref_group_buttons">显示按钮</string>

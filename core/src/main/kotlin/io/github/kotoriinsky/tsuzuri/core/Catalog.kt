@@ -44,7 +44,6 @@ object Catalog {
     const val AGG_PAYMENT = "agg_payment"
     const val PA_WIDGET_ADMISSION = "pa_widget_admission"
     const val PA_WIDGET_PICKER_INJECT = "pa_widget_picker_inject"
-    const val MIUI_WIDGET_FLAG = "miui_widget_flag"
     const val WIDGET_STYLE = "widget_style"
 
     /** 桌面第三方小部件风格统一（顶边距、宽高网格、分档圆角 24dp/20dp）。原生补丁见 `home_widget_patches.c`。 */
@@ -1120,22 +1119,6 @@ object Catalog {
             // 个别应用多开下表现异常的风险由 EXPERIMENTAL 标注兜住。
         ),
 
-        FeatureSpec(
-            key = MIUI_WIDGET_FLAG,
-            group = FeatureGroup.NEGATIVE_SCREEN,
-            scope = listOf(ScopeTarget.SYSTEM_SERVER),
-            restart = RestartPolicy.PROCESS_RESTART,
-            maturity = Maturity.PARKED,
-            prefs = listOf(
-                PrefSpec.Toggle(
-                    key = p(MIUI_WIDGET_FLAG, "system_wide"),
-                    labelKey = "pref.miui_widget_flag.system_wide",
-                    hintKey = "pref.miui_widget_flag.system_wide.hint",
-                    default = false,
-                ),
-            ),
-        ),
-
         // ── 识屏（传送门 + 超级小爱，按用户任务分三类） ─────────────────────────
         // 各类的子项由多个实现分担（见 HookRegistry 里的注释）；restart 取最常见的档位，
         // 需要更重重启的子项（用原图在 system_server）在自己的说明里写明。
@@ -1618,18 +1601,6 @@ object Catalog {
      */
     fun require(key: String): FeatureSpec =
         byKey[key] ?: error("feature missing from Catalog: $key")
-
-    /**
-     * [MIUI_WIDGET_FLAG] 的白名单包名集合（StringSet）。
-     *
-     * 没有对应的 [PrefSpec]：界面暂时不提供应用多选控件。
-     * 在补上之前，这个特性只能靠 `system_wide` 全量生效 —— 这是刻意的，
-     * 全量注入恰恰是当初没能解决问题的那条路。
-     */
-    val MIUI_WIDGET_PACKAGES_KEY: String = Keys.pref(MIUI_WIDGET_FLAG, "packages")
-
-    /** [MIUI_WIDGET_FLAG] 的「全量生效」开关。默认 false。 */
-    val MIUI_WIDGET_SYSTEM_WIDE_KEY: String = Keys.pref(MIUI_WIDGET_FLAG, "system_wide")
 
     fun byGroup(): Map<FeatureGroup, List<FeatureSpec>> =
         FeatureGroup.entries.associateWith { g -> features.filter { it.group == g } }
