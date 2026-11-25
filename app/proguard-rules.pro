@@ -49,16 +49,23 @@
 # 只是**整个 hook 静默失效** —— 这是最难发现的一类故障。
 #
 # 官方 README 的规则只覆盖入口类，不解决这一条。
+#
+# 第二次踩到（0.1.0 release）：下面这条 keep 对 `{ chain -> }` 写法**不生效**。
+# Kotlin 把 SAM lambda 编成 invokedynamic，R8 脱糖时才生成 `$$ExternalSyntheticLambda`，
+# keep 规则匹配不到这种 R8 自己造的类；它又看不见 Hooker，于是删掉 intercept、
+# 再把全项目约 88 个 hook lambda 横向合并成一个空类。
+# 真正的修法在 app/build.gradle.kts：给 :app 加 compileOnly(libxposed api)，
+# 让 R8 把 Hooker 当已知的库接口，自动保住所有实现。这条 keep 只管 `object : Hooker` 写法。
 -dontobfuscate
 -keepclassmembers class ** {
     public ** intercept(...);
 }
 
-# --- 框架 API 是 compileOnly，R8 找不到它是正常的 ----------------------
+# --- 框架 API：故意**不** -dontwarn -----------------------------------
 # io.github.libxposed:api 永远 compileOnly（打进 APK 会被 LSPosed 拒绝加载），
-# 所以 R8 在图里看不到这些类。它们由框架在运行时提供。
-# 这里只关掉告警，不 keep —— keep 了反而会把没用的框架接口拖进 dex。
--dontwarn io.github.libxposed.api.**
+# R8 通过 :app 的 compileOnly 把它当库类看。以前这里有 -dontwarn，
+# 正是它把「R8 看不见 Hooker」压成了静默故障。现在要是有人删了那条 compileOnly，
+# R8 会直接报 Missing class 让构建失败 —— 这就是构建期的守卫。
 
 # --- 去掉 release 里的调试日志 ----------------------------------------
 -assumenosideeffects class android.util.Log {

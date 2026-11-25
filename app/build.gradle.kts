@@ -159,4 +159,9 @@ dependencies {
     // :app 是纯打包壳：自己不写代码，只把后端和前端装进同一个 APK。
     implementation(project(":hook"))
     implementation(project(":ui"))
+    // 不是给 :app 写代码用的，是给 R8 看的：R8 跑在 :app，只认 :app 的编译 classpath，
+    // :hook 的 compileOnly 不会传过来。看不见 Hooker 接口时，R8 不知道 hook lambda 的
+    // intercept 是在实现框架接口，会把方法体整个删掉（release 里全部 hook 静默失效，
+    // 见 proguard-rules.pro「hook lambda」一节）。compileOnly 依然不会打进 APK。
+    compileOnly(libs.libxposed.api)
 }
