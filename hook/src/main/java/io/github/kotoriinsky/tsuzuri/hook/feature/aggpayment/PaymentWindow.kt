@@ -26,6 +26,8 @@ import io.github.kotoriinsky.tsuzuri.hook.HookContext
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FanShortcuts
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FanTarget
 import io.github.libxposed.api.XposedInterface
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * 聚合支付的 Flyme 形态：**呼出即用小窗打开最近用的那项，小窗底部挂一条入口条，与小窗是一块**。
@@ -95,10 +97,26 @@ internal object PaymentWindow {
         if (diag) Log.d(DIAG_TAG, msg)
     }
 
-    private const val BAR_HEIGHT_DP = 64f
+    /*
+     * 入口条尺寸 = 小窗**逻辑宽度** × 比例，条按逻辑像素排版、不做反向缩放，随小窗整体缩放。
+     * 这样小窗缩到多大，条与窗的比例都一样；而 MIUI 改大小只改缩放、不改逻辑 bounds
+     * （真机日志：0.41→0.68 全程 bounds=44,404-1438,2812），所以改大小时条完全不用重排。
+     *
+     * 比例取自 Flyme 实测（research/captures/meizu-20261028-aggpay，958px 宽的付款小窗）：
+     * 条高 204px、与窗间距 34px、图标 111px、标签字号约 33px。
+     */
+    private const val BAR_HEIGHT_RATIO = 0.213f
     /** 条与小窗左右、底边的间距；条的圆角 = 小窗圆角 − 这个值（同心）。 */
-    private const val MARGIN_DP = 8f
-    private const val ICON_DP = 34f
+    private const val MARGIN_RATIO = 0.035f
+    private const val ICON_RATIO = 0.116f
+    private const val LABEL_RATIO = 0.034f
+    private const val LABEL_GAP_RATIO = 0.010f
+
+    /**
+     * 标签的屏上可读下限。纯按比例缩，小窗在 0.40 时字只剩 6~7sp；低于下限就按
+     * 「下限 ÷ 当前缩放」放大逻辑字号，图标相应让位，保证字始终在、始终一行。
+     */
+    private const val LABEL_MIN_SP = 9f
     private const val LAYER = 1_000_000
 
     /** 等 MIUI 动画播完：每隔多久看一次、最多等多久（超时就直接显示）。 */
@@ -131,6 +149,17 @@ internal object PaymentWindow {
         val animating: Boolean,
     )
 
+    /** 入口条的一次排版，全部是小窗 leash 局部坐标（逻辑像素）。 */
+    private data class Metrics(
+        val width: Int,
+        val height: Int,
+        val margin: Int,
+        val icon: Int,
+        val label: Float,
+        val gap: Int,
+        val radius: Float,
+    )
+
     private class Session(
         val items: List<PaymentShortcut>,
         val current: PaymentShortcut,
@@ -161,9 +190,11 @@ internal object PaymentWindow {
     private var host: SurfaceControlViewHost? = null
     private var barSc: SurfaceControl? = null
     private var barBackground: GradientDrawable? = null
+    private val iconViews = ArrayList<ImageView>(4)
+    private val labelViews = ArrayList<TextView>(4)
     private var attached: Target? = null
-    private var barWidth = 0
-    private var barRadius = 0f
+    /** 最近一次生效的排版（逻辑像素）。null = 还没按任何小窗排过。 */
+    private var metrics: Metrics? = null
     private var barShown = false
     private var waitSince = 0L
     private var fade: android.animation.ValueAnimator? = null
@@ -481,39 +512,31 @@ internal object PaymentWindow {
         // 改为按图层身份比；几何没变就完全不碰入口条：它是 leash 的子层，拖动本来就跟着走
         val prev = attached
         val sameLeash = prev != null && prev.leash.isValid && sameSurface(prev.leash, target.leash)
-        // 只比宽高：条在 leash 局部坐标里的位置与平移无关，拖动时 bounds 的 left/top 变了也不用动
-        if (barShown && sameLeash && prev!!.taskId == target.taskId &&
-            prev.bounds.width() == target.bounds.width() && prev.bounds.height() == target.bounds.height() &&
-            prev.scale == target.scale && prev.cornerRadius == target.cornerRadius && s.closeTaskId == null
-        ) {
-            d("决定 why=$why 排队=${lag}ms → 不动（几何未变）")
+        // 条按逻辑像素排版、随小窗一起缩放，所以只看「排版」变没变：平移、以及字没碰到可读下限时的
+        // 缩放变化，排版都不变 —— 这时完全不碰入口条，它作为 leash 子层由 MIUI 逐帧带着走
+        val m = metricsFor(c, target)
+        val before = metrics
+        if (barShown && sameLeash && prev.taskId == target.taskId && m == before && s.closeTaskId == null) {
+            d("决定 why=$why 排队=${lag}ms → 不动（排版未变 scale=${target.scale}）")
             return
         }
         if (diag) d(
             "决定 why=$why 排队=${lag}ms → 重摆 task ${prev?.taskId}→${target.taskId} sameLeash=$sameLeash " +
                 "bounds=${prev?.bounds}→${target.bounds} scale=${prev?.scale}→${target.scale} " +
                 "圆角=${prev?.cornerRadius}→${target.cornerRadius} 显示=$barShown 待关=${s.closeTaskId} " +
-                "宽 $barWidth→${(target.bounds.width() * target.scale).toInt() - dp(app ?: return, MARGIN_DP) * 2}",
+                "排版 $before→$m",
         )
-        val margin = dp(c, MARGIN_DP)
-        val width = (target.bounds.width() * target.scale).toInt() - margin * 2
-        if (width != barWidth && width > 0) {
-            host?.relayout(width, dp(c, BAR_HEIGHT_DP))
-            barWidth = width
+        if (before == null || m.width != before.width || m.height != before.height) {
+            host?.relayout(m.width, m.height)
         }
-        val radius = (target.cornerRadius - margin).coerceAtLeast(dp(c, 12f).toFloat())
-        if (radius != barRadius) {
-            barRadius = radius
-            barBackground?.cornerRadius = radius
-        }
+        if (m != before) applyMetrics(m)
+        metrics = m
 
-        // leash 的局部坐标是缩放前的逻辑像素：屏上的边距 / 条高都要乘 inv
-        val inv = 1f / target.scale
         val t = SurfaceControl.Transaction()
         if (!sameLeash) t.reparent(sc, target.leash)
         t.setLayer(sc, LAYER)
-            .setPosition(sc, margin * inv, target.bounds.height() - (dp(c, BAR_HEIGHT_DP) + margin) * inv)
-            .setScale(sc, inv, inv)
+            .setPosition(sc, m.margin.toFloat(), (target.bounds.height() - m.height - m.margin).toFloat())
+            .setScale(sc, 1f, 1f)
             .setVisibility(sc, true)
         if (appearing) t.setAlpha(sc, 0f)
         runCatching {
@@ -551,6 +574,51 @@ internal object PaymentWindow {
         }
     }
 
+    /**
+     * 按小窗算入口条排版（逻辑像素）。主线程调。
+     *
+     * 只有两处会随缩放变：标签碰到可读下限时的字号（以及随之让位的图标），和同心圆角 ——
+     * MIUI 的小窗圆角是**屏上固定像素**（日志里 0.41~0.70 都是 59），换回逻辑像素要除以缩放。
+     */
+    private fun metricsFor(c: Context, t: Target): Metrics {
+        val w = t.bounds.width().toFloat()
+        val scale = t.scale.coerceAtLeast(0.05f)
+        val margin = (w * MARGIN_RATIO).roundToInt()
+        val height = (w * BAR_HEIGHT_RATIO).roundToInt()
+        val gap = (w * LABEL_GAP_RATIO).roundToInt()
+        val minLabel = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, LABEL_MIN_SP, c.resources.displayMetrics) / scale
+        // 取整到 0.5 逻辑像素：缩放的浮点抖动不该让排版「变了」而触发重排
+        val label = (maxOf(w * LABEL_RATIO, minLabel) * 2f).roundToInt() / 2f
+        // 字被下限放大时图标让位：一行字（含行距）+ 间距 + 上下各留 margin/2，装不下就缩图标
+        val room = height - ceil(label * 1.25f).toInt() - gap - margin
+        val icon = minOf((w * ICON_RATIO).roundToInt(), room).coerceAtLeast((w * ICON_RATIO * 0.5f).roundToInt())
+        val radius = ((t.cornerRadius / scale - margin).coerceAtLeast(height * 0.2f) * 2f).roundToInt() / 2f
+        return Metrics(width = (w - margin * 2).roundToInt(), height = height, margin = margin,
+            icon = icon, label = label, gap = gap, radius = radius)
+    }
+
+    /** 把排版写进入口条的视图。SCVH 下一帧重绘。 */
+    private fun applyMetrics(m: Metrics) {
+        barBackground?.cornerRadius = m.radius
+        for (v in iconViews) {
+            val lp = v.layoutParams
+            if (lp.width != m.icon || lp.height != m.icon) {
+                lp.width = m.icon
+                lp.height = m.icon
+                v.layoutParams = lp
+            }
+        }
+        for (v in labelViews) {
+            v.setTextSize(TypedValue.COMPLEX_UNIT_PX, m.label)
+            (v.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+                if (lp.topMargin != m.gap) {
+                    lp.topMargin = m.gap
+                    v.layoutParams = lp
+                }
+            }
+        }
+    }
+
     /** 呼出时建 SCVH。会话里切换条目不重建：条一直挂着，顺序等下次呼出再按最近使用排。 */
     private fun ensureBar(items: List<PaymentShortcut>) {
         val c = app ?: return
@@ -560,8 +628,9 @@ internal object PaymentWindow {
         runCatching {
             val display = c.getSystemService(DisplayManager::class.java).getDisplay(0)
             val nh = SurfaceControlViewHost(c, display, null as IBinder?)
-            barWidth = c.resources.displayMetrics.widthPixels / 2
-            nh.setView(bar, barWidth, dp(c, BAR_HEIGHT_DP))
+            // 占位尺寸：第一次挂到小窗时按 [metricsFor] 重排
+            nh.setView(bar, c.resources.displayMetrics.widthPixels / 2, dp(c, 64f))
+            metrics = null
             host = nh
             barSc = nh.surfacePackage?.surfaceControl
             attached = null
@@ -580,9 +649,10 @@ internal object PaymentWindow {
         host = null
         barSc = null
         barBackground = null
+        iconViews.clear()
+        labelViews.clear()
         attached = null
-        barWidth = 0
-        barRadius = 0f
+        metrics = null
         barShown = false
     }
 
@@ -590,10 +660,12 @@ internal object PaymentWindow {
         val dark = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
         val bg = GradientDrawable().apply {
-            cornerRadius = if (barRadius > 0f) barRadius else dp(c, 18f).toFloat()
+            cornerRadius = dp(c, 18f).toFloat()
             setColor(if (dark) Color.rgb(0x2B, 0x2B, 0x2E) else Color.WHITE)
         }
         barBackground = bg
+        iconViews.clear()
+        labelViews.clear()
         val row = LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -605,21 +677,25 @@ internal object PaymentWindow {
                 gravity = Gravity.CENTER
                 setOnClickListener { switchTo(item) }
             }
+            // 尺寸是占位：第一次挂到小窗时由 [applyMetrics] 按小窗宽度的比例改写
+            val icon = ImageView(c).apply { setImageDrawable(item.icon) }
+            cell.addView(icon, LinearLayout.LayoutParams(dp(c, 34f), dp(c, 34f)))
+            iconViews.add(icon)
+            val label = TextView(c).apply {
+                text = LABELS[item.key] ?: item.label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(if (dark) Color.rgb(0xDD, 0xDD, 0xDD) else Color.rgb(0x33, 0x33, 0x33))
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                includeFontPadding = false
+            }
             cell.addView(
-                ImageView(c).apply { setImageDrawable(item.icon) },
-                LinearLayout.LayoutParams(dp(c, ICON_DP), dp(c, ICON_DP)),
-            )
-            cell.addView(
-                TextView(c).apply {
-                    text = LABELS[item.key] ?: item.label
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    setTextColor(if (dark) Color.rgb(0xDD, 0xDD, 0xDD) else Color.rgb(0x33, 0x33, 0x33))
-                    gravity = Gravity.CENTER
-                    maxLines = 1
-                },
+                label,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                     .apply { topMargin = dp(c, 4f) },
             )
+            labelViews.add(label)
             row.addView(cell, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         }
         return row
