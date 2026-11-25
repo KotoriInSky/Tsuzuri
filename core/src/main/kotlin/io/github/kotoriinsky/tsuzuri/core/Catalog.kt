@@ -1278,6 +1278,26 @@ object Catalog {
             // 原生侧会热打补丁（新增小部件立刻生效），但桌面已布局的小部件需要重启桌面才会重算尺寸和圆角。
             restart = RestartPolicy.PROCESS_RESTART,
             maturity = Maturity.EXPERIMENTAL,
+            prefs = listOf(
+                PrefSpec.Toggle(
+                    key = p(DESKTOP_WIDGET_STYLE, "follow_no_word"),
+                    labelKey = "pref.desktop_widget_style.follow_no_word",
+                    hintKey = "pref.desktop_widget_style.follow_no_word.hint",
+                    default = true,
+                ),
+                PrefSpec.Toggle(
+                    key = p(DESKTOP_WIDGET_STYLE, "unify_scale"),
+                    labelKey = "pref.desktop_widget_style.unify_scale",
+                    hintKey = "pref.desktop_widget_style.unify_scale.hint",
+                    default = true,
+                ),
+                PrefSpec.Toggle(
+                    key = p(DESKTOP_WIDGET_STYLE, "drag_light"),
+                    labelKey = "pref.desktop_widget_style.drag_light",
+                    hintKey = "pref.desktop_widget_style.drag_light.hint",
+                    default = true,
+                ),
+            ),
         ),
 
         FeatureSpec(
