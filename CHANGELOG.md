@@ -2,6 +2,20 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+
+- **桌面原生小部件**：通过 LSPosed API 102 单包 native 入口接入 `com.miui.home`，支持桌面第三方小部件风格统一（外框网格、内外尺寸通知、分档圆角与启动动画圆角、无字模式、拖拽流光、统一渲染比例）、任意小部件堆叠与拖入负一屏，带 2s 看门狗自愈与热开关还原。
+- **状态栏样式**：支持自绘电池样式（环形 / 竖条 / 纯数字 / 横向）；支持在超级岛遮挡状态栏通知图标时直接隐藏被遮挡图标并去掉省略点。
+- **聚合支付**：合入 Flyme 形态与小窗跳板摆放，入口条按小窗宽度比例排版并与缩放同帧。
+- **侧滑索引桌面遮挡原生信号**：通过单包 `libfpnative.so` 挂接 10 处桌面模态态观察点（抽屉 / 文件夹 / 编辑态 / 小部件预览 / 堆叠展开），以 `127.0.0.1:49731` 本地回环 UDP 零 root 实时推送至 SystemUI，替代旧的独立 Zygisk 模块方案。
+
+### 修复与清理
+
+- **构建 / R8**：为 `:app` 补齐 `compileOnly(libs.libxposed.api)` 并移除 `-dontwarn io.github.libxposed.api.**`，修复 release 包 R8 误删 Kotlin SAM hook lambda `intercept` 方法的问题。
+- **清理**：下线并移除已废弃的 `miui_widget_flag`（旧 system_server parcel 注入方案，由桌面原生补丁替代）。
+
 ## [0.1.0]
 
 首个公开版本。
