@@ -10,6 +10,7 @@
  */
 
 #include "home_widget_patches.h"
+#include "home_overlay_hooks.h"
 
 #include <android/log.h>
 #include <errno.h>
@@ -542,16 +543,38 @@ static uint32_t read_desired_flags(const char **source_out) {
 static void reconcile_locked(void) {
     const char *src = "none";
     uint32_t desired = read_desired_flags(&src);
+    int want_overlay = (desired & HOME_FLAG_OVERLAY_GATE) != 0u;
+    uint32_t widget_desired = desired & ~HOME_FLAG_OVERLAY_GATE;
 
     int any_applied_before = 0;
     for (size_t i = 0; i < SLOT_COUNT; i++) {
         if (g_slots[i].applied) any_applied_before = 1;
     }
+    int overlay_active_before = home_overlay_hooks_is_active();
 
-    if (desired == 0u && !any_applied_before) {
+    if (desired == 0u && !any_applied_before && !overlay_active_before) {
         if (g_last_flags != 0u || strcmp(g_last_source, src) != 0) {
             hlog(ANDROID_LOG_INFO, "home_patches: flags=0 (%s), all features OFF (zero mprotect)", src);
             g_last_flags = 0u;
+            snprintf(g_last_source, sizeof(g_last_source), "%s", src);
+        }
+        return;
+    }
+
+    if (!locate_libapp()) return;
+
+    /* 桌面遮挡信号观察器与小部件补丁共用同一看门狗节拍和开关掩码 */
+    if (want_overlay || overlay_active_before) {
+        home_overlay_hooks_reconcile(g_libapp.base, g_libapp.exec_start, g_libapp.exec_end, want_overlay);
+    }
+
+    if (widget_desired == 0u && !any_applied_before) {
+        if (g_last_flags != desired || strcmp(g_last_source, src) != 0) {
+            hlog(ANDROID_LOG_INFO,
+                 "home_patches: flags %u->%u (%s) widget_patches=0/%zu overlay=%d",
+                 g_last_flags == 0xffffffffu ? 0u : g_last_flags,
+                 desired, src, SLOT_COUNT, want_overlay);
+            g_last_flags = desired;
             snprintf(g_last_source, sizeof(g_last_source), "%s", src);
         }
         return;
@@ -567,7 +590,7 @@ static void reconcile_locked(void) {
     for (size_t i = 0; i < SLOT_COUNT; i++) {
         patch_slot_t *s = &g_slots[i];
         if (!s->resolved) continue;
-        int want_on = (desired & s->feature_bit) != 0u;
+        int want_on = (widget_desired & s->feature_bit) != 0u;
         if (want_on) {
             int was_patched_in_mem = slot_target_matches_words(s, s->resolved_addr, s->patch);
             if (!was_patched_in_mem) {
@@ -598,10 +621,10 @@ static void reconcile_locked(void) {
 
     if (flags_changed) {
         hlog(ANDROID_LOG_INFO,
-             "home_patches: flags %u->%u (%s) applied=%d/%zu (style=%d/10 noword=%d/1 light=%d/1 scale=%d/2 drag_pa=%d/4 stack=%d/2)",
+             "home_patches: flags %u->%u (%s) applied=%d/%zu (style=%d/10 noword=%d/1 light=%d/1 scale=%d/2 drag_pa=%d/4 stack=%d/2 overlay=%d)",
              g_last_flags == 0xffffffffu ? 0u : g_last_flags,
              desired, src, applied_total, SLOT_COUNT,
-             style_ok, noword_ok, light_ok, scale_ok, drag_ok, stack_ok);
+             style_ok, noword_ok, light_ok, scale_ok, drag_ok, stack_ok, want_overlay);
         g_last_flags = desired;
         snprintf(g_last_source, sizeof(g_last_source), "%s", src);
     } else if (reapplied_after_reset > 0) {

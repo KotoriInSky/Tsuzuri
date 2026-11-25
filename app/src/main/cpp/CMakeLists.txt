@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(fpnative C)
 
-add_library(fpnative SHARED fpnative.c home_widget_patches.c)
+add_library(fpnative SHARED fpnative.c home_widget_patches.c home_overlay_hooks.c)
 
 target_compile_options(fpnative PRIVATE -Wall -Wextra -fvisibility=hidden -O2)
 target_link_options(fpnative PRIVATE -Wl,--no-undefined)

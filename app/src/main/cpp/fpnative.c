@@ -43,6 +43,7 @@
 
 #include "native_hook.h"
 #include "home_widget_patches.h"
+#include "home_overlay_hooks.h"
 
 #define TAG "FPNative"
 
@@ -291,6 +292,9 @@ NativeOnModuleLoaded native_init(const NativeAPIEntries *entries) {
     }
 
     if (g_in_home) {
+        if (entries != NULL) {
+            home_overlay_hooks_set_api(entries->hook_func);
+        }
         /* 如果 libapp.so 在 native_init 时已经映射，立刻调和一次；否则等 on_lib_loaded 触发 */
         home_widget_patches_on_libapp_ready();
         if (probe_enabled()) {
