@@ -637,6 +637,8 @@
     <string name="pref_battery_style_style_ring">环形</string>
     <string name="pref_battery_style_style_vertical">竖条</string>
     <string name="pref_battery_style_style_horizontal">横向</string>
+    <string name="pref_battery_style_number_outside">数字放在环外</string>
+    <string name="pref_battery_style_number_outside_required">仅环形使用此设置</string>
     <string name="pref_battery_style_colored">彩色状态</string>
     <string name="pref_battery_style_colored_hint">低电量红色，充电绿色，省电橙色</string>
     <string name="pref_clean_statusbar_auto_recording">录屏时自动开启</string>
