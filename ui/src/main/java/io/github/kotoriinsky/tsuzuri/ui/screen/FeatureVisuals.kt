@@ -57,6 +57,8 @@ internal fun featureIcon(spec: FeatureSpec): FpIcon = when (spec.key) {
     Catalog.AGG_PAYMENT -> FpIcon(FpGlyphs.Payment, PlateColors.Orange)
     Catalog.CLEAN_STATUSBAR -> FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Indigo)
     Catalog.STATUSBAR_ICONS -> FpIcon(Icons.Rounded.Notifications, PlateColors.Indigo)
+    // 图标待用户设计，先借信号图形
+    Catalog.BATTERY_STYLE -> FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Green)
     Catalog.TEXT_TOOLBAR -> FpIcon(FpGlyphs.TextFields, PlateColors.Gray)
     Catalog.SHARE_ORDER -> FpIcon(Icons.Rounded.Share, PlateColors.Green)
     // 负一屏小部件归入杂项后仍使用小部件图标。
