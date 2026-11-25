@@ -48,6 +48,18 @@ internal object MultiFreeformWhitelist : Feature(Catalog.require(Catalog.MULTI_F
     private const val METHOD_NAME = "isSupportFreeFormMultiTask"
 
     /**
+     * 小窗数量上限策略（system_server）。
+     *
+     * `MiuiFreeFormStackDisplayStrategy#onMiuiFreeFormStasckAdded` 用 `mFreeFormActivityStacks.size()`
+     * 与 `getMaxMiuiFreeFormStackCount()` 比较，默认把**挂边（pin）小窗也算进总数 2 里**，
+     * 导致挂边 1 个窗后再开第 2 个正常小窗就会触发 `startExitApplication` 顶掉旧窗。
+     * 这里给返回值加上当前处于 `inPinMode()` 的挂边小窗数，使「挂边小窗不计入上限」。
+     */
+    private const val STRATEGY_CLASS = "com.android.server.wm.MiuiFreeFormStackDisplayStrategy"
+    private const val STRATEGY_MAX_METHOD = "getMaxMiuiFreeFormStackCount"
+    private const val STRATEGY_ADDED_METHOD = "onMiuiFreeFormStasckAdded"
+
+    /**
      * 内联链上需要 deopt 的调用方（第一元素 = 类名，第二 = 方法名）。
      *
      * `isSupportFreeFormMultiTask` 是一行 contains，AOT 下必然内联进调用方；
@@ -62,9 +74,17 @@ internal object MultiFreeformWhitelist : Feature(Catalog.require(Catalog.MULTI_F
 
     /** 触发计数（诊断日志有界化用）。 */
     private val callCount = java.util.concurrent.atomic.AtomicInteger()
+    private val pinCapCount = java.util.concurrent.atomic.AtomicInteger()
 
     private var handle: XposedInterface.HookHandle? = null
+    private var pinCapHandle: XposedInterface.HookHandle? = null
     private var hookedMethod: Method? = null
+
+    @Volatile
+    private var stacksField: java.lang.reflect.Field? = null
+
+    @Volatile
+    private var inPinModeMethod: Method? = null
 
     override fun install(ctx: HookContext): InstallReport {
         val cls = try {
@@ -140,8 +160,89 @@ internal object MultiFreeformWhitelist : Feature(Catalog.require(Catalog.MULTI_F
             }
         }
 
-        ctx.log(Log.INFO, "多开放行已装上：$METHOD_NAME → 一律 true（全局放行）")
-        return InstallReport(hooked)
+        val pinExempt = installPinExemptCap(ctx)
+
+        ctx.log(Log.INFO, "多开放行已装上：$METHOD_NAME → 一律 true（全局放行），挂边不计上限=$pinExempt")
+        return InstallReport(
+            hooked + pinExempt,
+            notes = listOf("pinExempt=$pinExempt"),
+        )
+    }
+
+    /**
+     * 挂边（`inPinMode()`）小窗不计入同时小窗数量上限。
+     * 缺失时不阻塞主特性（只降级为系统原计数），所有反射异常都在 hook 内兜住。
+     */
+    private fun installPinExemptCap(ctx: HookContext): Int {
+        val strategyCls = try {
+            ctx.classLoader.loadClass(STRATEGY_CLASS)
+        } catch (t: Throwable) {
+            ctx.log(Log.WARN, "多开名单：找不到 $STRATEGY_CLASS，挂边不计上限跳过", t)
+            return 0
+        }
+        val maxMethod = strategyCls.declaredMethods.firstOrNull {
+            it.name == STRATEGY_MAX_METHOD && it.parameterTypes.size == 2
+        } ?: run {
+            ctx.log(Log.WARN, "多开名单：$STRATEGY_CLASS#$STRATEGY_MAX_METHOD/2 不存在，挂边不计上限跳过")
+            return 0
+        }
+        maxMethod.isAccessible = true
+
+        val serviceField = runCatching {
+            strategyCls.getDeclaredField("mFreeFormManagerService").apply { isAccessible = true }
+        }.getOrNull() ?: return 0
+
+        val installed = try {
+            ctx.module.hook(maxMethod).intercept { chain ->
+                val raw = chain.proceed()
+                val orig = raw as? Int ?: return@intercept raw
+                if (orig <= 0) return@intercept orig
+                try {
+                    val strategy = chain.thisObject ?: return@intercept orig
+                    val addingStack = chain.args.getOrNull(1)
+                    val service = serviceField.get(strategy) ?: return@intercept orig
+                    val sf = stacksField ?: service.javaClass.getDeclaredField("mFreeFormActivityStacks")
+                        .apply { isAccessible = true }
+                        .also { stacksField = it }
+                    val map = sf.get(service) as? Map<*, *> ?: return@intercept orig
+                    var pinned = 0
+                    for (stack in map.values) {
+                        if (stack == null || stack === addingStack) continue
+                        val pm = inPinModeMethod ?: stack.javaClass.getDeclaredMethod("inPinMode")
+                            .apply { isAccessible = true }
+                            .also { inPinModeMethod = it }
+                        if (pm.invoke(stack) == true) pinned++
+                    }
+                    if (pinned > 0) {
+                        val n = pinCapCount.incrementAndGet()
+                        if (n <= 12) {
+                            ctx.log(Log.INFO, "挂边不计上限 #$n：原上限=$orig 挂边=$pinned → 放行上限=${orig + pinned}")
+                        }
+                        orig + pinned
+                    } else {
+                        orig
+                    }
+                } catch (_: Throwable) {
+                    // 吞掉：system_server 绝不抛异常，出错退回原上限
+                    orig
+                }
+            }.also { pinCapHandle = it }
+            1
+        } catch (t: Throwable) {
+            ctx.log(Log.WARN, "多开名单：hook $STRATEGY_MAX_METHOD 失败", t)
+            return 0
+        }
+
+        // getMaxMiuiFreeFormStackCount 是 private 方法，可能被 AOT 内联进 onMiuiFreeFormStasckAdded
+        runCatching {
+            val caller = strategyCls.declaredMethods.firstOrNull { it.name == STRATEGY_ADDED_METHOD }
+            if (caller != null) {
+                ctx.module.deoptimize(caller)
+                ctx.log(Log.INFO, "多开名单：已 deopt $STRATEGY_CLASS.$STRATEGY_ADDED_METHOD")
+            }
+        }.onFailure { ctx.log(Log.WARN, "多开名单：deopt $STRATEGY_ADDED_METHOD 失败", it) }
+
+        return installed
     }
 
     override fun uninstall() {
@@ -150,8 +251,15 @@ internal object MultiFreeformWhitelist : Feature(Catalog.require(Catalog.MULTI_F
         } catch (_: Throwable) {
             // 卸不掉没有补救手段，也不能因此抛出去
         }
+        try {
+            pinCapHandle?.unhook()
+        } catch (_: Throwable) {
+        }
         handle = null
+        pinCapHandle = null
         hookedMethod = null
+        stacksField = null
+        inPinModeMethod = null
         super.uninstall()
     }
 }

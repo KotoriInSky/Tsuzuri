@@ -19,6 +19,7 @@ import io.github.kotoriinsky.tsuzuri.hook.Feature
 import io.github.kotoriinsky.tsuzuri.hook.HookContext
 import io.github.libxposed.api.XposedInterface.HookHandle
 import io.github.kotoriinsky.tsuzuri.hook.InstallReport
+import io.github.kotoriinsky.tsuzuri.hook.feature.gesture.FreeformWindowTracker
 import io.github.kotoriinsky.tsuzuri.hook.feature.gesture.SwipeEventHub
 import io.github.kotoriinsky.tsuzuri.hook.feature.gesture.SystemUiEnv
 import java.util.concurrent.ExecutorService
@@ -239,6 +240,7 @@ object CornerSmallWindow : Feature(Catalog.require(Catalog.CORNER_SMALL_WINDOW))
         SystemUiEnv.ForegroundTracker.acquire(key, app)
         // 设置界面的预览底图由 SystemUI 读壁纸交过去（与侧滑索引共用，引用计数；见 PreviewWallpaperPush）
         PreviewWallpaperPush.acquire(key, ctx, app)
+        FreeformWindowTracker.acquire(key, ctx)
 
         val rt = FanRuntime()
         val ov = FanOverlay(app)
@@ -372,6 +374,7 @@ object CornerSmallWindow : Feature(Catalog.require(Catalog.CORNER_SMALL_WINDOW))
         teardown()
         SystemUiEnv.ForegroundTracker.release(key)
         PreviewWallpaperPush.release(key)
+        FreeformWindowTracker.release(key)
         super.uninstall()
     }
 

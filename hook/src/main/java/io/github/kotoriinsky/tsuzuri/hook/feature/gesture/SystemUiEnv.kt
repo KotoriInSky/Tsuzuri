@@ -10,6 +10,7 @@ import io.github.kotoriinsky.tsuzuri.core.Keys
 import io.github.kotoriinsky.tsuzuri.core.PrefSpec
 import io.github.kotoriinsky.tsuzuri.core.geometry.ScreenRect
 import io.github.kotoriinsky.tsuzuri.core.geometry.WindowBounds
+import io.github.kotoriinsky.tsuzuri.core.geometry.WindowCascade
 import io.github.kotoriinsky.tsuzuri.hook.HookContext
 import io.github.kotoriinsky.tsuzuri.hook.HookRegistry
 
@@ -176,6 +177,7 @@ object SystemUiEnv {
             val applied = logical?.let { applyCustomBounds(options, it) }
 
             try {
+                FreeformWindowTracker.noteLaunch(pkg)
                 context.startActivity(intent, options.toBundle())
                 if (logical != null) {
                     logPlacementApplied(hook, level, placement, logical, applied, scale)
@@ -222,14 +224,20 @@ object SystemUiEnv {
         hook: HookContext,
         context: Context,
         options: ActivityOptions,
-    ): Rect? = applyPlacement(hook, options, WindowPlacement.resolve(context))
+    ): Rect? {
+        FreeformWindowTracker.noteLaunch(null)
+        return applyPlacement(hook, options, WindowPlacement.resolve(context))
+    }
 
     internal fun applyPasscodePlacement(
         hook: HookContext,
         context: Context,
         options: ActivityOptions,
         preset: String,
-    ): Rect? = applyPlacement(hook, options, WindowPlacement.resolve(context, preset))
+    ): Rect? {
+        FreeformWindowTracker.noteLaunch(null)
+        return applyPlacement(hook, options, WindowPlacement.resolve(context, preset))
+    }
 
     private fun applyPlacement(hook: HookContext, options: ActivityOptions, placement: WindowPlacement.Resolved): Rect? {
         if (placement.bounds == null) {
@@ -530,12 +538,18 @@ object SystemUiEnv {
                     WindowBounds.DEFAULT_Y_PERCENT,
                     rect,
                 ) + undeclaredNote(undeclared)
+                val cascaded = cascadeAvoidOverlap(context, screen, rect)
+                val cascadeNote = if (cascaded != rect) {
+                    " [防重合错位→${cascaded.left.toInt()},${cascaded.top.toInt()}]"
+                } else {
+                    ""
+                }
                 val suffix = if (WindowBounds.isLandscape(screen.w, screen.h)) {
                     "（横屏：保持竖屏形状，位置由实测常量定）"
                 } else {
                     "（x/y 为中心位置）"
                 }
-                return Resolved(toRect(rect), "window_preset=flyme（Flyme 实测值）$detail$suffix")
+                return Resolved(toRect(cascaded), "window_preset=flyme（Flyme 实测值）$detail$suffix$cascadeNote")
             }
 
             // `custom`（或读到认不出的取值 → `resolvePreset` 会按默认档处理，
@@ -562,6 +576,12 @@ object SystemUiEnv {
                 // 而预览画的还是用户配的那个（又变成「预览说谎」，见规范 §9.0 第 1 条）
                 return Resolved(null, "window_preset=$preset 但矩形不可用（$detail）→ 不覆写，交给 MIUI")
             }
+            val cascaded = cascadeAvoidOverlap(context, screen, rect)
+            val cascadeNote = if (cascaded != rect) {
+                " [防重合错位→${cascaded.left.toInt()},${cascaded.top.toInt()}]"
+            } else {
+                ""
+            }
             // 日志里点明语义：同样的 `x%=50` 在 v1 是「左边缘落在半屏」，
             // 在 v2 是「窗口居中」。不写这一句，翻旧日志排障的人会把两版读成同一个意思。
             val suffix = if (WindowBounds.isLandscape(screen.w, screen.h)) {
@@ -569,7 +589,15 @@ object SystemUiEnv {
             } else {
                 "（x/y 为中心位置）"
             }
-            return Resolved(toRect(rect), "window_preset=$preset $detail$suffix")
+            return Resolved(toRect(cascaded), "window_preset=$preset $detail$suffix$cascadeNote")
+        }
+
+        /** 若已有非挂边正常小窗停在同一块矩形上，向内/右下做轻微阶梯错位，避免严丝合缝。 */
+        private fun cascadeAvoidOverlap(context: Context, screen: Screen, desired: ScreenRect): ScreenRect {
+            val occupied = FreeformWindowTracker.visibleNormalBounds()
+            if (occupied.isEmpty()) return desired
+            val stepPx = WindowCascade.DEFAULT_STEP_DP * context.resources.displayMetrics.density
+            return WindowCascade.avoidFlushOverlap(desired, occupied, screen.w, screen.h, stepPx)
         }
 
         /**
