@@ -21,6 +21,8 @@ internal object FreeformWindowTracker {
 
     private const val TAG = "FP-FreeformTrack"
     private const val REPO_CLASS = "com.android.wm.shell.multitasking.common.taskmanager.MultiTaskingTaskRepository"
+    private const val CONTROLLER_CLASS = "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeController"
+    private const val ADJUST_LAYER_METHOD = "adjustRemainFreeFormLayer"
     private const val WINDOWING_MODE_FREEFORM = 5
 
     /** 呼出后这段时间内观察到的目标小窗保证置顶。 */
@@ -119,8 +121,48 @@ internal object FreeformWindowTracker {
                 count++
             }.onFailure { ctx.log(Log.WARN, "[$TAG] hook $name 失败", it) }
         }
+        count += installLayerOrderHook(ctx)
         ctx.log(Log.INFO, "[$TAG] 小窗状态追踪已挂载：hooked=$count")
         return count
+    }
+
+    /**
+     * `MiuiFreeformModeController#adjustRemainFreeFormLayer(Transaction, int, SurfaceControl, boolean z)`
+     * 在 `z == false`（新开正常小窗）时会把旧的迷你窗（`isMiniState()`）设成正相对层级压在新窗上面。
+     * 刚通过我们呼出小窗的 [TOP_WINDOW_MS] 内把 `z` 改为 `true`，让旧的迷你/挂起小窗老实待在新窗下面。
+     */
+    private fun installLayerOrderHook(ctx: HookContext): Int {
+        val ctrlCls = runCatching { ctx.classLoader.loadClass(CONTROLLER_CLASS) }.getOrNull() ?: return 0
+        val method = ctrlCls.declaredMethods.firstOrNull {
+            it.name == ADJUST_LAYER_METHOD && it.parameterTypes.size == 4 &&
+                it.parameterTypes[3] == Boolean::class.javaPrimitiveType
+        } ?: return 0
+        method.isAccessible = true
+        val installed = runCatching {
+            val h = ctx.module.hook(method).intercept { chain ->
+                val until = recentLaunchUntil
+                if (until != 0L && System.currentTimeMillis() <= until && chain.args.getOrNull(3) == false) {
+                    chain.proceed(arrayOf<Any?>(chain.args[0], chain.args[1], chain.args[2], true))
+                } else {
+                    chain.proceed()
+                }
+            }
+            handles.add(h)
+            1
+        }.getOrElse {
+            ctx.log(Log.WARN, "[$TAG] hook $ADJUST_LAYER_METHOD 失败", it)
+            0
+        }
+        if (installed > 0) {
+            for (callerName in listOf("adjustTransactionLayerIfNeed", "resetRelativeLayerIfNeed")) {
+                runCatching {
+                    ctrlCls.declaredMethods.firstOrNull { it.name == callerName }?.let {
+                        ctx.module.deoptimize(it)
+                    }
+                }
+            }
+        }
+        return installed
     }
 
     private fun ensureLaunchedTaskOnTop(r: Any, ti: ActivityManager.RunningTaskInfo?) {

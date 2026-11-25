@@ -21,8 +21,8 @@ import kotlin.math.min
  */
 object WindowCascade {
 
-    /** 默认错位步长（dp）。22dp 在主流手机上约 66~78px，边缘一眼可见又不显散乱。 */
-    const val DEFAULT_STEP_DP = 22f
+    /** 默认错位步长（dp）。12dp 在主流手机上约 36~40px，刚好清晰露边又不靠近屏幕边缘。 */
+    const val DEFAULT_STEP_DP = 12f
 
     /** 判定「严丝合缝」的距离阈值比例：X 与 Y 同时小于 `stepPx × 它` 即认为重合。 */
     private const val FLUSH_THRESHOLD_RATIO = 0.6f
