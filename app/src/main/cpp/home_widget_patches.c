@@ -1,5 +1,5 @@
 /*
- * home_widget_patches.c —— 澎湃桌面（com.miui.home / libapp.so）原生指令补丁引擎
+ * home_widget_patches.c —— 澎湃桌面（com.miui.home / libapp.so）原生指令补丁引擎（v2）
  *
  * 设计约束：
  *  1. 仅在 com.miui.home 进程中运行；所有特性默认关闭（flags=0 时不调用 mprotect、零写页）。
@@ -53,14 +53,14 @@ typedef struct {
 } patch_slot_t;
 
 /*
- * 10 处实测落点（共 11 条 AArch64 指令），全部在 MiuiHome 9239 libapp.so
+ * 20 处实测落点（共 21 条 AArch64 指令），全部在 MiuiHome 9239 libapp.so
  * （exec 段 vaddr=0x890000, size=0x13b6710）上验证全段唯一匹配（hits=1）。
  *
  * 注意：故意不动 isMiuiWidget 本身，保留 MiuiWidgetGetxController.enforceRoundedCorners
  * 对第三方小部件的 !isMiuiWidget == true 强裁圆角路径。
  */
 static patch_slot_t g_slots[] = {
-    /* ── 1. 桌面第三方小部件风格统一 (HOME_FLAG_STYLE) ── */
+    /* ── 1. 核心风格统一：外框网格 + 尺寸通知 + 缩放尺寸 + 分档圆角 + 动画圆角 (HOME_FLAG_STYLE) ── */
     {
         .name = "S1_top_pad",
         .feature_bit = HOME_FLAG_STYLE,
@@ -101,8 +101,114 @@ static patch_slot_t g_slots[] = {
         .patch = {0xd503201fu, 0u},     /* nop */
         .post = {0xf841f002u, 0xf8427003u, 0x937f7840u, 0xeb80045fu},
     },
+    {
+        .name = "S5_init_size",
+        .feature_bit = HOME_FLAG_STYLE,
+        .hint_vaddr = 0x10e1c78u,
+        .word_count = 1,
+        .pre = {0x942d8099u, 0xf8007003u, 0xaa0203e1u, 0xaa0003e2u},
+        .orig = {0xaa0503e3u, 0u},      /* mov x3, x5 (isMiuiWidget) */
+        .patch = {0x910082c3u, 0u},     /* add x3, x22, #0x20 (Dart true) */
+        .post = {0xf940a364u, 0x97e2f1dbu, 0xb840b001u, 0x8b1c8021u},
+    },
+    {
+        .name = "S6_opt_sizes",
+        .feature_bit = HOME_FLAG_STYLE,
+        .hint_vaddr = 0x0aad218u,
+        .word_count = 1,
+        .pre = {0xb800f080u, 0xf841f002u, 0xf8427003u, 0xb84fb005u},
+        .orig = {0x8b1c80a5u, 0u},      /* add x5, x5, x28, lsl #32 */
+        .patch = {0x910082c5u, 0u},     /* add x5, x22, #0x20 (Dart true -> getWidgetSizes) */
+        .post = {0xf85f83a1u, 0x94000be2u, 0xf81f03a0u, 0xf9403f41u},
+    },
+    {
+        .name = "S7_opt_size",
+        .feature_bit = HOME_FLAG_STYLE,
+        .hint_vaddr = 0x0aad830u,
+        .word_count = 1,
+        .pre = {0x8b1c8021u, 0xf841f023u, 0xf8427025u, 0xb84fb026u},
+        .orig = {0x8b1c80c6u, 0u},      /* add x6, x6, x28, lsl #32 */
+        .patch = {0x910082c6u, 0u},     /* add x6, x22, #0x20 (Dart true -> getWidgetSize) */
+        .post = {0xf85f83a1u, 0xaa1603e2u, 0x940006ebu, 0xaa0003e1u},
+    },
+    {
+        .name = "S8_resize_layout",
+        .feature_bit = HOME_FLAG_STYLE,
+        .hint_vaddr = 0x19ab8f0u,
+        .word_count = 1,
+        .pre = {0x940a597bu, 0xf8007006u, 0xaa0203e1u, 0xaa0003e2u},
+        .orig = {0xaa0703e3u, 0u},      /* mov x3, x7 */
+        .patch = {0x910082c3u, 0u},     /* add x3, x22, #0x20 (Dart true -> getMiuiWidgetSizeSpec) */
+        .post = {0xf940a364u, 0x97bfcabdu, 0xaa0003e1u, 0xf85903a2u},
+    },
+    {
+        .name = "S9_resize_map",
+        .feature_bit = HOME_FLAG_STYLE,
+        .hint_vaddr = 0x099f7dcu,
+        .word_count = 1,
+        .pre = {0x8b1c80a5u, 0xb84070a6u, 0x8b1c80c6u, 0xb84fb0c5u},
+        .orig = {0x8b1c80a5u, 0u},      /* add x5, x5, x28, lsl #32 */
+        .patch = {0x910082c5u, 0u},     /* add x5, x22, #0x20 (Dart true -> mapFromResSizeToDisplaySize) */
+        .post = {0x940002d3u, 0xaa0003e1u, 0xb840b020u, 0x8b1c8000u},
+    },
+    {
+        .name = "S10_anim_radius",
+        .feature_bit = HOME_FLAG_STYLE,
+        .hint_vaddr = 0x16d2880u,
+        .word_count = 1,
+        .pre = {0xf1001a1fu, 0x54000388u, 0xb84fb020u, 0x8b1c8000u},
+        .orig = {0x37200260u, 0u},      /* tbnz w0, #4, +0x4c */
+        .patch = {0xd503201fu, 0u},     /* nop (统一打开/返回动画起止圆角) */
+        .post = {0xf841f022u, 0xf8427023u, 0x937f7840u, 0xeb80045fu},
+    },
 
-    /* ── 2. 桌面小部件任意拖入负一屏 (HOME_FLAG_DRAG_PA) ── */
+    /* ── 2. 风格子项：跟随无字模式 / 标题显隐 (HOME_FLAG_STYLE_NO_WORD) ── */
+    {
+        .name = "W1_no_word",
+        .feature_bit = HOME_FLAG_STYLE_NO_WORD,
+        .hint_vaddr = 0x10e0214u,
+        .word_count = 1,
+        .pre = {0xb840b022u, 0x8b1c8042u, 0xb84fb043u, 0x8b1c8063u},
+        .orig = {0x362000a3u, 0u},      /* tbz w3, #4, +0x14 */
+        .patch = {0x14000005u, 0u},     /* b +0x14 (统一走 shouldShowTitleByValue) */
+        .post = {0x9100c2c0u, 0xaa1d03efu, 0xa8c179fdu, 0xd65f03c0u},
+    },
+
+    /* ── 3. 风格子项：统一拖拽流光描边 (HOME_FLAG_STYLE_DRAG_LIGHT) ── */
+    {
+        .name = "L1_drag_light",
+        .feature_bit = HOME_FLAG_STYLE_DRAG_LIGHT,
+        .hint_vaddr = 0x0d54430u,
+        .word_count = 1,
+        .pre = {0x6b10003fu, 0x54000320u, 0xb84fb022u, 0x8b1c8042u},
+        .orig = {0x362000a2u, 0u},      /* tbz w2, #4, +0x14 */
+        .patch = {0x14000005u, 0u},     /* b +0x14 (统一走 _isSelfDragging 流光判定) */
+        .post = {0x9100c2c0u, 0xaa1d03efu, 0xa8c179fdu, 0xd65f03c0u},
+    },
+
+    /* ── 4. 风格子项：关闭非 MIUI 缩小系数，统一渲染比例 (HOME_FLAG_STYLE_UNIFY_SCALE) ── */
+    {
+        .name = "U1_view_scale",
+        .feature_bit = HOME_FLAG_STYLE_UNIFY_SCALE,
+        .hint_vaddr = 0x1341dfcu,
+        .word_count = 1,
+        .pre = {0xb849b040u, 0x8b1c8000u, 0xb84fb001u, 0x8b1c8021u},
+        .orig = {0xd27c0020u, 0u},      /* eor x0, x1, #0x10 (!isMiuiWidget) */
+        .patch = {0x9100c2c0u, 0u},     /* add x0, x22, #0x30 (Dart false -> 按 MIUI 比例 1.0) */
+        .post = {0xaa0003e1u, 0x97ddaffau, 0x4ea01c01u, 0x6e201c00u},
+    },
+    {
+        .name = "U2_opt_scale",
+        .feature_bit = HOME_FLAG_STYLE_UNIFY_SCALE,
+        .hint_vaddr = 0x0aadb44u,
+        .word_count = 1,
+        .pre = {0xb840f001u, 0x8b1c8021u, 0xb84fb022u, 0x8b1c8042u},
+        .orig = {0x362007c2u, 0u},      /* tbz w2, #4, +0xf8 */
+        .patch = {0x1400003eu, 0u},     /* b +0xf8 (跳过对 options 的反向除以 nonMiuiScale) */
+        .post = {0x910082c1u, 0x940000a8u, 0x4ea01c01u, 0x6e201c00u},
+    },
+
+    /* ── 5. 桌面小部件任意拖入负一屏 (HOME_FLAG_DRAG_PA) ── */
     {
         .name = "D1_span",
         .feature_bit = HOME_FLAG_DRAG_PA,
@@ -144,7 +250,7 @@ static patch_slot_t g_slots[] = {
         .post = {0xb8443040u, 0x8b1c8000u, 0x37200720u, 0xf85f83a1u},
     },
 
-    /* ── 3. 桌面任意小部件堆叠 (HOME_FLAG_STACK) ── */
+    /* ── 6. 桌面任意小部件堆叠 (HOME_FLAG_STACK) ── */
     {
         .name = "K1_stack_drag",
         .feature_bit = HOME_FLAG_STACK,
@@ -376,7 +482,7 @@ static int parse_flags_str(const char *s, uint32_t *out) {
         if (*p < '0' || *p > '9') return 0;
         v = v * 10u + (uint32_t)(*p - '0');
         digits++;
-        if (digits > 2 || v > HOME_FLAG_MASK) return 0;
+        if (digits > 3 || v > HOME_FLAG_MASK) return 0;
     }
     if (digits == 0) return 0;
     *out = v;
@@ -392,7 +498,7 @@ static int read_fallback_file(uint32_t *out) {
     if (r <= 0) return 0;
     buf[r] = '\0';
 
-    /* 严格格式：tsuzuri_home v=1 flags=<0..7> */
+    /* 严格格式：tsuzuri_home v=1 flags=<0..63> */
     if (strncmp(buf, "tsuzuri_home ", 13) != 0) return 0;
     const char *vpos = strstr(buf, "v=1");
     const char *fpos = strstr(buf, "flags=");
@@ -415,7 +521,7 @@ static uint32_t read_desired_flags(const char **source_out) {
         *source_out = "file";
         return v;
     }
-    /* 2. 主属性：debug.tsuzuri.home.flags */
+    /* 2. 主属性：debug.tsuzuri.home.flags（已实测 com.miui.home 可读） */
     char prop[PROP_VALUE_MAX] = {0};
     if (__system_property_get(HOME_PROP_DEBUG, prop) > 0 && parse_flags_str(prop, &v)) {
         *source_out = "prop_debug";
@@ -437,10 +543,6 @@ static void reconcile_locked(void) {
     const char *src = "none";
     uint32_t desired = read_desired_flags(&src);
 
-    /*
-     * 全部关闭且从未打过补丁：零足迹，连 libapp.so 扫描都延后到真的有开关打开再做，
-     * 除非想在首次初始化时记录一次状态。
-     */
     int any_applied_before = 0;
     for (size_t i = 0; i < SLOT_COUNT; i++) {
         if (g_slots[i].applied) any_applied_before = 1;
@@ -460,7 +562,7 @@ static void reconcile_locked(void) {
     int flags_changed = (desired != g_last_flags) || (strcmp(g_last_source, src) != 0);
     int reapplied_after_reset = 0;
     int applied_total = 0;
-    int style_ok = 0, drag_ok = 0, stack_ok = 0;
+    int style_ok = 0, noword_ok = 0, light_ok = 0, scale_ok = 0, drag_ok = 0, stack_ok = 0;
 
     for (size_t i = 0; i < SLOT_COUNT; i++) {
         patch_slot_t *s = &g_slots[i];
@@ -481,6 +583,9 @@ static void reconcile_locked(void) {
             if (s->applied) {
                 applied_total++;
                 if (s->feature_bit == HOME_FLAG_STYLE) style_ok++;
+                else if (s->feature_bit == HOME_FLAG_STYLE_NO_WORD) noword_ok++;
+                else if (s->feature_bit == HOME_FLAG_STYLE_DRAG_LIGHT) light_ok++;
+                else if (s->feature_bit == HOME_FLAG_STYLE_UNIFY_SCALE) scale_ok++;
                 else if (s->feature_bit == HOME_FLAG_DRAG_PA) drag_ok++;
                 else if (s->feature_bit == HOME_FLAG_STACK) stack_ok++;
             }
@@ -493,9 +598,10 @@ static void reconcile_locked(void) {
 
     if (flags_changed) {
         hlog(ANDROID_LOG_INFO,
-             "home_patches: flags %u->%u (%s) applied=%d/%zu (style=%d/4 drag_pa=%d/4 stack=%d/2)",
+             "home_patches: flags %u->%u (%s) applied=%d/%zu (style=%d/10 noword=%d/1 light=%d/1 scale=%d/2 drag_pa=%d/4 stack=%d/2)",
              g_last_flags == 0xffffffffu ? 0u : g_last_flags,
-             desired, src, applied_total, SLOT_COUNT, style_ok, drag_ok, stack_ok);
+             desired, src, applied_total, SLOT_COUNT,
+             style_ok, noword_ok, light_ok, scale_ok, drag_ok, stack_ok);
         g_last_flags = desired;
         snprintf(g_last_source, sizeof(g_last_source), "%s", src);
     } else if (reapplied_after_reset > 0) {
