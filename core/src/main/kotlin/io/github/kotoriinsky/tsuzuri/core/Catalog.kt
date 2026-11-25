@@ -121,7 +121,9 @@ object Catalog {
             key = CORNER_SMALL_WINDOW,
             presentation = FeaturePresentation(preview = FeaturePreview.FAN, iconToolsGroup = "corner_icon"),
             group = FeatureGroup.GESTURE,
-            scope = listOf(ScopeTarget.SYSTEM_UI),
+            // system_server：小窗里同应用跳转（快捷方式跳板）时沿用来源小窗的位置，
+            // 见 hook 侧 FreeformTrampolinePlacement
+            scope = listOf(ScopeTarget.SYSTEM_UI, ScopeTarget.SYSTEM_SERVER),
             restart = RestartPolicy.HOT,
             // 已实现（注入点签名取自设备 dex），但手势是否真能触发小窗**未在设备上验证**，
             // 所以标 EXPERIMENTAL 而不是 STABLE。

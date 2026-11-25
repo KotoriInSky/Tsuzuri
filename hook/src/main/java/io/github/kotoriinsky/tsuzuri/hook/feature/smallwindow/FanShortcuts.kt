@@ -547,9 +547,17 @@ internal object FanShortcuts {
      * @param allowRoot 活动被 `exported="false"` 拦住时，是否允许降级到 root 强制启动
      *   （第 12 级，见 [rootFallback]）。由设置里的独立开关控制，
      *   **只在活动项真正被拦住时才有意义** —— 别的路径不受它影响。
+     * @param exact 非空 = 不按扇形的摆放设置，直接用这块位置与缩放（聚合支付切换条目时沿用当前小窗）。
+     *   只作用于快捷方式这两条路（直连映射 / startShortcut）
      * @return 走通的级别，0 = 全部失败（调用方负责记日志）
      */
-    fun launch(hook: HookContext, context: Context, target: FanTarget, allowRoot: Boolean = false): Int {
+    fun launch(
+        hook: HookContext,
+        context: Context,
+        target: FanTarget,
+        allowRoot: Boolean = false,
+        exact: ExactPlacement? = null,
+    ): Int {
         if (target.isLink) return FanLinks.launch(hook, context, target)
 
         val id = target.shortcutId
@@ -581,7 +589,7 @@ internal object FanShortcuts {
                 ?.also { SystemUiEnv.forceLaunchNewTask(hook, it) }
                 // 摆放追随扇形小窗设置（同一份规则，含 freeformScale 补偿）——
                 // 否则直连弹出的小窗尺寸与应用项入口不一致
-                ?.also { SystemUiEnv.applyFanPlacement(hook, context, it) }
+                ?.also { place(hook, context, it, exact) }
             try {
                 // Intent(direct) 拷贝：startActivity 会污染原 intent（见 tryStartActivity 的注释）
                 context.startActivity(
@@ -602,6 +610,10 @@ internal object FanShortcuts {
 
         val opts = freeformOptions(context, target.packageName)
             ?.also { SystemUiEnv.forceLaunchNewTask(hook, it) }
+            // 与应用项、直连映射同一份摆放规则：选「系统默认」时不覆写，交给 MIUI。
+            // 快捷方式多是跳板（支付宝 1002 → 另起 Task 显示付款码），后面的 Task
+            // 由 system_server 侧的 FreeformTrampolinePlacement 沿用这一块的位置。
+            ?.also { place(hook, context, it, exact) }
         var notAShortcut = false
 
         if (la != null) {
@@ -987,6 +999,25 @@ internal object FanShortcuts {
             if (opts != null) return opts
         }
         return null
+    }
+
+    /** 小窗的确切位置：task 逻辑 bounds + MIUI 的 freeformScale（两者一起才对应屏上那一块）。 */
+    internal class ExactPlacement(val bounds: Rect, val scale: Float)
+
+    private fun place(hook: HookContext, context: Context, opts: ActivityOptions, exact: ExactPlacement?) {
+        if (exact == null) {
+            SystemUiEnv.applyFanPlacement(hook, context, opts)
+            return
+        }
+        runCatching {
+            ActivityOptions::class.java.getMethod("setLaunchBounds", Rect::class.java).invoke(opts, Rect(exact.bounds))
+            val injector = opts.javaClass.getMethod("getActivityOptionsInjector").invoke(opts)
+            injector?.javaClass?.getMethod("setFreeformScale", Float::class.javaPrimitiveType)?.invoke(injector, exact.scale)
+            hook.log(Log.INFO, "小窗摆放：沿用 bounds=${exact.bounds} scale=${exact.scale}")
+        }.onFailure {
+            hook.log(Log.WARN, "小窗摆放：沿用位置失败，按扇形设置摆", it)
+            SystemUiEnv.applyFanPlacement(hook, context, opts)
+        }
     }
 
     /** 一档到底的 options（私有 → 公开）。快捷方式那条路用它，行为与从前逐字一致。 */

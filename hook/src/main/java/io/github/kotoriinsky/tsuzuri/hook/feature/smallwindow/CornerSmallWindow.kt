@@ -101,6 +101,9 @@ object CornerSmallWindow : Feature(Catalog.require(Catalog.CORNER_SMALL_WINDOW))
      */
     internal const val TAG = "FP-Fan"
 
+    /** 同一个键在 system_server 还有一半（[FreeformTrampolinePlacement]），手势这一半只在 SystemUI。 */
+    override fun supportsProcess(processName: String, isSystemServer: Boolean) = !isSystemServer
+
     /** 「拦下回桌面」那条日志的预算（每次安装重置）。见 [installHomeBlock]。 */
     private const val HOME_BLOCK_LOG_MAX = 8
 

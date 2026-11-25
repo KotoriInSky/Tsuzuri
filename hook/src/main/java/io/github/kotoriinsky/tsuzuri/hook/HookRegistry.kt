@@ -43,6 +43,7 @@ import io.github.kotoriinsky.tsuzuri.hook.feature.cleanstatusbar.CleanStatusBarS
 import io.github.kotoriinsky.tsuzuri.hook.feature.sideindex.SideIndex
 import io.github.kotoriinsky.tsuzuri.hook.feature.texttoolbar.TextToolbarAiOff
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.CornerSmallWindow
+import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FreeformTrampolinePlacement
 import io.github.kotoriinsky.tsuzuri.hook.feature.widgetstyle.WidgetUnifiedStyle
 import io.github.libxposed.api.XposedModule
 import java.util.concurrent.ConcurrentHashMap
@@ -65,6 +66,8 @@ object HookRegistry {
         // ⚠️ 顺序 = 事件优先级。SwipeEventHub 按注册顺序分发，
         // 小窗必须排在侧滑索引前面 —— 在底部角落开始的手势归小窗。
         CornerSmallWindow,
+        // 扇形小窗的 system_server 一半：快捷方式跳板开的小窗不再错位
+        FreeformTrampolinePlacement,
         SideIndex,
         AggregatePayment,
         PaWidgetAdmission,
