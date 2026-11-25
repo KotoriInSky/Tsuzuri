@@ -70,6 +70,9 @@ object Catalog {
     /** 状态栏通知图标：超级岛遮挡时直接消失、隐藏省略点。契约见 [StatusBarIcons]。 */
     const val STATUSBAR_ICONS = "statusbar_icons"
 
+    /** 状态栏电池样式：纯数字 / 环形 / 竖条 / 横向。契约见 [BatteryStyle]。 */
+    const val BATTERY_STYLE = "battery_style"
+
     const val CONTEXT_INSTALL = ContextSuggestion.INSTALL
     const val CONTEXT_MUSIC = ContextSuggestion.MUSIC
     const val CONTEXT_SCREEN_ON = ContextSuggestion.SCREEN_ON
@@ -1350,6 +1353,29 @@ object Catalog {
                 PrefSpec.Toggle(
                     key = p(STATUSBAR_ICONS, StatusBarIcons.HIDE_OVERFLOW_DOT),
                     labelKey = "pref.statusbar_icons.hide_overflow_dot",
+                    default = true,
+                ),
+            ),
+        ),
+
+        FeatureSpec(
+            key = BATTERY_STYLE,
+            group = FeatureGroup.APPS,
+            scope = listOf(ScopeTarget.SYSTEM_UI),
+            // 样式在 hook 里现读，改了立即重排；总开关热装卸
+            restart = RestartPolicy.HOT,
+            maturity = Maturity.EXPERIMENTAL,
+            prefs = listOf(
+                PrefSpec.Choice(
+                    key = p(BATTERY_STYLE, BatteryStyle.STYLE),
+                    labelKey = "pref.battery_style.style",
+                    default = BatteryStyle.NUMBER,
+                    options = BatteryStyle.STYLES.map { PrefSpec.Choice.Option(it, "pref.battery_style.style.$it") },
+                ),
+                PrefSpec.Toggle(
+                    key = p(BATTERY_STYLE, BatteryStyle.COLORED),
+                    labelKey = "pref.battery_style.colored",
+                    hintKey = "pref.battery_style.colored.hint",
                     default = true,
                 ),
             ),
