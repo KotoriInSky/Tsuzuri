@@ -33,15 +33,23 @@ object DesktopWidget {
     /** 位 5：风格子项 —— 关闭非 MIUI 额外缩小系数（`nonMiuiWidgetScale`），统一渲染比例（需总开关开启）。 */
     const val BIT_STYLE_UNIFY_SCALE: Int = 1 shl 5
 
-    /** 已定义的有效位掩码（0..63）。 */
+    /** 位 6：桌面遮挡原生信号（抽屉 / 文件夹 / 编辑态 / 小部件预览 / 堆叠展开），由 `side_index` + `drawer_gate` 联动控制。 */
+    const val BIT_OVERLAY_GATE: Int = 1 shl 6
+
+    /** 已定义的有效位掩码（0..127）。 */
     const val MASK_ALL: Int =
         BIT_STYLE or BIT_DRAG_PA or BIT_STACK or
-            BIT_STYLE_NO_WORD or BIT_STYLE_DRAG_LIGHT or BIT_STYLE_UNIFY_SCALE
+            BIT_STYLE_NO_WORD or BIT_STYLE_DRAG_LIGHT or BIT_STYLE_UNIFY_SCALE or
+            BIT_OVERLAY_GATE
 
     /** `desktop_widget_style` 下的子参数键（均默认 true，仅在总开关开启时生效）。 */
     val PREF_FOLLOW_NO_WORD: String = Keys.pref(Catalog.DESKTOP_WIDGET_STYLE, "follow_no_word")
     val PREF_DRAG_LIGHT: String = Keys.pref(Catalog.DESKTOP_WIDGET_STYLE, "drag_light")
     val PREF_UNIFY_SCALE: String = Keys.pref(Catalog.DESKTOP_WIDGET_STYLE, "unify_scale")
+
+    /** 侧滑索引遮挡门控相关的配置键（联动 [BIT_OVERLAY_GATE]）。 */
+    val PREF_SIDE_INDEX_ENABLED: String = Keys.enabled(Catalog.SIDE_INDEX)
+    val PREF_SIDE_INDEX_DRAWER_GATE: String = Keys.pref(Catalog.SIDE_INDEX, DrawerSignal.DRAWER_GATE_PREF)
 
     /**
      * 主属性（`debug_prop`，实测 `com.miui.home` 可读）与备选属性（`system_prop`）。
@@ -64,7 +72,7 @@ object DesktopWidget {
     /** 对应 `RemotePreferences` 中的开关 key 集合。 */
     val ENABLED_PREF_KEYS: Set<String> = FEATURE_KEYS.map { Keys.enabled(it) }.toSet()
 
-    /** 从当前配置计算 6-bit 掩码；总开关全部默认关 → 0。 */
+    /** 从当前配置计算 7-bit 掩码；总开关全部默认关 → 0。 */
     fun computeFlags(prefs: Prefs): Int {
         var mask = 0
         if (prefs.isEnabled(Catalog.DESKTOP_WIDGET_STYLE)) {
@@ -75,10 +83,15 @@ object DesktopWidget {
         }
         if (prefs.isEnabled(Catalog.DESKTOP_WIDGET_DRAG_PA)) mask = mask or BIT_DRAG_PA
         if (prefs.isEnabled(Catalog.DESKTOP_WIDGET_STACK)) mask = mask or BIT_STACK
+        if (prefs.isEnabled(Catalog.SIDE_INDEX) &&
+            prefs.rawBoolean(PREF_SIDE_INDEX_DRAWER_GATE, DrawerSignal.DEFAULT_DRAWER_GATE)
+        ) {
+            mask = mask or BIT_OVERLAY_GATE
+        }
         return mask
     }
 
-    /** 编码为系统属性值（纯十进制非负整数，范围 `0..63`）。 */
+    /** 编码为系统属性值（纯十进制非负整数，范围 `0..127`）。 */
     fun formatFlags(flags: Int): String = (flags and MASK_ALL).toString()
 
     /**
@@ -114,7 +127,12 @@ object DesktopWidget {
         return if (v in 0..MASK_ALL) v else null
     }
 
-    /** 判断一次 SharedPreferences 键变更是否涉及桌面原生特性或其风格子项。 */
+    /** 判断一次 SharedPreferences 键变更是否涉及桌面原生特性、风格子项或桌面遮挡信号门控。 */
     fun isDesktopWidgetPrefKey(prefKey: String?): Boolean =
-        prefKey != null && (prefKey in ENABLED_PREF_KEYS || prefKey.startsWith("${Catalog.DESKTOP_WIDGET_STYLE}."))
+        prefKey != null && (
+            prefKey in ENABLED_PREF_KEYS ||
+                prefKey.startsWith("${Catalog.DESKTOP_WIDGET_STYLE}.") ||
+                prefKey == PREF_SIDE_INDEX_ENABLED ||
+                prefKey == PREF_SIDE_INDEX_DRAWER_GATE
+            )
 }

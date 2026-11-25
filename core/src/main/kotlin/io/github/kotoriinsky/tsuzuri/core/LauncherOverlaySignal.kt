@@ -17,7 +17,17 @@ package io.github.kotoriinsky.tsuzuri.core
  */
 object LauncherOverlaySignal {
 
-    /** 与 `experiments/hyos-entry/fphyos.c` 里的路径必须一致。 */
+    /**
+     * 主通道：本地回环 UDP（单包零 root 方案）。
+     *
+     * `com.miui.home` 与 `com.android.systemui` 均持有 `INTERNET`（gid 3003），
+     * 本地回环 UDP 不依赖 `/data/local/tmp` 预建 0666 文件，也不触碰 unix socket 的 SELinux 域间规则。
+     * 与 `app/src/main/cpp/home_overlay_hooks.h` 里的常量必须逐字一致。
+     */
+    const val UDP_HOST: String = "127.0.0.1"
+    const val UDP_PORT: Int = 49731
+
+    /** 兼容兜底文件（旧独立 KSU 实验路径，文件存在且可读时仍可兜底解析）。 */
     const val FILE_PATH: String = "/data/local/tmp/fp_launcher_state.txt"
 
     /** 文件里的魔法串：用来把「我们的文件」和任何别的残留内容区分开。 */

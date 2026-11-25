@@ -67,17 +67,33 @@ class DesktopWidgetTest {
         val stackOnly = Prefs(MapStore(mapOf(Keys.enabled(Catalog.DESKTOP_WIDGET_STACK) to true)))
         assertEquals(DesktopWidget.BIT_STACK, DesktopWidget.computeFlags(stackOnly))
 
+        // 侧滑索引开启时，drawer_gate 默认 true → 自动置位 BIT_OVERLAY_GATE
+        val sideDefault = Prefs(MapStore(mapOf(Keys.enabled(Catalog.SIDE_INDEX) to true)))
+        assertEquals(DesktopWidget.BIT_OVERLAY_GATE, DesktopWidget.computeFlags(sideDefault))
+
+        // 侧滑索引开启但显式关闭 drawer_gate → 不置位
+        val sideGateOff = Prefs(
+            MapStore(
+                mapOf(
+                    Keys.enabled(Catalog.SIDE_INDEX) to true,
+                    DesktopWidget.PREF_SIDE_INDEX_DRAWER_GATE to false,
+                ),
+            ),
+        )
+        assertEquals(0, DesktopWidget.computeFlags(sideGateOff))
+
         val allOn = Prefs(
             MapStore(
                 mapOf(
                     Keys.enabled(Catalog.DESKTOP_WIDGET_STYLE) to true,
                     Keys.enabled(Catalog.DESKTOP_WIDGET_DRAG_PA) to true,
                     Keys.enabled(Catalog.DESKTOP_WIDGET_STACK) to true,
+                    Keys.enabled(Catalog.SIDE_INDEX) to true,
                 ),
             ),
         )
         assertEquals(DesktopWidget.MASK_ALL, DesktopWidget.computeFlags(allOn))
-        assertEquals("63", DesktopWidget.formatFlags(DesktopWidget.computeFlags(allOn)))
+        assertEquals("127", DesktopWidget.formatFlags(DesktopWidget.computeFlags(allOn)))
     }
 
     @Test
@@ -86,7 +102,7 @@ class DesktopWidgetTest {
             assertEquals(v, DesktopWidget.parseFlags(v.toString()))
             assertEquals(v, DesktopWidget.parseFlags("  $v\n"))
         }
-        for (bad in listOf(null, "", " ", "-1", "64", "999", "abc", "1a", "0x7")) {
+        for (bad in listOf(null, "", " ", "-1", "128", "999", "abc", "1a", "0x7")) {
             assertEquals(0, DesktopWidget.parseFlags(bad), "非法值 $bad 必须回退 0")
         }
     }
@@ -101,7 +117,7 @@ class DesktopWidgetTest {
         assertNull(DesktopWidget.parseConfigFile(""))
         assertNull(DesktopWidget.parseConfigFile("wrong v=1 flags=1"))
         assertNull(DesktopWidget.parseConfigFile("tsuzuri_home v=2 flags=1"))
-        assertNull(DesktopWidget.parseConfigFile("tsuzuri_home v=1 flags=64"))
+        assertNull(DesktopWidget.parseConfigFile("tsuzuri_home v=1 flags=128"))
         assertNull(DesktopWidget.parseConfigFile("tsuzuri_home v=1 flags=-1"))
         assertNull(DesktopWidget.parseConfigFile("tsuzuri_home v=1"))
     }
@@ -114,6 +130,8 @@ class DesktopWidgetTest {
         assertTrue(DesktopWidget.isDesktopWidgetPrefKey(DesktopWidget.PREF_FOLLOW_NO_WORD))
         assertTrue(DesktopWidget.isDesktopWidgetPrefKey(DesktopWidget.PREF_DRAG_LIGHT))
         assertTrue(DesktopWidget.isDesktopWidgetPrefKey(DesktopWidget.PREF_UNIFY_SCALE))
+        assertTrue(DesktopWidget.isDesktopWidgetPrefKey(DesktopWidget.PREF_SIDE_INDEX_ENABLED))
+        assertTrue(DesktopWidget.isDesktopWidgetPrefKey(DesktopWidget.PREF_SIDE_INDEX_DRAWER_GATE))
         assertFalse(DesktopWidget.isDesktopWidgetPrefKey("f.widget_style"))
         assertFalse(DesktopWidget.isDesktopWidgetPrefKey("widget_style.unify_corner"))
         assertFalse(DesktopWidget.isDesktopWidgetPrefKey(null))
