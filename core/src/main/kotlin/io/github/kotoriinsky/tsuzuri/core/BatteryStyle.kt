@@ -13,6 +13,12 @@ object BatteryStyle {
     const val STYLE = "style"
     const val COLORED = "colored"
 
+    /**
+     * 环形的百分比画在环**右侧**（与 LineageOS「百分比在图形旁」一致），环里不再写数字。
+     * 14dp 的环里写「100」字号只有直径的 0.34，看不清。只在选了环形时出现。
+     */
+    const val NUMBER_OUTSIDE = "number_outside"
+
     /** 样式线上值。 */
     const val NUMBER = "number"
     const val RING = "ring"
