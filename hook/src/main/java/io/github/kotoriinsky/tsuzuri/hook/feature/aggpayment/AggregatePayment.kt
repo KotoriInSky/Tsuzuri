@@ -1,6 +1,9 @@
 package io.github.kotoriinsky.tsuzuri.hook.feature.aggpayment
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -153,6 +156,23 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
     private val loading = AtomicBoolean(false)
 
     /**
+     * 用户点了、但缓存还是空的：等这一轮装载回来再决定开小窗还是弹空态面板。**只在主线程读写。**
+     *
+     * 为什么需要：开机后 SystemUI 在**首次解锁前**就装好了 hook，此时查 shortcut 会被
+     * system_server 拒掉（真机 2026-11-23：`IllegalStateException: User (with userId=0) is
+     * locked or not running`），缓存是空的。以前点击只读缓存，于是开机后第一次打开必定是
+     * 「没有条目」的空面板，后台重查的结果要等**下一次**打开才用得上。
+     */
+    private var pendingOpen = false
+
+    /** 首次解锁后补查一次 shortcut（只在上次装载失败时）。 */
+    @Volatile
+    private var unlockReceiver: BroadcastReceiver? = null
+
+    @Volatile
+    private var receiverContext: Context? = null
+
+    /**
      * 装载代数。后台线程装载完成后要确认「我还是当代」，
      * 否则会把上一代的条目发布到新一代的面板上（同 [io.github.kotoriinsky.tsuzuri.hook.feature.sideindex.SideIndex]）。
      */
@@ -201,6 +221,10 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
     /** 拆掉这一代的全部运行时状态。可从任何线程调，重复调安全。 */
     private fun teardown() {
         generation++
+        unlockReceiver?.let { r -> runCatching { receiverContext?.unregisterReceiver(r) } }
+        unlockReceiver = null
+        receiverContext = null
+        mainHandler.post { pendingOpen = false }
         ours.clear()
         PaymentWindow.teardown()
         panel?.release()
@@ -326,6 +350,7 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
         // shortcut 预加载放后台：install 跑在框架回调上，这里要 load 图标（几次 IPC/IO），
         // 同步做会把 SystemUI 的这次启动拖住。
         preload(ctx, force = true)
+        registerUnlockRetry(ctx, app)
 
         ctx.log(
             Log.INFO,
@@ -347,7 +372,44 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
 
     /** 主线程。Flyme 形态：直接用小窗打开最近用的那项；还没有条目时退回面板（显示空态）。 */
     private fun openWindow(ctx: HookContext) {
+        if (cached.isEmpty() && repository != null) {
+            // 缓存空（开机首次解锁前装载失败 / 还没装载完）：先查一次再开。查询本身 3~4ms，
+            // 用户感觉不到；查完仍是空的才弹空态面板。装载正在跑时 preload 会直接返回，
+            // 由那一轮的完成回调接住 pendingOpen。
+            pendingOpen = true
+            ctx.log(Log.INFO, "聚合支付：缓存为空（${lastLoadFailure ?: "未装载"}），先装载再打开")
+            preload(ctx, force = true)
+            return
+        }
+        openNow(ctx)
+    }
+
+    /** 主线程。按当前缓存开小窗；没有条目才退回面板（空态）。 */
+    private fun openNow(ctx: HookContext) {
         if (!PaymentWindow.open(cached)) showPanel(ctx) else preload(ctx, force = false)
+    }
+
+    /**
+     * 首次解锁后补查，只在上次装载失败时查。
+     *
+     * `ACTION_USER_UNLOCKED` 每次开机只在凭据存储解锁时发一次，之后的日常锁屏 / 解锁发的是
+     * `USER_PRESENT`，不会触发这里。
+     */
+    private fun registerUnlockRetry(ctx: HookContext, app: Context) {
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != Intent.ACTION_USER_UNLOCKED) return
+                val failure = lastLoadFailure ?: return
+                ctx.log(Log.INFO, "聚合支付：用户已解锁，补查 shortcut（上次失败：$failure）")
+                preload(ctx, force = true)
+            }
+        }
+        runCatching {
+            // ACTION_USER_UNLOCKED 是受保护广播，只有系统能发，EXPORTED 不会被别人冒充
+            app.registerReceiver(r, IntentFilter(Intent.ACTION_USER_UNLOCKED), null, mainHandler, Context.RECEIVER_EXPORTED)
+            unlockReceiver = r
+            receiverContext = app
+        }.onFailure { ctx.log(Log.WARN, "聚合支付：注册解锁补查失败，开机后首次打开会先查一次再开", it) }
     }
 
     /** 弹面板。**主线程**。没有可用条目时也弹（显示空态），见 [PaymentPanel.show]。 */
@@ -406,11 +468,22 @@ object AggregatePayment : Feature(Catalog.require(Catalog.AGG_PAYMENT)) {
                     lastLoadFailure = load.failure
                     lastShortcutResult = describe(load, discovered)
                     ctx.log(Log.INFO, "shortcut 装载：$lastShortcutResult")
+                    if (pendingOpen) {
+                        pendingOpen = false
+                        openNow(ctx)
+                    }
                 }
             }
         } catch (t: Throwable) {
             // 线程池被 shutdown 过（卸载竞态）：正常情况，放开闸门等下一代
             loading.set(false)
+            // 用户这一下点击不能没有回应：按现有缓存（空态面板）处理
+            mainHandler.post {
+                if (pendingOpen) {
+                    pendingOpen = false
+                    openNow(ctx)
+                }
+            }
         }
     }
 
