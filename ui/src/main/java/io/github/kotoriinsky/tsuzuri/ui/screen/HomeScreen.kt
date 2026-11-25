@@ -126,7 +126,12 @@ fun HomeScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
                         )
                         continue
                     }
-                    if (spec.key == Catalog.PA_WIDGET_PICKER_INJECT || spec.key == Catalog.WIDGET_STYLE) continue
+                    if (spec.key == Catalog.PA_WIDGET_PICKER_INJECT ||
+                        spec.key == Catalog.WIDGET_STYLE ||
+                        spec.key == Catalog.DESKTOP_WIDGET_STYLE ||
+                        spec.key == Catalog.DESKTOP_WIDGET_DRAG_PA ||
+                        spec.key == Catalog.DESKTOP_WIDGET_STACK
+                    ) continue
                     ScopedFeatureRow(spec, prefs) { navigate(Dest.FeatureDetail(spec.key)) }
                 }
             }

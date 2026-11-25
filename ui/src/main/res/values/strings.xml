@@ -30,6 +30,7 @@
     <string name="scope_SUBSCREEN">背屏</string>
     <string name="scope_SETTINGS">设置</string>
     <string name="scope_SHARE_SHEET">分享面板</string>
+    <string name="scope_HOME">桌面</string>
     <string name="scope_SYSTEM_SERVER">系统服务</string>
 
     <!-- 成熟度 -->
@@ -45,8 +46,14 @@
     <string name="feature_corner_small_window_summary">从屏幕底角上滑，用小窗打开应用</string>
     <string name="feature_side_index_title">侧滑索引</string>
     <string name="feature_side_index_summary">边缘滑出字母条，快速找到应用</string>
-    <string name="widget_settings_title">负一屏完美小部件</string>
-    <string name="widget_settings_summary">添加小部件，不受尺寸限制</string>
+    <string name="widget_settings_title">完美小部件</string>
+    <string name="widget_settings_summary">桌面与负一屏小部件风格统一、任意拖拽和堆叠</string>
+    <string name="widget_section_pa">负一屏</string>
+    <string name="widget_section_desktop">桌面</string>
+    <string name="widget_desktop_restart_action">重启桌面使布局生效</string>
+    <string name="widget_desktop_restart_summary">风格统一对已有小部件需重启桌面；拖入负一屏与堆叠秒级热生效</string>
+    <string name="widget_desktop_restart_done">已重启桌面</string>
+    <string name="widget_desktop_restart_need_root">需要 Root 权限才能自动重启桌面，可手动重启桌面</string>
     <string name="feature_pa_widget_admission_title">解除 Hyper 小部件尺寸限制</string>
     <string name="feature_pa_widget_admission_summary">允许添加受尺寸限制的 Hyper 和 Android 小部件</string>
     <string name="feature_pa_widget_picker_inject_title">负一屏添加 Android 小部件</string>
@@ -55,6 +62,12 @@
     <string name="feature_miui_widget_flag_summary">让第三方小部件使用系统布局规则</string>
     <string name="feature_widget_style_title">小部件风格</string>
     <string name="feature_widget_style_summary">第三方小部件与系统风格一致</string>
+    <string name="feature_desktop_widget_style_title">桌面小部件风格统一</string>
+    <string name="feature_desktop_widget_style_summary">第三方小部件对齐系统网格并使用分档圆角（24dp / 20dp）</string>
+    <string name="feature_desktop_widget_drag_pa_title">桌面小部件任意拖入负一屏</string>
+    <string name="feature_desktop_widget_drag_pa_summary">解除第三方与尺寸限制，支持单部件与堆叠拖入负一屏</string>
+    <string name="feature_desktop_widget_stack_title">桌面任意小部件堆叠</string>
+    <string name="feature_desktop_widget_stack_summary">允许第三方小部件与同尺寸小部件互相堆叠</string>
     <string name="feature_agg_payment_title">聚合支付</string>
     <string name="feature_agg_payment_summary">从锁屏指纹入口打开付款</string>
     <string name="feature_keep_alive_title">模块保活</string>

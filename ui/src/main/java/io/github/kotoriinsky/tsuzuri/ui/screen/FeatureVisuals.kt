@@ -61,8 +61,9 @@ internal fun featureIcon(spec: FeatureSpec): FpIcon = when (spec.key) {
     Catalog.BATTERY_STYLE -> FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Green)
     Catalog.TEXT_TOOLBAR -> FpIcon(FpGlyphs.TextFields, PlateColors.Gray)
     Catalog.SHARE_ORDER -> FpIcon(Icons.Rounded.Share, PlateColors.Green)
-    // 负一屏小部件归入杂项后仍使用小部件图标。
-    Catalog.PA_WIDGET_ADMISSION, Catalog.PA_WIDGET_PICKER_INJECT, Catalog.WIDGET_STYLE ->
+    // 负一屏与桌面小部件归入杂项后统一使用小部件图标。
+    Catalog.PA_WIDGET_ADMISSION, Catalog.PA_WIDGET_PICKER_INJECT, Catalog.WIDGET_STYLE,
+    Catalog.DESKTOP_WIDGET_STYLE, Catalog.DESKTOP_WIDGET_DRAG_PA, Catalog.DESKTOP_WIDGET_STACK ->
         FpIcon(FpGlyphs.Widgets, PlateColors.Teal)
     else -> groupIcon(spec.group)
 }
