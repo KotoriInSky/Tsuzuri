@@ -78,6 +78,16 @@ internal object PasscodeIslandPresenter {
 
     private const val TAG = "FP-Passcode"
 
+    /**
+     * 调试：让摘要态的岛带一段长文字，用来复现「岛够宽时状态栏通知图标缩小、变糊再消失」
+     * （HyperOS `NotificationIconContainerInject.inIslandState = 10`）。只在
+     * `adb shell setprop log.tag.FP-IslandTest DEBUG` 时才认 [EXTRA_DEBUG_WIDE_TEXT]，
+     * 平时这条 extra 直接被忽略；发送方本来就要 DUMP 权限（adb shell 有）。
+     */
+    private const val DEBUG_TAG = "FP-IslandTest"
+    private const val EXTRA_DEBUG_WIDE_TEXT = "debug_wide_text"
+    private val debugWideTexts = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private const val CHANNEL_ID = "tsuzuri_passcode"
 
     /**
@@ -351,6 +361,13 @@ internal object PasscodeIslandPresenter {
             return
         }
         val snippet = intent.getStringExtra(PasscodeIsland.EXTRA_SNIPPET) ?: ""
+        intent.getStringExtra(EXTRA_DEBUG_WIDE_TEXT)?.takeIf {
+            it.isNotBlank() && runCatching { Log.isLoggable(DEBUG_TAG, Log.DEBUG) }.getOrDefault(false)
+        }?.let { text ->
+            if (debugWideTexts.size > 16) debugWideTexts.clear()
+            debugWideTexts[target] = text
+            Log.d(DEBUG_TAG, "测试岛：摘要态长文字 ${text.length} 字 target=$target")
+        }
         intent.getStringExtra(PasscodeIsland.EXTRA_SOURCE_TEXT)?.takeIf { it.isNotBlank() }?.let { text ->
             synchronized(sourceTexts) { sourceTexts[target] = text }
         }
@@ -752,6 +769,7 @@ internal object PasscodeIslandPresenter {
             shareIntent,
             accentHex,
             timeoutMs,
+            debugWideText = debugWideTexts[primaryTarget],
         )
         builder.extras.putString(EXTRA_FOCUS_PARAM, paramJson)
         // ⚠️ 不要往 miui.focus.param.custom 塞 param_v2 —— 2026-09-25 实测：
@@ -2689,6 +2707,8 @@ internal object PasscodeIslandPresenter {
         shareIntent: Intent,
         accent: String,
         timeoutMs: Long,
+        /** 调试用：非空时摘要态 A 区带这段文字把岛撑宽（见 [DEBUG_TAG]）。 */
+        debugWideText: String? = null,
     ): String {
         val iconPicInfo = JSONObject().put("type", 1).put("pic", KEY_ISLAND_ICON).put("picDark", KEY_ISLAND_ICON)
         // 摘要态：摄像头左侧 A 区只放目标图标；右侧 B 区放静态短摘要（纯文字用文本组件，
@@ -2696,7 +2716,7 @@ internal object PasscodeIslandPresenter {
         val bigLeft = JSONObject()
             .put("type", 1)
             .put("picInfo", iconPicInfo)
-            .put("textInfo", JSONObject().put("title", ""))
+            .put("textInfo", JSONObject().put("title", debugWideText ?: ""))
         // 小岛（胶囊）只放图标：摘要态不要文字（用户 2026-10-22「摘要态不要文字都可以」）。
         // 短摘要仍进 ticker / aodTitle / shareData —— 那些是无障碍、息屏与拖拽分享用的。
         val smallArea = JSONObject()
