@@ -1373,15 +1373,6 @@ object Catalog {
                     options = BatteryStyle.STYLES.map { PrefSpec.Choice.Option(it, "pref.battery_style.style.$it") },
                 ),
                 PrefSpec.Toggle(
-                    key = p(BATTERY_STYLE, BatteryStyle.NUMBER_OUTSIDE),
-                    labelKey = "pref.battery_style.number_outside",
-                    default = false,
-                    dependsOn = PrefDependency(
-                        BatteryStyle.STYLE, "pref.battery_style.number_outside.required",
-                        choiceValue = BatteryStyle.RING,
-                    ),
-                ),
-                PrefSpec.Toggle(
                     key = p(BATTERY_STYLE, BatteryStyle.COLORED),
                     labelKey = "pref.battery_style.colored",
                     hintKey = "pref.battery_style.colored.hint",
