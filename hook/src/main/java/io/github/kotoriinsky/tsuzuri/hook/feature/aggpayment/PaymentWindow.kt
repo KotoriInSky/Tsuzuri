@@ -1,5 +1,6 @@
 package io.github.kotoriinsky.tsuzuri.hook.feature.aggpayment
 
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -22,6 +23,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.kotoriinsky.tsuzuri.core.AggPayment
+import io.github.kotoriinsky.tsuzuri.core.AggPaymentTaskBinding
 import io.github.kotoriinsky.tsuzuri.hook.HookContext
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FanShortcuts
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FanTarget
@@ -37,9 +39,10 @@ import kotlin.math.roundToInt
  * HyperOS 的小窗由 WM Shell 管，WM Shell 就跑在 SystemUI 进程里，task leash 在本进程可得：
  *
  *  1. hook `MultiTaskingTaskRepository` 的 task 出现 / 变化 / 消失，拿到仓库实例；
- *  2. 当前要显示的包的**最上层小窗** → `MiuiFreeformModeTaskInfo` 的 leash、逻辑 bounds、缩放、圆角；
- *  3. 入口条用 `SurfaceControlViewHost` 画，surface 挂成 leash 的子层，`setScale(1/scale)` 抵消
- *     leash 的缩放（屏上尺寸固定）。作为子层，进场 / 关闭 / 拖动 / 缩放动画与小窗同帧，圆角裁剪也一起。
+ *  2. 通过 [AggPaymentTaskBinding] 锁定本次聚合支付对应的具体 `taskId`，只查这个小窗的
+ *     `MiuiFreeformModeTaskInfo`（leash、逻辑 bounds、缩放、圆角），不再按包名盲取 Z 序最顶层；
+ *  3. 入口条用 `SurfaceControlViewHost` 画，surface 挂成 leash 的子层，随小窗整体缩放。
+ *     作为子层，进场 / 关闭 / 拖动 / 缩放动画与小窗同帧，圆角裁剪和 Z 序遮挡也一起。
  *
  * ## 为什么在小窗底边以内（不像 Flyme 挂在窗外）
  *
@@ -52,10 +55,9 @@ import kotlin.math.roundToInt
  * ## 切换与生命周期
  *
  *  - 点条目：新条目按**当前小窗**的位置与缩放打开，新小窗出现后入口条挪过去、再关掉旧小窗；
- *  - 入口条一直挂到小窗关闭（该包最上层小窗消失 / 退出小窗形态）为止。
- *
- * 跳板（支付宝 1002 会再起两个 Task）的位置与清理由 system_server 侧的
- * `FreeformTrampolinePlacement` 负责；这里只认「这个包最上层的那个小窗」。
+ *  - 小窗多开下：入口条只绑定聚合支付自己的 `taskId`，切到同包普通小窗不跟着跑，关掉支付小窗立刻收起；
+ *  - 跳板（支付宝 1002 会再起两个 Task）的位置与清理由 system_server 侧的
+ *    `FreeformTrampolinePlacement` 负责；落地期内 [AggPaymentTaskBinding] 允许向新跳板接力。
  *
  * ## 「最近用的那项」
  *
@@ -163,18 +165,27 @@ internal object PaymentWindow {
     private class Session(
         val items: List<PaymentShortcut>,
         val current: PaymentShortcut,
-        val startedAt: Long,
-        /** 切换条目时要关掉的旧小窗；新小窗出现后才关。 */
-        val closeTaskId: Int?,
+        val binding: AggPaymentTaskBinding,
+        /** 切换条目时要关掉的旧小窗；新小窗出现后才关（就地清 null，不替换 Session 实例）。 */
+        @Volatile var closeTaskId: Int?,
     ) {
         val pkg: String get() = current.packageName
+        val startedAt: Long get() = binding.startedAtMs
     }
 
     @Volatile
     private var session: Session? = null
 
-    /** 正在进行的切换：新条目的包、要关的旧小窗、沿用的位置。在 shell 线程读。 */
-    private class Switch(val pkg: String, val oldTaskId: Int?, val bounds: Rect, val scale: Float, val radius: Float, val until: Long)
+    /** 正在进行的切换：新条目的包、要关的旧小窗、排除的既有同包窗、沿用的位置。在 shell 线程读。 */
+    private class Switch(
+        val pkg: String,
+        val oldTaskId: Int?,
+        val ignoredTaskIds: Set<Int>,
+        val bounds: Rect,
+        val scale: Float,
+        val radius: Float,
+        val until: Long,
+    )
 
     @Volatile
     private var switching: Switch? = null
@@ -198,6 +209,7 @@ internal object PaymentWindow {
     private var barShown = false
     private var waitSince = 0L
     private var fade: android.animation.ValueAnimator? = null
+    private var pendingRecheck: Runnable? = null
 
     // ── 安装 ──────────────────────────────────────────────────────────
 
@@ -222,11 +234,12 @@ internal object PaymentWindow {
                     val r = chain.proceed()
                     try {
                         repo = chain.thisObject
-                        // 会话期间任何 task 事件都重找一次：消失的 task 拿不到 baseActivity，
-                        // 按包名筛会漏掉跳板消失那一下，入口条就停在被清掉的跳板上
+                        // 会话期间任何 task 事件都重查一次：由 AggPaymentTaskBinding 严格按 taskId 判定，
+                        // 同时把本次事件对应的 taskId 传进去用于区分「非多开原地复用」与「普通小窗」
+                        val eventTaskId = (chain.args.firstOrNull() as? ActivityManager.RunningTaskInfo)?.taskId
                         session?.let {
-                            d("事件 $name thread=${Thread.currentThread().name}")
-                            refresh(it, name)
+                            d("事件 $name task=$eventTaskId thread=${Thread.currentThread().name}")
+                            refresh(it, name, eventTaskId)
                         }
                     } catch (t: Throwable) {
                         ctx.log(Log.WARN, "聚合支付：处理 $name 失败", t)
@@ -243,6 +256,7 @@ internal object PaymentWindow {
 
     fun teardown() {
         session = null
+        switching = null
         repo = null
         runCatching { receiver?.let { app?.unregisterReceiver(it) } }
         receiver = null
@@ -281,7 +295,8 @@ internal object PaymentWindow {
         val c = app ?: return false
         if (items.isEmpty()) return false
         val ordered = ordered(c, items)
-        start(ordered, ordered.first(), closeTaskId = null, exact = null)
+        val first = ordered.first()
+        start(ordered, first, closeTaskId = null, exact = null, preExisting = snapshotSamePkgTaskIds(first.packageName))
         return true
     }
 
@@ -291,26 +306,47 @@ internal object PaymentWindow {
         remember(c, item)
         if (item.key == s.current.key) return
         val now = attached
+        val preExisting = snapshotSamePkgTaskIds(item.packageName)
         // 沿用当前小窗的位置与缩放：切换不跳位置
         val exact = now?.let { FanShortcuts.ExactPlacement(Rect(it.bounds), it.scale) }
         switching = now?.let {
-            Switch(item.packageName, it.taskId, Rect(it.bounds), it.scale, it.cornerRadius, System.currentTimeMillis() + SWITCH_WINDOW_MS)
+            Switch(
+                pkg = item.packageName,
+                oldTaskId = it.taskId,
+                ignoredTaskIds = preExisting - it.taskId,
+                bounds = Rect(it.bounds),
+                scale = it.scale,
+                radius = it.cornerRadius,
+                until = System.currentTimeMillis() + SWITCH_WINDOW_MS,
+            )
         }
-        start(ordered(c, s.items), item, closeTaskId = now?.taskId, exact = exact)
+        start(ordered(c, s.items), item, closeTaskId = now?.taskId, exact = exact, preExisting = preExisting)
     }
 
-    private fun start(items: List<PaymentShortcut>, item: PaymentShortcut, closeTaskId: Int?, exact: FanShortcuts.ExactPlacement?) {
+    private fun start(
+        items: List<PaymentShortcut>,
+        item: PaymentShortcut,
+        closeTaskId: Int?,
+        exact: FanShortcuts.ExactPlacement?,
+        preExisting: Set<Int>,
+    ) {
         val ctx = ctxRef ?: return
         val c = app ?: return
-        session = Session(items, item, System.currentTimeMillis(), closeTaskId)
+        val binding = AggPaymentTaskBinding(
+            startedAtMs = System.currentTimeMillis(),
+            preExistingTaskIds = preExisting,
+            closeTaskId = closeTaskId,
+            settleMs = SETTLE_MS,
+        )
+        session = Session(items, item, binding, closeTaskId)
         ensureBar(items)
         val level = FanShortcuts.launch(
             ctx, c,
             FanTarget(label = item.label, packageName = item.packageName, icon = item.icon, shortcutId = item.id),
             exact = exact,
         )
-        ctx.log(Log.INFO, "聚合支付：打开 ${item.key} → ${FanShortcuts.describeLevel(level)}")
-        d("会话开始 ${item.key} closeTask=$closeTaskId exact=${exact?.let { "${it.bounds}@${it.scale}" }}")
+        ctx.log(Log.INFO, "聚合支付：打开 ${item.key} → ${FanShortcuts.describeLevel(level)}（既有同包小窗=$preExisting）")
+        d("会话开始 ${item.key} closeTask=$closeTaskId preExisting=$preExisting exact=${exact?.let { "${it.bounds}@${it.scale}" }}")
         session?.let { refresh(it, "start") }
     }
 
@@ -369,9 +405,10 @@ internal object PaymentWindow {
         @Suppress("UNCHECKED_CAST")
         val changes = (call(info, "getChanges") as? List<Any?>)?.filterNotNull() ?: return false
         if (changes.isEmpty()) return false
-        // 每个 change 都得是这次切换的 Task，否则交还 MIUI（别的 App 的小窗动画一律不碰）
-        val tasks = changes.map { call(it, "getTaskInfo") as? android.app.ActivityManager.RunningTaskInfo ?: return false }
+        // 每个 change 都得是这次切换的 Task，否则交还 MIUI（别的 App 或既有普通同包小窗的动画一律不碰）
+        val tasks = changes.map { call(it, "getTaskInfo") as? ActivityManager.RunningTaskInfo ?: return false }
         for (ti in tasks) {
+            if (ti.taskId in sw.ignoredTaskIds) return false
             val pkg = ti.baseActivity?.packageName ?: ti.topActivity?.packageName
             if (pkg != sw.pkg && ti.taskId != sw.oldTaskId) return false
         }
@@ -422,47 +459,88 @@ internal object PaymentWindow {
 
     // ── 找小窗（shell 线程或主线程都可能调） ─────────────────────────
 
-    private fun refresh(s: Session, why: String = "poll") {
-        val found = runCatching { findTarget(s.pkg) }.getOrDefault(Lookup.Hidden)
+    private fun refresh(s: Session, why: String = "poll", eventTaskId: Int? = null) {
+        val found = runCatching { findTarget(s, why, eventTaskId) }.getOrDefault(Lookup.Hidden)
         val postedAt = android.os.SystemClock.uptimeMillis()
         main.post { apply(s, found, why, postedAt) }
     }
 
-    /** 找小窗的三种结果：正常显示 / 还在但不是正常小窗（缩成迷你窗、贴边等）/ 这个包没有小窗了。 */
+    /** 找小窗的四种结果：正常显示 / 已绑定但暂不可见（迷你窗、贴边等）/ 等待落地 / 已关闭。 */
     private sealed interface Lookup {
         class Found(val target: Target) : Lookup
         object Hidden : Lookup
+        class Waiting(val recheckAfterMs: Long?, val previousVanished: Boolean) : Lookup
         object Gone : Lookup
     }
 
-    /** 这个包最上层的小窗。 */
-    private fun findTarget(pkg: String): Lookup {
-        val r = repo ?: return Lookup.Hidden
-        @Suppress("UNCHECKED_CAST")
-        val ids = (call(r, "getFreeformTasksInZOrder") as? List<Any?>)?.toList() ?: return Lookup.Hidden
-        for (id in ids) {
-            val taskId = id as? Int ?: continue
-            val info = call(r, "getMiuiFreeformTaskInfo", taskId) ?: continue
-            if (call(info, "getPackageName") != pkg) continue
-            // 缩小成迷你窗 / 贴边时 mode 不是 0：小窗还在，入口条只藏不收，放大回来再显示
-            if (diag) d(
-                "查到 task $taskId mode=${call(info, "getMode")} bounds=${call(info, "getTaskBounds")} " +
-                    "taskScale=${call(info, "getTaskScale")} freeformScale=${call(info, "getFreeformScale")} " +
-                    "animating=${call(info, "isInAnimating")} leash=${(call(info, "getLeash") as? SurfaceControl)?.let { System.identityHashCode(it) }}",
-            )
-            if ((call(info, "getMode") as? Int ?: 0) != 0) return Lookup.Hidden
-            val leash = call(info, "getLeash") as? SurfaceControl ?: return Lookup.Hidden
-            val bounds = call(info, "getTaskBounds") as? Rect ?: return Lookup.Hidden
-            // getFreeformScale 读的是动画目标，进场动画开始前还是 1.0（真机首次挂上时读到 1.0）；
-            // getTaskScale 是 MIUI 给这个小窗定的缩放（日志里的 taskScale=0.7）
-            val scale = (call(info, "getTaskScale") as? Float)?.takeIf { it > 0f && it < 1f }
-                ?: call(info, "getFreeformScale") as? Float ?: return Lookup.Hidden
-            if (!leash.isValid || bounds.isEmpty || scale <= 0f) return Lookup.Hidden
-            val radius = (call(info, "getCornerRadius") as? Float)?.takeIf { it > 0f } ?: 0f
-            val animating = call(info, "isInAnimating") as? Boolean ?: false
-            return Lookup.Found(Target(taskId, leash, Rect(bounds), scale, radius, animating))
+    /** 安全快照当前仓库里某个包的全部小窗 taskId（按 Z 序，顶层在前）。 */
+    private fun snapshotSamePkgTaskIds(pkg: String): Set<Int> {
+        val r = repo ?: return emptySet()
+        return samePkgFreeformIdsInZOrder(r, pkg).toCollection(LinkedHashSet())
+    }
+
+    /** 用下标遍历避免主线程读取 shell 线程 ArrayList 时撞上 ConcurrentModificationException。 */
+    private fun samePkgFreeformIdsInZOrder(r: Any, pkg: String): List<Int> {
+        for (attempt in 0 until 2) {
+            val res = runCatching {
+                val ids = call(r, "getFreeformTasksInZOrder") as? List<*> ?: return emptyList()
+                val out = ArrayList<Int>(ids.size)
+                for (i in 0 until ids.size) {
+                    val taskId = (ids.getOrNull(i) as? Int) ?: continue
+                    val info = call(r, "getMiuiFreeformTaskInfo", taskId) ?: continue
+                    if (call(info, "getPackageName") == pkg) out.add(taskId)
+                }
+                out
+            }
+            res.getOrNull()?.let { return it }
         }
-        return Lookup.Gone
+        return emptyList()
+    }
+
+    /** 严格查当前会话绑定的那个小窗（只看绑定 taskId，不随 Z 序切到同包其他小窗）。 */
+    private fun findTarget(s: Session, why: String, eventTaskId: Int?): Lookup {
+        val r = repo
+        val nowMs = System.currentTimeMillis()
+        if (r == null) {
+            val remain = SETTLE_MS - (nowMs - s.startedAt)
+            return if (remain > 0L) Lookup.Waiting(remain + 40L, previousVanished = false) else Lookup.Gone
+        }
+        val samePkgIds = samePkgFreeformIdsInZOrder(r, s.pkg)
+        val isUpdate = why == "onTaskAppeared" || why == "onOpenTransitionReady" || why == "onTaskInfoChanged"
+        val decision = synchronized(s.binding) {
+            s.binding.resolve(
+                samePkgTasksInZOrder = samePkgIds,
+                nowMs = nowMs,
+                eventTaskId = eventTaskId,
+                eventIsUpdate = isUpdate,
+            )
+        }
+        return when (decision) {
+            is AggPaymentTaskBinding.Decision.Waiting -> Lookup.Waiting(decision.recheckAfterMs, decision.previousVanished)
+            AggPaymentTaskBinding.Decision.Gone -> Lookup.Gone
+            is AggPaymentTaskBinding.Decision.Bind -> lookupTask(r, decision.taskId)
+        }
+    }
+
+    private fun lookupTask(r: Any, taskId: Int): Lookup {
+        val info = call(r, "getMiuiFreeformTaskInfo", taskId) ?: return Lookup.Hidden
+        // 缩小成迷你窗 / 贴边时 mode 不是 0：小窗还在，入口条只藏不收，放大回来再显示
+        if (diag) d(
+            "查到绑定 task $taskId mode=${call(info, "getMode")} bounds=${call(info, "getTaskBounds")} " +
+                "taskScale=${call(info, "getTaskScale")} freeformScale=${call(info, "getFreeformScale")} " +
+                "animating=${call(info, "isInAnimating")} leash=${(call(info, "getLeash") as? SurfaceControl)?.let { System.identityHashCode(it) }}",
+        )
+        if ((call(info, "getMode") as? Int ?: 0) != 0) return Lookup.Hidden
+        val leash = call(info, "getLeash") as? SurfaceControl ?: return Lookup.Hidden
+        val bounds = call(info, "getTaskBounds") as? Rect ?: return Lookup.Hidden
+        // getFreeformScale 读的是动画目标，进场动画开始前还是 1.0（真机首次挂上时读到 1.0）；
+        // getTaskScale 是 MIUI 给这个小窗定的缩放（日志里的 taskScale=0.7）
+        val scale = (call(info, "getTaskScale") as? Float)?.takeIf { it > 0f && it < 1f }
+            ?: call(info, "getFreeformScale") as? Float ?: return Lookup.Hidden
+        if (!leash.isValid || bounds.isEmpty || scale <= 0f) return Lookup.Hidden
+        val radius = (call(info, "getCornerRadius") as? Float)?.takeIf { it > 0f } ?: 0f
+        val animating = call(info, "isInAnimating") as? Boolean ?: false
+        return Lookup.Found(Target(taskId, leash, Rect(bounds), scale, radius, animating))
     }
 
     // ── 入口条（主线程） ──────────────────────────────────────────────
@@ -473,7 +551,10 @@ internal object PaymentWindow {
         val sc = barSc ?: return
         val lag = if (postedAt > 0L) android.os.SystemClock.uptimeMillis() - postedAt else -1L
         val target = when (found) {
-            is Lookup.Found -> found.target
+            is Lookup.Found -> {
+                cancelRecheck()
+                found.target
+            }
             Lookup.Hidden -> {
                 d("决定 why=$why 排队=${lag}ms → 藏起（Hidden） 之前显示=$barShown")
                 if (barShown) {
@@ -482,14 +563,22 @@ internal object PaymentWindow {
                 }
                 return
             }
-            Lookup.Gone -> {
-                d("决定 why=$why 排队=${lag}ms → 没有该包小窗（Gone） 会话已 ${System.currentTimeMillis() - s.startedAt}ms")
-                // 切换途中新小窗还没出来时，入口条留在旧小窗上；超过落地时限仍没有 = 小窗关了
-                if (System.currentTimeMillis() - s.startedAt > SETTLE_MS) {
-                    ctx.log(Log.INFO, "聚合支付：${s.pkg} 的小窗关了，收起入口条")
-                    session = null
-                    detach()
+            is Lookup.Waiting -> {
+                d("决定 why=$why 排队=${lag}ms → 等待落地（recheck=${found.recheckAfterMs}ms prevVanished=${found.previousVanished}）")
+                // 切换途中新小窗还没出来时，入口条留在旧支付小窗上；若先前绑定的小窗本身已消失则先藏起
+                if (found.previousVanished && barShown && attached?.taskId != s.closeTaskId) {
+                    SurfaceControl.Transaction().setVisibility(sc, false).apply()
+                    barShown = false
                 }
+                found.recheckAfterMs?.let { scheduleRecheck(s, it) }
+                return
+            }
+            Lookup.Gone -> {
+                cancelRecheck()
+                d("决定 why=$why 排队=${lag}ms → 绑定小窗已关闭（Gone） 会话已 ${System.currentTimeMillis() - s.startedAt}ms")
+                ctx.log(Log.INFO, "聚合支付：${s.pkg} 的绑定小窗关了，收起入口条")
+                session = null
+                detach()
                 return
             }
         }
@@ -557,10 +646,25 @@ internal object PaymentWindow {
         attached = target
 
         val close = s.closeTaskId
-        if (close != null && close != target.taskId) {
-            removeTask(ctx, close)
-            session = Session(s.items, s.current, s.startedAt, null)
+        if (close != null) {
+            if (close != target.taskId) removeTask(ctx, close)
+            s.closeTaskId = null
         }
+    }
+
+    private fun scheduleRecheck(s: Session, delayMs: Long) {
+        cancelRecheck()
+        val r = Runnable {
+            pendingRecheck = null
+            if (session === s) refresh(s, "recheck")
+        }
+        pendingRecheck = r
+        main.postDelayed(r, delayMs.coerceAtLeast(16L))
+    }
+
+    private fun cancelRecheck() {
+        pendingRecheck?.let { main.removeCallbacks(it) }
+        pendingRecheck = null
     }
 
     private fun fadeIn(sc: SurfaceControl) {
@@ -638,6 +742,7 @@ internal object PaymentWindow {
     }
 
     private fun detach() {
+        cancelRecheck()
         fade?.cancel()
         fade = null
         waitSince = 0L
