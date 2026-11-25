@@ -37,8 +37,8 @@ fun WidgetSettingsScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
     val context = LocalContext.current
     val prefs = ConfigStore.observe()
 
-    val desktopFeatures = listOf(
-        Catalog.DESKTOP_WIDGET_STYLE,
+    val desktopStyle = Catalog.require(Catalog.DESKTOP_WIDGET_STYLE)
+    val desktopExtras = listOf(
         Catalog.DESKTOP_WIDGET_DRAG_PA,
         Catalog.DESKTOP_WIDGET_STACK,
     ).map(Catalog::require)
@@ -59,9 +59,17 @@ fun WidgetSettingsScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
 
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
         kit.SectionHeader(title = fpString("widget.section.desktop"))
-        ScopeRequirement(desktopFeatures.first()) { navigate(Dest.Setup) }
+        ScopeRequirement(desktopStyle) { navigate(Dest.Setup) }
         kit.Card {
-            desktopFeatures.forEachIndexed { idx, spec ->
+            FeatureToggleRow(desktopStyle, prefs)
+            desktopStyle.prefs.filter { it.isVisible(prefs, desktopStyle.key) }.forEach { pref ->
+                kit.Divider()
+                PrefRow(pref, prefs, enabled = prefs.isEnabled(desktopStyle), onNavigate = navigate)
+            }
+        }
+        kit.VSpace(FpSpace.m)
+        kit.Card {
+            desktopExtras.forEachIndexed { idx, spec ->
                 if (idx > 0) kit.Divider()
                 FeatureToggleRow(spec, prefs)
             }

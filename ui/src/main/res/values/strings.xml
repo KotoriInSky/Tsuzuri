@@ -63,7 +63,13 @@
     <string name="feature_widget_style_title">小部件风格</string>
     <string name="feature_widget_style_summary">第三方小部件与系统风格一致</string>
     <string name="feature_desktop_widget_style_title">桌面小部件风格统一</string>
-    <string name="feature_desktop_widget_style_summary">第三方小部件对齐系统网格并使用分档圆角（24dp / 20dp）</string>
+    <string name="feature_desktop_widget_style_summary">第三方小部件对齐系统网格、尺寸通知与分档圆角（含启动动画）</string>
+    <string name="pref_desktop_widget_style_follow_no_word">跟随无字模式</string>
+    <string name="pref_desktop_widget_style_follow_no_word_hint">第三方小部件同步遵循桌面的标题隐藏规则</string>
+    <string name="pref_desktop_widget_style_unify_scale">统一渲染比例</string>
+    <string name="pref_desktop_widget_style_unify_scale_hint">关闭非小米小部件额外缩小系数，排版与系统一致</string>
+    <string name="pref_desktop_widget_style_drag_light">统一拖拽流光</string>
+    <string name="pref_desktop_widget_style_drag_light_hint">长按拖动第三方小部件时显示系统同款流光描边</string>
     <string name="feature_desktop_widget_drag_pa_title">桌面小部件任意拖入负一屏</string>
     <string name="feature_desktop_widget_drag_pa_summary">解除第三方与尺寸限制，支持单部件与堆叠拖入负一屏</string>
     <string name="feature_desktop_widget_stack_title">桌面任意小部件堆叠</string>
