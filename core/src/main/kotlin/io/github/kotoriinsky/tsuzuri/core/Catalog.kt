@@ -47,6 +47,15 @@ object Catalog {
     const val MIUI_WIDGET_FLAG = "miui_widget_flag"
     const val WIDGET_STYLE = "widget_style"
 
+    /** 桌面第三方小部件风格统一（顶边距、宽高网格、分档圆角 24dp/20dp）。原生补丁见 `home_widget_patches.c`。 */
+    const val DESKTOP_WIDGET_STYLE = "desktop_widget_style"
+
+    /** 桌面小部件任意拖入负一屏（解除第三方与尺寸限制，含单部件和堆叠）。原生补丁见 `home_widget_patches.c`。 */
+    const val DESKTOP_WIDGET_DRAG_PA = "desktop_widget_drag_pa"
+
+    /** 桌面任意小部件堆叠（解除 dragItem / targetItem 的 MIUI 小部件限制）。原生补丁见 `home_widget_patches.c`。 */
+    const val DESKTOP_WIDGET_STACK = "desktop_widget_stack"
+
     /**
      * 小窗多开名单：勾选的应用获得 HyperOS 的「同应用同时开多个小窗」资格。
      *
@@ -1259,6 +1268,34 @@ object Catalog {
                     default = true,
                 ),
             ),
+        ),
+
+        // ── 桌面原生小部件增强（com.miui.home，LSPosed 102 native_init） ──────────
+        FeatureSpec(
+            key = DESKTOP_WIDGET_STYLE,
+            group = FeatureGroup.APPS,
+            scope = listOf(ScopeTarget.HOME, ScopeTarget.SYSTEM_SERVER),
+            // 原生侧会热打补丁（新增小部件立刻生效），但桌面已布局的小部件需要重启桌面才会重算尺寸和圆角。
+            restart = RestartPolicy.PROCESS_RESTART,
+            maturity = Maturity.EXPERIMENTAL,
+        ),
+
+        FeatureSpec(
+            key = DESKTOP_WIDGET_DRAG_PA,
+            group = FeatureGroup.APPS,
+            scope = listOf(ScopeTarget.HOME, ScopeTarget.SYSTEM_SERVER),
+            // 拖入负一屏门禁每次拖拽实时读取；原生看门狗秒级热切换，无需重启桌面。
+            restart = RestartPolicy.HOT,
+            maturity = Maturity.EXPERIMENTAL,
+        ),
+
+        FeatureSpec(
+            key = DESKTOP_WIDGET_STACK,
+            group = FeatureGroup.APPS,
+            scope = listOf(ScopeTarget.HOME, ScopeTarget.SYSTEM_SERVER),
+            // 堆叠准入门禁每次拖拽实时读取；原生看门狗秒级热切换，无需重启桌面。
+            restart = RestartPolicy.HOT,
+            maturity = Maturity.EXPERIMENTAL,
         ),
 
         // ── 应用与快捷方式 ────────────────────────────────────────────────

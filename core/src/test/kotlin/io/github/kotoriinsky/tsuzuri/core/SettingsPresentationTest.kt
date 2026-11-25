@@ -39,11 +39,18 @@ class SettingsPresentationTest {
     }
 
     /**
-     * 三个负一屏小部件入口放在杂项，miuiWidget 注入仍然下架。
+     * 负一屏与桌面小部件入口放在杂项，miuiWidget 注入仍然下架。
      */
     @Test
     fun widgetEntriesAreVisibleInMiscellaneous() {
-        for (key in listOf(Catalog.PA_WIDGET_ADMISSION, Catalog.PA_WIDGET_PICKER_INJECT, Catalog.WIDGET_STYLE)) {
+        for (key in listOf(
+            Catalog.PA_WIDGET_ADMISSION,
+            Catalog.PA_WIDGET_PICKER_INJECT,
+            Catalog.WIDGET_STYLE,
+            Catalog.DESKTOP_WIDGET_STYLE,
+            Catalog.DESKTOP_WIDGET_DRAG_PA,
+            Catalog.DESKTOP_WIDGET_STACK,
+        )) {
             assertTrue(Catalog.settingsFeatures.any { it.key == key && it.group == FeatureGroup.APPS }, key)
         }
         assertTrue(Catalog.settingsFeatures.none { it.group == FeatureGroup.NEGATIVE_SCREEN })
@@ -71,7 +78,8 @@ class SettingsPresentationTest {
         )
         assertEquals(
             setOf(Catalog.SHARE_ORDER, Catalog.TEXT_TOOLBAR, Catalog.CLEAN_STATUSBAR, Catalog.STATUSBAR_ICONS, Catalog.BATTERY_STYLE,
-                Catalog.PA_WIDGET_ADMISSION, Catalog.PA_WIDGET_PICKER_INJECT, Catalog.WIDGET_STYLE),
+                Catalog.PA_WIDGET_ADMISSION, Catalog.PA_WIDGET_PICKER_INJECT, Catalog.WIDGET_STYLE,
+                Catalog.DESKTOP_WIDGET_STYLE, Catalog.DESKTOP_WIDGET_DRAG_PA, Catalog.DESKTOP_WIDGET_STACK),
             grouped.getValue(FeatureGroup.APPS).map { it.key }.toSet(),
         )
     }

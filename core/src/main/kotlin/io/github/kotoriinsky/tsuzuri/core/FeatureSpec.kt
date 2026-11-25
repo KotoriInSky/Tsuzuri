@@ -470,6 +470,13 @@ enum class ScopeTarget(val packageName: String) {
 
     /** 分享面板（`MiIntentResolver`）。按需启动的普通应用进程，有 ART。 */
     SHARE_SHEET("com.android.intentresolver"),
+    /**
+     * 澎湃桌面（Dart AOT + Rust 原生进程，无 ART）。
+     *
+     * LSPosed 2.2.1+ 通过 `META-INF/xposed/native_init.list` 加载 `libfpnative.so` 注入，
+     * 不走 Java 入口；配置由 `system_server` 同步到系统属性供原生侧只读轮询。
+     */
+    HOME("com.miui.home"),
     /** 虚拟包名，代表 system_server 自身。 */
     SYSTEM_SERVER("system");
 
