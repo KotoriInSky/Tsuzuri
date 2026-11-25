@@ -81,6 +81,20 @@ internal object PaymentWindow {
     /** 跳板链在这段时间内还没落地时，找不到小窗不算结束。 */
     private const val SETTLE_MS = 3_000L
 
+    /**
+     * 入口条逐事件诊断（默认关）。排「拖动 / 改大小 / 切换时入口条跳变」用：
+     * `adb shell setprop log.tag.FP-AggBar DEBUG` 后重载 SystemUI（热重载即可），
+     * 每个 task 事件、每次查到的几何、apply 的决定与 main.post 的排队耗时各一行。
+     */
+    private const val DIAG_TAG = "FP-AggBar"
+
+    @Volatile
+    private var diag = false
+
+    private fun d(msg: String) {
+        if (diag) Log.d(DIAG_TAG, msg)
+    }
+
     private const val BAR_HEIGHT_DP = 64f
     /** 条与小窗左右、底边的间距；条的圆角 = 小窗圆角 − 这个值（同心）。 */
     private const val MARGIN_DP = 8f
@@ -160,6 +174,8 @@ internal object PaymentWindow {
     fun install(ctx: HookContext, context: Context, track: (XposedInterface.HookHandle) -> Unit, show: () -> Unit): Int {
         ctxRef = ctx
         app = context
+        diag = runCatching { Log.isLoggable(DIAG_TAG, Log.DEBUG) }.getOrDefault(false)
+        if (diag) ctx.log(Log.INFO, "聚合支付：入口条诊断已开（logcat 标签 $DIAG_TAG）")
         registerReceiver(ctx, context, show)
 
         val cls = runCatching { ctx.classLoader.loadClass(REPO) }.getOrElse {
@@ -177,7 +193,10 @@ internal object PaymentWindow {
                         repo = chain.thisObject
                         // 会话期间任何 task 事件都重找一次：消失的 task 拿不到 baseActivity，
                         // 按包名筛会漏掉跳板消失那一下，入口条就停在被清掉的跳板上
-                        session?.let { refresh(it) }
+                        session?.let {
+                            d("事件 $name thread=${Thread.currentThread().name}")
+                            refresh(it, name)
+                        }
                     } catch (t: Throwable) {
                         ctx.log(Log.WARN, "聚合支付：处理 $name 失败", t)
                     }
@@ -260,7 +279,8 @@ internal object PaymentWindow {
             exact = exact,
         )
         ctx.log(Log.INFO, "聚合支付：打开 ${item.key} → ${FanShortcuts.describeLevel(level)}")
-        session?.let { refresh(it) }
+        d("会话开始 ${item.key} closeTask=$closeTaskId exact=${exact?.let { "${it.bounds}@${it.scale}" }}")
+        session?.let { refresh(it, "start") }
     }
 
     // ── 原地快速切换（shell 线程） ────────────────────────────────────
@@ -363,14 +383,18 @@ internal object PaymentWindow {
             }
         }
         ctx.log(Log.INFO, "聚合支付：原地切换（不播动画）${tasks.joinToString { it.taskId.toString() }}")
+        d("原地切换 thread=${Thread.currentThread().name} changes=" + changes.indices.joinToString {
+            "${tasks[it].taskId}:mode=${call(changes[it], "getMode")}"
+        } + " 入口条仍挂在 task ${attached?.taskId}")
         return true
     }
 
     // ── 找小窗（shell 线程或主线程都可能调） ─────────────────────────
 
-    private fun refresh(s: Session) {
+    private fun refresh(s: Session, why: String = "poll") {
         val found = runCatching { findTarget(s.pkg) }.getOrDefault(Lookup.Hidden)
-        main.post { apply(s, found) }
+        val postedAt = android.os.SystemClock.uptimeMillis()
+        main.post { apply(s, found, why, postedAt) }
     }
 
     /** 找小窗的三种结果：正常显示 / 还在但不是正常小窗（缩成迷你窗、贴边等）/ 这个包没有小窗了。 */
@@ -390,6 +414,11 @@ internal object PaymentWindow {
             val info = call(r, "getMiuiFreeformTaskInfo", taskId) ?: continue
             if (call(info, "getPackageName") != pkg) continue
             // 缩小成迷你窗 / 贴边时 mode 不是 0：小窗还在，入口条只藏不收，放大回来再显示
+            if (diag) d(
+                "查到 task $taskId mode=${call(info, "getMode")} bounds=${call(info, "getTaskBounds")} " +
+                    "taskScale=${call(info, "getTaskScale")} freeformScale=${call(info, "getFreeformScale")} " +
+                    "animating=${call(info, "isInAnimating")} leash=${(call(info, "getLeash") as? SurfaceControl)?.let { System.identityHashCode(it) }}",
+            )
             if ((call(info, "getMode") as? Int ?: 0) != 0) return Lookup.Hidden
             val leash = call(info, "getLeash") as? SurfaceControl ?: return Lookup.Hidden
             val bounds = call(info, "getTaskBounds") as? Rect ?: return Lookup.Hidden
@@ -407,13 +436,15 @@ internal object PaymentWindow {
 
     // ── 入口条（主线程） ──────────────────────────────────────────────
 
-    private fun apply(s: Session, found: Lookup) {
+    private fun apply(s: Session, found: Lookup, why: String = "poll", postedAt: Long = 0L) {
         if (session !== s) return
         val ctx = ctxRef ?: return
         val sc = barSc ?: return
+        val lag = if (postedAt > 0L) android.os.SystemClock.uptimeMillis() - postedAt else -1L
         val target = when (found) {
             is Lookup.Found -> found.target
             Lookup.Hidden -> {
+                d("决定 why=$why 排队=${lag}ms → 藏起（Hidden） 之前显示=$barShown")
                 if (barShown) {
                     SurfaceControl.Transaction().setVisibility(sc, false).apply()
                     barShown = false
@@ -421,6 +452,7 @@ internal object PaymentWindow {
                 return
             }
             Lookup.Gone -> {
+                d("决定 why=$why 排队=${lag}ms → 没有该包小窗（Gone） 会话已 ${System.currentTimeMillis() - s.startedAt}ms")
                 // 切换途中新小窗还没出来时，入口条留在旧小窗上；超过落地时限仍没有 = 小窗关了
                 if (System.currentTimeMillis() - s.startedAt > SETTLE_MS) {
                     ctx.log(Log.INFO, "聚合支付：${s.pkg} 的小窗关了，收起入口条")
@@ -436,6 +468,7 @@ internal object PaymentWindow {
         if (!barShown && target.animating) {
             if (waitSince == 0L) waitSince = System.currentTimeMillis()
             if (System.currentTimeMillis() - waitSince < ANIM_WAIT_MAX_MS) {
+                d("决定 why=$why 排队=${lag}ms → 等动画（task ${target.taskId}）")
                 main.postDelayed({ session?.takeIf { it === s }?.let { refresh(it) } }, ANIM_POLL_MS)
                 return
             }
@@ -453,8 +486,15 @@ internal object PaymentWindow {
             prev.bounds.width() == target.bounds.width() && prev.bounds.height() == target.bounds.height() &&
             prev.scale == target.scale && prev.cornerRadius == target.cornerRadius && s.closeTaskId == null
         ) {
+            d("决定 why=$why 排队=${lag}ms → 不动（几何未变）")
             return
         }
+        if (diag) d(
+            "决定 why=$why 排队=${lag}ms → 重摆 task ${prev?.taskId}→${target.taskId} sameLeash=$sameLeash " +
+                "bounds=${prev?.bounds}→${target.bounds} scale=${prev?.scale}→${target.scale} " +
+                "圆角=${prev?.cornerRadius}→${target.cornerRadius} 显示=$barShown 待关=${s.closeTaskId} " +
+                "宽 $barWidth→${(target.bounds.width() * target.scale).toInt() - dp(app ?: return, MARGIN_DP) * 2}",
+        )
         val margin = dp(c, MARGIN_DP)
         val width = (target.bounds.width() * target.scale).toInt() - margin * 2
         if (width != barWidth && width > 0) {
