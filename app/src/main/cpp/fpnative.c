@@ -31,6 +31,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <link.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -41,6 +42,7 @@
 #include <unistd.h>
 
 #include "native_hook.h"
+#include "home_widget_patches.h"
 
 #define TAG "FPNative"
 
@@ -217,17 +219,52 @@ static void probe_all_once(void) {
     probe_binder();
 }
 
-static void on_lib_loaded(const char *name, void *handle) {
-    if (!probe_enabled()) return;
-    logi("dlopen name=%s handle=%p", name != NULL ? name : "(null)", handle);
+static int is_home_process(const char *cmdline) {
+    return cmdline != NULL &&
+           (strstr(cmdline, "com.miui.home") != NULL ||
+            strstr(cmdline, "hyos_spawner") != NULL);
+}
 
-    /* 桌面链路的终点库：它在谁手里被 dlopen，就说明我们确实在桌面进程里 */
-    if (name != NULL && (strstr(name, "libapp_launcher.so") != NULL ||
-                         strstr(name, "libapp.so") != NULL)) {
+static int dump_phdr_cb(struct dl_phdr_info *info, size_t size, void *data) {
+    (void)size;
+    int *count = (int *)data;
+    const char *n = (info->dlpi_name != NULL && info->dlpi_name[0] != '\0') ? info->dlpi_name : "(main)";
+    if (strstr(n, "libapp") != NULL || strstr(n, "libnative_widget") != NULL ||
+        strstr(n, "libresources_frb") != NULL || strstr(n, "com.miui.home") != NULL ||
+        strstr(n, "MiuiHome") != NULL || strstr(n, "fpnative") != NULL) {
+        logi("PHDR[%d] base=0x%lx phnum=%u name=%s",
+             *count, (unsigned long)info->dlpi_addr, (unsigned)info->dlpi_phnum, n);
+        (*count)++;
+    }
+    return 0;
+}
+
+static int g_in_home;
+
+static void on_lib_loaded(const char *name, void *handle) {
+    if (!g_in_home && !probe_enabled()) return;
+    if (probe_enabled()) {
+        logi("dlopen name=%s handle=%p", name != NULL ? name : "(null)", handle);
+    }
+
+    /* 桌面 Dart AOT 主库就绪 → 启动原生小部件补丁引擎（内部幂等、默认全关零写页） */
+    if (g_in_home && name != NULL && strstr(name, "libapp.so") != NULL) {
+        home_widget_patches_on_libapp_ready();
+    }
+
+    /* 探针模式保留原有全量观测日志 */
+    if (probe_enabled() && name != NULL &&
+        (strstr(name, "libapp_launcher.so") != NULL ||
+         strstr(name, "libapp.so") != NULL ||
+         strstr(name, "libnative_widget_sdk.so") != NULL)) {
         char cmdline[128], tname[32];
         int uid = -1;
         identity(cmdline, sizeof(cmdline), &uid, tname, sizeof(tname));
-        logi("LAUNCHER lib loaded: cmdline=%s uid=%d comm=%s", cmdline, uid, tname);
+        logi("LAUNCHER lib loaded: name=%s handle=%p cmdline=%s uid=%d comm=%s",
+             name, handle, cmdline, uid, tname);
+        int phdr_hits = 0;
+        dl_iterate_phdr(dump_phdr_cb, &phdr_hits);
+        logi("PHDR scan after dlopen: hits=%d", phdr_hits);
         probe_all_once();
     }
 }
@@ -238,12 +275,14 @@ NativeOnModuleLoaded native_init(const NativeAPIEntries *entries) {
     char cmdline[128], tname[32];
     int uid = -1;
     identity(cmdline, sizeof(cmdline), &uid, tname, sizeof(tname));
+    g_in_home = is_home_process(cmdline);
 
-    /* 这一行**不受开关控制**：它唯一的作用是回答「模块的 native 库被加载进哪些进程」，
-     * 而这个问题只有真的加载了才答得出来。默认构建下，这是本库唯一的输出。 */
-    logi("native_init pid=%d uid=%d cmdline=%s comm=%s entries=%p ver=%u",
+    /* 这一行**不受开关控制**：记录模块的 native 库被加载进哪些进程与入口表版本。 */
+    logi("native_init pid=%d uid=%d cmdline=%s comm=%s entries=%p ver=%u hook=%p unhook=%p",
          (int)getpid(), uid, cmdline, tname, (const void *)entries,
-         entries != NULL ? entries->version : 0u);
+         entries != NULL ? entries->version : 0u,
+         entries != NULL ? (const void *)entries->hook_func : NULL,
+         entries != NULL ? (const void *)entries->unhook_func : NULL);
 
     if (entries != NULL && entries->version < 2U) {
         /* 版本对不上就别往下走：宁可什么都不做，也不要按猜的布局调函数 */
@@ -251,16 +290,20 @@ NativeOnModuleLoaded native_init(const NativeAPIEntries *entries) {
         return NULL;
     }
 
+    if (g_in_home) {
+        /* 如果 libapp.so 在 native_init 时已经映射，立刻调和一次；否则等 on_lib_loaded 触发 */
+        home_widget_patches_on_libapp_ready();
+        if (probe_enabled()) {
+            int phdr_hits = 0;
+            dl_iterate_phdr(dump_phdr_cb, &phdr_hits);
+            logi("PHDR scan at native_init: hits=%d", phdr_hits);
+        }
+    }
+
     /* 「状态出」通道的最小验证：需要 persist.fp.native.listen=1（默认关）。 */
     maybe_listen();
 
-    /* 顺带测一次「本进程（SystemUI）能不能读那个共享文件」——
-     * 桌面侧已经证明能写（0666）、能读（0644），而消费这些状态的正是 SystemUI，
-     * 所以 SystemUI 这一侧的读能力才是那条通道成不成立的关键。 */
     if (probe_enabled()) probe_read_config();
-
-    /* 注意：这里**故意不调用** entries->hook_func —— 本探针不装 hook。
-     * hook_func 的签名 (func, replace, backup) 是 inline hook，装错了就是崩桌面。 */
 
     return on_lib_loaded;
 }

@@ -369,6 +369,23 @@ object HookRegistry {
      * 本来就注入 system_server，`HookRegistry` 在那里的分发表也确实跑过。
      */
     private fun installSystemServerInfra(ctx: HookContext) {
+        // 桌面（com.miui.home，无 ART 原生进程）配置同步桥：不 hook 任何系统类，
+        // 只把三个桌面小部件开关掩码同步到系统属性供 libfpnative.so 只读轮询。
+        val homeCfgKey = "_infra_home_config_bridge"
+        if (!installed.contains(homeCfgKey)) {
+            val bridgeReport = try {
+                io.github.kotoriinsky.tsuzuri.hook.feature.desktopwidget.HomeConfigBridge.install(ctx)
+            } catch (t: Throwable) {
+                ctx.log(Log.WARN, "system_server：桌面配置同步桥初始化失败", t)
+                InstallReport(0, notes = listOf("exception=" + t.javaClass.simpleName))
+            }
+            reports[homeCfgKey] = bridgeReport
+            if (bridgeReport.isEffective) {
+                installed.add(homeCfgKey)
+                ctx.log(Log.INFO, "installed $homeCfgKey: ${bridgeReport.describe()}")
+            }
+        }
+
         // 🔍 **临时诊断**（排查「抽屉观察器为什么没信号」）。
         // 为什么放在这里、且无条件打：这个函数此前**每一条**路径都有日志
         // （未开特性 / 闸门关 / 装成功 / 装出 0 个 hook），而设备日志里一条都没有 ——
@@ -486,6 +503,10 @@ object HookRegistry {
             }
         }
         // system_server 侧的信号源（不在 `all` 里，所以上面那个循环碰不到它）
+        try {
+            io.github.kotoriinsky.tsuzuri.hook.feature.desktopwidget.HomeConfigBridge.uninstall()
+        } catch (_: Throwable) {
+        }
         try {
             LauncherDrawerObserver.uninstall()
         } catch (_: Throwable) {
