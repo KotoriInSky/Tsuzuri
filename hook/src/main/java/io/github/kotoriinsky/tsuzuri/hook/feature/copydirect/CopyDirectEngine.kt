@@ -352,22 +352,36 @@ object CopyDirectEngine : Feature(Catalog.require(Catalog.PASSCODE_ISLAND)) {
                 // 原生长按可能暂停超时；只在 cue 消失后释放文本快照。
                 main.postDelayed({ prunePayloads(bridge) }, (seconds + 2) * 1000L)
             } else {
-                val target = match?.target ?: chosen.dataString ?: "copydirect:$id"
+                val resolved = CopyDirect.resolveIslandSignal(
+                    match = match,
+                    sourceText = text,
+                    targetPackage = targetPackage,
+                    nativeDataUri = chosen.dataString,
+                    nativeTag = native.tag,
+                    usedNative = selected === remote,
+                    shareOnly = shareOnly,
+                    fallbackId = id,
+                )
                 val signal = Intent(PasscodeIsland.ACTION).setPackage(PasscodeIsland.SYSTEM_UI_PACKAGE)
-                    .putExtra(PasscodeIsland.EXTRA_RULE, match?.ruleId ?: "native:${native.tag}")
-                    .putExtra(PasscodeIsland.EXTRA_LABEL, if (shareOnly) "分享内容" else match?.label ?: "复制直达")
-                    .putExtra(PasscodeIsland.EXTRA_TARGET, target)
+                    .putExtra(PasscodeIsland.EXTRA_RULE, resolved.ruleId)
+                    .putExtra(PasscodeIsland.EXTRA_LABEL, resolved.label)
+                    .putExtra(PasscodeIsland.EXTRA_TARGET, resolved.target)
+                    .putStringArrayListExtra(PasscodeIsland.EXTRA_TARGET_ALTS, ArrayList(resolved.alts))
                     .putExtra(PasscodeIsland.EXTRA_SNIPPET, text)
                     .putExtra(PasscodeIsland.EXTRA_SOURCE_TEXT, text.take(PasscodeIsland.SOURCE_TEXT_MAX))
-                    .putExtra(PasscodeIsland.EXTRA_CORE, match?.core)
-                    .putExtra(PasscodeIsland.EXTRA_PLATFORM_NAME, match?.platform?.name)
-                    .putExtra(PasscodeIsland.EXTRA_PLATFORM_PKG, targetPackage)
-                    .putExtra(PasscodeIsland.EXTRA_ACCENT, match?.platform?.accent)
-                    .putExtra(PasscodeIsland.EXTRA_CATEGORY, match?.category?.wireName)
+                    .putExtra(PasscodeIsland.EXTRA_CORE, resolved.core)
+                    .putExtra(PasscodeIsland.EXTRA_PLATFORM_NAME, resolved.platformName)
+                    .putExtra(PasscodeIsland.EXTRA_PLATFORM_PKG, resolved.platformPkg)
+                    .putExtra(PasscodeIsland.EXTRA_ACCENT, resolved.accent)
+                    .putExtra(PasscodeIsland.EXTRA_CATEGORY, resolved.category.wireName)
                     .putExtra(CopyDirect.EXTRA_ENGINE_RESULT, true)
                     .putExtra(CopyDirect.EXTRA_INTENT, clickIntent.toUri(Intent.URI_INTENT_SCHEME))
                 bridge.context.sendBroadcast(signal)
-                ctx.log(Log.INFO, "复制直达岛分发 count=1")
+                ctx.log(
+                    Log.INFO,
+                    "复制直达岛分发 count=1 rule=${resolved.ruleId} pkg=${resolved.platformPkg ?: "none"} " +
+                        "native=${selected === remote} preview=${resolved.target.startsWith("http", true)}",
+                )
             }
         }
         return true

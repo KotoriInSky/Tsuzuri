@@ -272,7 +272,7 @@ internal object PasscodeIslandPresenter {
                             if (current != previous) {
                                 notifiedIds.toList().forEach { context.cancelNotification(it) }
                                 notifiedIds.clear()
-                                resolvedIntents.clear()
+                                synchronized(resolvedIntents) { resolvedIntents.clear() }
                                 publishedIdentities.clear()
                                 previous = current
                             }
@@ -314,7 +314,7 @@ internal object PasscodeIslandPresenter {
         notifiedIds.forEach { appContext?.cancelNotification(it) }
         cancelRunnables.clear()
         notifiedIds.clear()
-        resolvedIntents.clear()
+        synchronized(resolvedIntents) { resolvedIntents.clear() }
         publishedIdentities.clear()
         identityById.clear()
         launchTargets.clear()
@@ -344,8 +344,10 @@ internal object PasscodeIslandPresenter {
         intent.getStringExtra(io.github.kotoriinsky.tsuzuri.core.CopyDirect.EXTRA_INTENT)?.let { serialized ->
             runCatching { Intent.parseUri(serialized, Intent.URI_INTENT_SCHEME) }.getOrNull()?.let { parsed ->
                 if (target != null) {
-                    resolvedIntents[target] = parsed
-                    while (resolvedIntents.size > 64) resolvedIntents.remove(resolvedIntents.keys.first())
+                    synchronized(resolvedIntents) {
+                        resolvedIntents[target] = parsed
+                        while (resolvedIntents.size > 64) resolvedIntents.remove(resolvedIntents.keys.first())
+                    }
                 }
             }
         }
@@ -442,7 +444,9 @@ internal object PasscodeIslandPresenter {
         } else {
             (listOf(primaryTarget) + alts + appTargets).distinct()
         }
-        val engineIntent = resolvedIntents[primaryTarget]
+        val engineIntent = synchronized(resolvedIntents) {
+            resolvedIntents[primaryTarget] ?: alts.firstNotNullOfOrNull { resolvedIntents[it] }
+        }
         val resolvable = if (engineIntent != null) emptyList() else chain.filter { canResolve(context, it) }
         val target = if (engineIntent != null) primaryTarget else resolvable.firstOrNull { candidate ->
             declaredPkg != null && canHandlePackage(context, candidate, declaredPkg)
@@ -516,7 +520,9 @@ internal object PasscodeIslandPresenter {
         // 图标仍需要唯一包名（用户拍板：所有图标位 = 目标 App 图标）。歧义时用启发式的
         // 结果**只用于画图标**，不再拿它决定打开者（可能与实际打开的略有出入，属已知取舍，
         // 日志里带 ambiguous 标记可对）。
-        val iconPkg = declaredHandles
+        val explicitPkg = explicitIntent?.let { it.`package` ?: it.component?.packageName }?.takeIf { it.isNotBlank() }
+        val iconPkg = explicitPkg
+            ?: declaredHandles
             ?: localBrowser
             ?: domainApp
             ?: (if (ambiguous) null else systemPkg?.takeUnless { it.isResolverPackage() })
