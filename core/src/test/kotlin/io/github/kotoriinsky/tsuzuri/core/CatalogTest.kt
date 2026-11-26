@@ -21,11 +21,12 @@ class CatalogTest {
     @Test
     fun recognitionIsThreeFeaturesInOneGroup() {
         // 2026-10-25 重组：传送门 + 超级小爱按用户任务收成三类（文字 / 图片 / 样式）
-        // 全局识别是另起的入口，不是三类的子项：只注册接收器，热装卸
+        // 全局识别、多语种端侧 OCR 是另起的扩展能力，不是三类的子项：热装卸生效
         val keys = Catalog.features.filter { it.group == FeatureGroup.SCREEN_RECOGNITION }.map { it.key }
-            .filter { it != Catalog.GLOBAL_RECOGNITION }
+            .filter { it != Catalog.GLOBAL_RECOGNITION && it != Catalog.ONNX_OCR }
         assertEquals(listOf(Catalog.SCREEN_TEXT, Catalog.SCREEN_IMAGE, Catalog.RECOGNITION_LOOK), keys)
         assertEquals(RestartPolicy.HOT, Catalog.require(Catalog.GLOBAL_RECOGNITION).restart)
+        assertEquals(RestartPolicy.HOT, Catalog.require(Catalog.ONNX_OCR).restart)
         // 传送门的文字准入只走 contentcatcher 的准入服务，不注入任意第三方 App
         assertTrue(ScopeTarget.CONTENT_CATCHER in Catalog.require(Catalog.SCREEN_TEXT).scope)
         for (k in keys) assertEquals(RestartPolicy.HOT_RELOAD, Catalog.require(k).restart)

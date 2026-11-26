@@ -125,6 +125,9 @@ object Catalog {
     /** 全局识别：控制中心磁贴一键识别整屏文字与图片。 */
     const val GLOBAL_RECOGNITION = "global_recognition"
 
+    /** 多语种端侧 OCR（PP-OCRv6 ONNX）：独立可选推理组件 + Tiny/Small/Medium 三档按需加速下载。 */
+    const val ONNX_OCR = "onnx_ocr"
+
     /** 参数分组标识：按钮开关（文案键 `pref_group_buttons`）。 */
     const val PREF_GROUP_BUTTONS = "buttons"
 
@@ -1262,6 +1265,54 @@ object Catalog {
                         PrefSpec.Choice.Option(GlobalRecognition.FX_AURORA, "pref.global_recognition.fx_style.aurora"),
                         PrefSpec.Choice.Option(GlobalRecognition.FX_PARTICLES, "pref.global_recognition.fx_style.particles"),
                     ),
+                ),
+            ),
+        ),
+        FeatureSpec(
+            key = ONNX_OCR,
+            group = FeatureGroup.SCREEN_RECOGNITION,
+            // 推理在模块自身进程跑，传送门仅在需要 OCR 时通过 ContentProvider 调用；关闭时完全退回系统太乙 OCR。
+            scope = listOf(ScopeTarget.CONTENT_EXTENSION),
+            restart = RestartPolicy.HOT,
+            maturity = Maturity.EXPERIMENTAL,
+            prefs = listOf(
+                PrefSpec.Choice(
+                    key = p(ONNX_OCR, OnnxOcr.PREF_TIER),
+                    labelKey = "pref.onnx_ocr.tier",
+                    hintKey = "pref.onnx_ocr.tier.hint",
+                    default = OnnxOcr.Tier.SMALL.id,
+                    options = listOf(
+                        PrefSpec.Choice.Option(OnnxOcr.Tier.TINY.id, "pref.onnx_ocr.tier.tiny"),
+                        PrefSpec.Choice.Option(OnnxOcr.Tier.SMALL.id, "pref.onnx_ocr.tier.small"),
+                        PrefSpec.Choice.Option(OnnxOcr.Tier.MEDIUM.id, "pref.onnx_ocr.tier.medium"),
+                    ),
+                ),
+                PrefSpec.Choice(
+                    key = p(ONNX_OCR, OnnxOcr.PREF_MIRROR),
+                    labelKey = "pref.onnx_ocr.mirror",
+                    hintKey = "pref.onnx_ocr.mirror.hint",
+                    default = OnnxOcr.Mirror.MODELSCOPE.id,
+                    options = listOf(
+                        PrefSpec.Choice.Option(OnnxOcr.Mirror.MODELSCOPE.id, "pref.onnx_ocr.mirror.modelscope"),
+                        PrefSpec.Choice.Option(OnnxOcr.Mirror.HF_MIRROR.id, "pref.onnx_ocr.mirror.hf_mirror"),
+                        PrefSpec.Choice.Option(OnnxOcr.Mirror.HUGGINGFACE.id, "pref.onnx_ocr.mirror.huggingface"),
+                        PrefSpec.Choice.Option(OnnxOcr.Mirror.CUSTOM.id, "pref.onnx_ocr.mirror.custom"),
+                    ),
+                ),
+                PrefSpec.Choice(
+                    key = p(ONNX_OCR, OnnxOcr.PREF_BACKEND),
+                    labelKey = "pref.onnx_ocr.backend",
+                    hintKey = "pref.onnx_ocr.backend.hint",
+                    default = OnnxOcr.Backend.AUTO.id,
+                    options = listOf(
+                        PrefSpec.Choice.Option(OnnxOcr.Backend.AUTO.id, "pref.onnx_ocr.backend.auto"),
+                        PrefSpec.Choice.Option(OnnxOcr.Backend.CPU.id, "pref.onnx_ocr.backend.cpu"),
+                    ),
+                ),
+                PrefSpec.Screen(
+                    key = p(ONNX_OCR, OnnxOcr.PREF_MODELS),
+                    labelKey = "pref.onnx_ocr.models",
+                    hintKey = "pref.onnx_ocr.models.hint",
                 ),
             ),
         ),
