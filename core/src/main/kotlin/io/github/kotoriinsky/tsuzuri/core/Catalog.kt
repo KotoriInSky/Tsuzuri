@@ -1291,6 +1291,7 @@ object Catalog {
                         PrefSpec.Choice.Option(OnnxOcr.Tier.SMALL.id, "pref.onnx_ocr.tier.small"),
                         PrefSpec.Choice.Option(OnnxOcr.Tier.MEDIUM.id, "pref.onnx_ocr.tier.medium"),
                     ),
+                    dropdown = true,
                 ),
                 PrefSpec.Choice(
                     key = p(ONNX_OCR, OnnxOcr.PREF_MIRROR),
@@ -1303,6 +1304,7 @@ object Catalog {
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.HUGGINGFACE.id, "pref.onnx_ocr.mirror.huggingface"),
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.CUSTOM.id, "pref.onnx_ocr.mirror.custom"),
                     ),
+                    dropdown = true,
                 ),
             ),
         ),

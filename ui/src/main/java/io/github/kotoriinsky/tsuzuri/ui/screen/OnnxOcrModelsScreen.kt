@@ -1,6 +1,9 @@
 package io.github.kotoriinsky.tsuzuri.ui.screen
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -8,8 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -24,9 +29,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -35,6 +45,7 @@ import io.github.kotoriinsky.tsuzuri.core.Keys
 import io.github.kotoriinsky.tsuzuri.core.OnnxOcr
 import io.github.kotoriinsky.tsuzuri.core.PrefSpec
 import io.github.kotoriinsky.tsuzuri.ui.kit.FpEmphasis
+import io.github.kotoriinsky.tsuzuri.ui.kit.FpSpace
 import io.github.kotoriinsky.tsuzuri.ui.kit.FpTextStyle
 import io.github.kotoriinsky.tsuzuri.ui.kit.LocalFpKit
 import io.github.kotoriinsky.tsuzuri.ui.ocr.OnnxOcrRemote
@@ -44,7 +55,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** 多语种 OCR 独立推理组件与 PP-OCRv6 模型管理页。 */
+/** 多语种 OCR 独立推理组件与 PaddleOCRv6 模型管理页。 */
 @Composable
 fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, padding: PaddingValues) {
     val kit = LocalFpKit.current
@@ -86,7 +97,7 @@ fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, pad
         }
     }
 
-    val mirrorLabels = remember { listOf("魔搭", "HF 镜像", "HF 官方", "自定义") }
+    val mirrorLabels = remember { listOf("魔搭", "HF 镜像", "Hugging Face", "自定义") }
     val selectedMirrorIndex = OnnxOcr.Mirror.entries.indexOf(activeMirror).coerceAtLeast(0)
     val pluginMirrorLabels = remember { listOf("GHProxy", "GHFast", "直连") }
 
@@ -94,30 +105,49 @@ fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, pad
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(padding)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(padding),
     ) {
-        // 推理组件
+        kit.VSpace(FpSpace.s)
+
+        // 卡片 1：运行环境与下载源（完全复用 Kit 原生行高、边距与分割线）
         kit.Card {
+            kit.InfoRow(
+                title = "推理组件",
+                value = when {
+                    remote.pluginInstalled && remote.pluginVersion.isNotBlank() -> "v${remote.pluginVersion}"
+                    remote.pluginInstalled -> "已安装"
+                    else -> "未安装"
+                },
+                emphasis = if (remote.pluginInstalled) FpEmphasis.POSITIVE else FpEmphasis.WARNING,
+            )
+
             if (remote.pluginInstalled) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "推理组件",
-                        color = colors.onSurface,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    kit.Chip(
-                        label = if (remote.pluginVersion.isNotBlank()) "v${remote.pluginVersion}" else "已安装",
-                        emphasis = FpEmphasis.POSITIVE,
-                    )
+                kit.Divider()
+                kit.DropdownRow(
+                    title = "下载源",
+                    summary = null,
+                    options = mirrorLabels,
+                    selectedIndex = selectedMirrorIndex,
+                    onSelect = { idx ->
+                        val chosen = OnnxOcr.Mirror.entries.getOrNull(idx) ?: return@DropdownRow
+                        ConfigStore.putString(mirrorKey, chosen.id)
+                    },
+                    enabled = !remote.isDownloadingModel,
+                )
+                if (activeMirror == OnnxOcr.Mirror.CUSTOM) {
+                    Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                        kit.TextInput(
+                            value = customMirrorDraft,
+                            label = "镜像地址或 {repo}/{file} 模板",
+                            onValueChange = {
+                                customMirrorDraft = it
+                                ConfigStore.putString(customMirrorKey, it.trim())
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
+                kit.Divider()
                 kit.ActionRow(
                     title = "释放缓存",
                     summary = null,
@@ -125,30 +155,19 @@ fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, pad
                     onClick = { OnnxOcrRemote.releaseCache(context) },
                 )
             } else {
+                kit.Divider()
+                kit.DropdownRow(
+                    title = "组件镜像",
+                    summary = null,
+                    options = pluginMirrorLabels,
+                    selectedIndex = pluginMirrorIdx,
+                    onSelect = { pluginMirrorIdx = it },
+                    enabled = pluginDl !is OnnxOcrRemote.PluginDownloadState.Downloading,
+                )
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = "推理组件",
-                            color = colors.onSurface,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        kit.Chip(label = "未安装", emphasis = FpEmphasis.WARNING)
-                    }
-                    kit.SegmentedRow(
-                        title = "镜像",
-                        summary = null,
-                        options = pluginMirrorLabels,
-                        selectedIndex = pluginMirrorIdx,
-                        onSelect = { pluginMirrorIdx = it },
-                        enabled = pluginDl !is OnnxOcrRemote.PluginDownloadState.Downloading,
-                    )
                     kit.TextInput(
                         value = pluginUrlDraft,
                         label = "组件 APK 地址",
@@ -161,14 +180,25 @@ fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, pad
                     when (val pds = pluginDl) {
                         is OnnxOcrRemote.PluginDownloadState.Downloading -> {
                             if (pds.totalBytes > 0L) {
-                                LinearProgressIndicator(progress = { pds.fraction }, modifier = Modifier.fillMaxWidth())
+                                LinearProgressIndicator(
+                                    progress = { pds.fraction },
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                    color = colors.accent,
+                                    trackColor = colors.outline.copy(alpha = 0.25f),
+                                    strokeCap = StrokeCap.Round,
+                                )
                                 kit.Body(
                                     text = "${formatMb(pds.downloadedBytes)} / ${formatMb(pds.totalBytes)}",
                                     emphasis = FpEmphasis.MUTED,
                                     style = FpTextStyle.CAPTION,
                                 )
                             } else {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                    color = colors.accent,
+                                    trackColor = colors.outline.copy(alpha = 0.25f),
+                                    strokeCap = StrokeCap.Round,
+                                )
                                 kit.Body(
                                     text = formatMb(pds.downloadedBytes),
                                     emphasis = FpEmphasis.MUTED,
@@ -183,26 +213,29 @@ fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, pad
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (pluginDl is OnnxOcrRemote.PluginDownloadState.Downloading) {
-                            kit.Button(
+                            CompactPill(
                                 text = "取消",
+                                containerColor = colors.surfaceVariant,
+                                contentColor = colors.onSurface,
                                 onClick = { OnnxOcrRemote.cancelPluginDownload() },
-                                primary = false,
                             )
                         } else {
-                            kit.Button(
+                            CompactPill(
                                 text = "下载安装",
+                                containerColor = colors.accent,
+                                contentColor = colors.onAccent,
                                 onClick = {
                                     val chosen = OnnxOcr.PluginMirror.entries.getOrElse(pluginMirrorIdx) {
                                         OnnxOcr.PluginMirror.GHPROXY
                                     }
                                     OnnxOcrRemote.startPluginDownload(context, pluginUrlDraft, chosen)
                                 },
-                                primary = true,
                             )
-                            kit.Button(
+                            CompactPill(
                                 text = "检测",
+                                containerColor = colors.surfaceVariant,
+                                contentColor = colors.onSurface,
                                 onClick = { refreshTick++ },
-                                primary = false,
                             )
                         }
                     }
@@ -210,162 +243,181 @@ fun OnnxOcrModelsScreen(@Suppress("UNUSED_PARAMETER") spec: PrefSpec.Screen, pad
             }
         }
 
-        // 模型下载源
-        kit.Card {
-            kit.SegmentedRow(
-                title = "下载源",
-                summary = null,
-                options = mirrorLabels,
-                selectedIndex = selectedMirrorIndex,
-                onSelect = { idx ->
-                    val chosen = OnnxOcr.Mirror.entries.getOrNull(idx) ?: return@SegmentedRow
-                    ConfigStore.putString(mirrorKey, chosen.id)
-                },
-                enabled = !remote.isDownloadingModel,
+        if (remote.dlState == OnnxOcr.DL_FAILED) {
+            kit.VSpace(FpSpace.s)
+            kit.Banner(
+                text = "下载失败：${remote.dlMessage}",
+                emphasis = FpEmphasis.NEGATIVE,
             )
-            if (activeMirror == OnnxOcr.Mirror.CUSTOM || remote.dlState == OnnxOcr.DL_FAILED) {
-                Column(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (activeMirror == OnnxOcr.Mirror.CUSTOM) {
-                        kit.TextInput(
-                            value = customMirrorDraft,
-                            label = "镜像地址或 {repo}/{file} 模板",
-                            onValueChange = {
-                                customMirrorDraft = it
-                                ConfigStore.putString(customMirrorKey, it.trim())
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    if (remote.dlState == OnnxOcr.DL_FAILED) {
-                        kit.Body(
-                            text = "${remote.dlTier}：${remote.dlMessage}",
-                            emphasis = FpEmphasis.NEGATIVE,
-                            style = FpTextStyle.CAPTION,
-                        )
-                    }
-                }
-            }
         }
 
-        // PP-OCRv6 三档模型
-        for (tier in OnnxOcr.Tier.entries) {
-            val installed = tier.id in remote.installedTiers
-            val diskBytes = remote.tierBytes[tier.id] ?: 0L
-            val isDownloadingThis = remote.isDownloadingModel && remote.dlTier == tier.id
-            val isCurrent = activeTier == tier
+        // 卡片 2：模型区块（单卡三行，明确标注基于 PaddleOCRv6）
+        kit.SectionHeader(title = "模型", count = "基于 PaddleOCRv6")
 
-            kit.Card {
+        kit.Card {
+            OnnxOcr.Tier.entries.forEachIndexed { idx, tier ->
+                if (idx > 0) kit.Divider()
+                val installed = tier.id in remote.installedTiers
+                val diskBytes = remote.tierBytes[tier.id] ?: 0L
+                val isDownloadingThis = remote.isDownloadingModel && remote.dlTier == tier.id
+                val isCurrent = activeTier == tier
+
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (installed && !isCurrent && !remote.isDownloadingModel) {
+                                Modifier.clickable { ConfigStore.putString(tierKey, tier.id) }
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 36.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            val title = when (tier) {
-                                OnnxOcr.Tier.TINY -> "PP-OCRv6 Tiny"
-                                OnnxOcr.Tier.SMALL -> "PP-OCRv6 Small"
-                                OnnxOcr.Tier.MEDIUM -> "PP-OCRv6 Medium"
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                val title = when (tier) {
+                                    OnnxOcr.Tier.TINY -> "Tiny"
+                                    OnnxOcr.Tier.SMALL -> "Small"
+                                    OnnxOcr.Tier.MEDIUM -> "Medium"
+                                }
+                                Text(
+                                    text = title,
+                                    color = colors.onSurface,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                if (installed && isCurrent) {
+                                    kit.Chip(label = "当前", emphasis = FpEmphasis.POSITIVE)
+                                } else if (isDownloadingThis) {
+                                    kit.Chip(label = "${(remote.dlFraction * 100).toInt()}%", emphasis = FpEmphasis.ACCENT)
+                                }
+                            }
+                            Spacer(Modifier.height(2.dp))
+                            val subtitle = when {
+                                isDownloadingThis -> "${formatMb(remote.dlBytes)} / ${formatMb(remote.dlTotal)}"
+                                installed && diskBytes > 0L -> "${tier.langSummary.substringBefore(" · ")} · ${formatMb(diskBytes)}"
+                                else -> tier.langSummary
                             }
                             Text(
-                                text = title,
-                                color = colors.onSurface,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            val subtitle = if (installed && diskBytes > 0L) {
-                                "${tier.langSummary.substringBefore(" · ")} · 已占 ${formatMb(diskBytes)}"
-                            } else {
-                                tier.langSummary
-                            }
-                            kit.Body(
                                 text = subtitle,
-                                emphasis = FpEmphasis.MUTED,
-                                style = FpTextStyle.CAPTION,
+                                color = colors.muted,
+                                fontSize = 13.sp,
                             )
                         }
-                        val (badge, badgeEmphasis) = when {
-                            isDownloadingThis -> "${(remote.dlFraction * 100).toInt()}%" to FpEmphasis.ACCENT
-                            installed && isCurrent -> "当前" to FpEmphasis.POSITIVE
-                            installed -> "已下载" to FpEmphasis.ACCENT
-                            else -> "未下载" to FpEmphasis.MUTED
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            when {
+                                isDownloadingThis -> {
+                                    CompactPill(
+                                        text = "取消",
+                                        containerColor = colors.surfaceVariant,
+                                        contentColor = colors.onSurface,
+                                        onClick = {
+                                            OnnxOcrRemote.cancelModelDownload(context)
+                                            refreshTick++
+                                        },
+                                    )
+                                }
+                                installed -> {
+                                    if (!isCurrent) {
+                                        CompactPill(
+                                            text = "使用",
+                                            containerColor = colors.accent.copy(alpha = 0.14f),
+                                            contentColor = colors.accent,
+                                            onClick = { ConfigStore.putString(tierKey, tier.id) },
+                                        )
+                                    }
+                                    CompactPill(
+                                        text = "删除",
+                                        containerColor = colors.negative.copy(alpha = 0.10f),
+                                        contentColor = colors.negative,
+                                        enabled = !remote.isDownloadingModel,
+                                        onClick = {
+                                            OnnxOcrRemote.deleteTier(context, tier)
+                                            refreshTick++
+                                        },
+                                    )
+                                }
+                                else -> {
+                                    val highlight = remote.pluginInstalled && tier == OnnxOcr.Tier.SMALL
+                                    CompactPill(
+                                        text = "下载",
+                                        containerColor = if (highlight) colors.accent else colors.surfaceVariant,
+                                        contentColor = if (highlight) colors.onAccent else colors.onSurface,
+                                        enabled = remote.pluginInstalled && !remote.isDownloadingModel,
+                                        onClick = {
+                                            ConfigStore.putString(tierKey, tier.id)
+                                            OnnxOcrRemote.startModelDownload(
+                                                context = context,
+                                                tier = tier,
+                                                mirror = activeMirror,
+                                                customMirrorUrl = customMirrorDraft,
+                                            )
+                                            refreshTick++
+                                        },
+                                    )
+                                }
+                            }
                         }
-                        kit.Chip(label = badge, emphasis = badgeEmphasis)
                     }
 
                     if (isDownloadingThis) {
                         LinearProgressIndicator(
                             progress = { remote.dlFraction },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = colors.accent,
+                            trackColor = colors.outline.copy(alpha = 0.25f),
+                            strokeCap = StrokeCap.Round,
                         )
-                        kit.Body(
-                            text = "${formatMb(remote.dlBytes)} / ${formatMb(remote.dlTotal)}",
-                            emphasis = FpEmphasis.MUTED,
-                            style = FpTextStyle.CAPTION,
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        when {
-                            isDownloadingThis -> {
-                                kit.Button(
-                                    text = "取消",
-                                    onClick = {
-                                        OnnxOcrRemote.cancelModelDownload(context)
-                                        refreshTick++
-                                    },
-                                    primary = false,
-                                )
-                            }
-                            installed -> {
-                                if (!isCurrent) {
-                                    kit.Button(
-                                        text = "使用",
-                                        onClick = { ConfigStore.putString(tierKey, tier.id) },
-                                        primary = true,
-                                    )
-                                }
-                                kit.Button(
-                                    text = "删除",
-                                    onClick = {
-                                        OnnxOcrRemote.deleteTier(context, tier)
-                                        refreshTick++
-                                    },
-                                    primary = false,
-                                    enabled = !remote.isDownloadingModel,
-                                )
-                            }
-                            else -> {
-                                kit.Button(
-                                    text = "下载",
-                                    onClick = {
-                                        ConfigStore.putString(tierKey, tier.id)
-                                        OnnxOcrRemote.startModelDownload(
-                                            context = context,
-                                            tier = tier,
-                                            mirror = activeMirror,
-                                            customMirrorUrl = customMirrorDraft,
-                                        )
-                                        refreshTick++
-                                    },
-                                    primary = remote.pluginInstalled && tier == OnnxOcr.Tier.SMALL,
-                                    enabled = remote.pluginInstalled && !remote.isDownloadingModel,
-                                )
-                            }
-                        }
                     }
                 }
             }
         }
+
+        kit.VSpace(FpSpace.l)
+    }
+}
+
+/** 列表行右侧的紧凑胶囊操作按钮（32dp 高），适配 HyperOS 设置行密度。 */
+@Composable
+private fun CompactPill(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .height(32.dp)
+            .alpha(if (enabled) 1f else 0.42f)
+            .clip(RoundedCornerShape(16.dp))
+            .background(containerColor)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = contentColor,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 
