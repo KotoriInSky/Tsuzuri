@@ -636,11 +636,11 @@
     <!-- 小窗多开（multi_freeform）：机制与安全论证见 MultiFreeformWhitelist -->
     <string name="feature_multi_freeform_title">小窗多开</string>
     <string name="feature_multi_freeform_summary">所有应用可同时开多个小窗</string>
-    <!-- 小窗增强（freeform_enhance）：即用即走 + 顶部原生菜单扩展 -->
+    <!-- 小窗增强（freeform_enhance）：即用即走 + 迷你小窗 Flyme 风格浮层与双击互换 -->
     <string name="feature_freeform_enhance_title">小窗增强</string>
-    <string name="feature_freeform_enhance_summary">关闭不留后台卡片，顶栏支持主副互换、静音与半透明</string>
+    <string name="feature_freeform_enhance_summary">关闭不留后台卡片，迷你小窗长按静音、双击与主屏互换</string>
     <string name="pref_group_freeform_close">关闭行为</string>
-    <string name="pref_group_freeform_menu">顶栏菜单扩展</string>
+    <string name="pref_group_freeform_mini">迷你小窗手势</string>
     <string name="pref_freeform_enhance_ephemeral">即用即走（关闭不留后台卡片）</string>
     <string name="pref_freeform_enhance_ephemeral_hint">上滑或点关闭按钮退出小窗后，自动移出最近任务列表</string>
     <string name="pref_freeform_enhance_ephemeral_required">需先打开「即用即走」</string>
@@ -648,15 +648,12 @@
     <string name="pref_freeform_enhance_ephemeral_scope_hint">决定哪些小窗在关闭时移出最近任务</string>
     <string name="pref_freeform_enhance_ephemeral_scope_temp_only">仅临时拉起的小窗（推荐）</string>
     <string name="pref_freeform_enhance_ephemeral_scope_all">全部关闭的小窗</string>
-    <string name="pref_freeform_enhance_swap_fullscreen">主副窗一键互换</string>
-    <string name="pref_freeform_enhance_swap_fullscreen_hint">在小窗顶部「…」菜单增加「互换」，与底层全屏应用一步对调</string>
-    <string name="pref_freeform_enhance_window_mute">单窗静音</string>
-    <string name="pref_freeform_enhance_window_mute_hint">在小窗顶部「…」菜单增加「静音」，仅静音当前小窗，关窗或切全屏自动恢复</string>
-    <string name="pref_freeform_enhance_window_opacity">单窗半透明</string>
-    <string name="pref_freeform_enhance_window_opacity_hint">在小窗顶部「…」菜单增加「半透明」，关窗或切全屏自动恢复不透明</string>
-    <string name="pref_freeform_enhance_window_opacity_required">需先打开「单窗半透明」</string>
-    <string name="pref_freeform_enhance_opacity_percent">半透明不透明度</string>
-    <string name="pref_freeform_enhance_opacity_percent_hint">开启半透明时小窗保留的画面不透明度，数值越小越透</string>
+    <string name="pref_freeform_enhance_mini_long_press_menu">长按迷你小窗弹出浮层</string>
+    <string name="pref_freeform_enhance_mini_long_press_menu_hint">贴合迷你小窗弹出半透明浮层，一键静音当前应用或与主屏互换；单击仍保持原生展开</string>
+    <string name="pref_freeform_enhance_mini_double_tap_swap">双击迷你小窗与主屏互换</string>
+    <string name="pref_freeform_enhance_mini_double_tap_swap_hint">双击缩小后的迷你小窗升为全屏，同时把底层全屏应用自动降为小窗；底层为桌面时保持原生全屏</string>
+    <string name="pref_freeform_enhance_swap_to_mini">互换后原主应用缩为迷你小窗</string>
+    <string name="pref_freeform_enhance_swap_to_mini_hint">开启后底层全屏应用自动缩成迷你小窗；关闭则保持常规小窗尺寸</string>
     <!-- 分享排序（share_order，C14） -->
     <string name="feature_share_order_title">分享面板排序</string>
     <string name="feature_share_order_summary">常用应用固定在分享面板最前</string>
