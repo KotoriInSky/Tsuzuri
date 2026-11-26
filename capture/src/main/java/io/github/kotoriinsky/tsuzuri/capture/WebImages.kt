@@ -59,6 +59,28 @@ internal object WebImages {
         (function(){try{
           var vv=window.visualViewport,W=vv?vv.width:innerWidth,H=vv?vv.height:innerHeight,
               ox=vv?vv.offsetLeft:0,oy=vv?vv.offsetTop:0,out=[],seen=0;
+          function bestSrcset(ss,base){
+            if(!ss)return null;var parts=ss.split(','),bestUrl=null,bestScore=-1;
+            for(var i=0;i<parts.length;i++){
+              var seg=parts[i].trim();if(!seg)continue;
+              var sp=seg.split(/\s+/),u=sp[0],d=sp[1]||'',sc=1;
+              if(/^\d+w$/.test(d))sc=parseInt(d,10);
+              else if(/^\d+(\.\d+)?x$/.test(d))sc=parseFloat(d)*1000;
+              if(sc>bestScore){try{bestUrl=new URL(u,base).href;bestScore=sc;}catch(x){}}
+            }
+            return bestUrl;
+          }
+          function bestImgSrc(e,doc){
+            var best=null;
+            if(e.parentElement&&e.parentElement.tagName==='PICTURE'){
+              var srcs=e.parentElement.getElementsByTagName('SOURCE');
+              for(var k=0;k<srcs.length;k++){
+                var cand=bestSrcset(srcs[k].getAttribute('srcset'),doc.baseURI);
+                if(cand){best=cand;break;}
+              }
+            }
+            return best||bestSrcset(e.getAttribute('srcset'),doc.baseURI)||e.currentSrc||e.src;
+          }
           function bg(e,doc){var s=doc.defaultView.getComputedStyle(e).backgroundImage;
             if(!s||s==='none')return null;var m=/url\(["']?([^"')]+)["']?\)/.exec(s);
             if(!m)return null;try{return new URL(m[1],doc.baseURI).href}catch(x){return null}}
@@ -69,7 +91,7 @@ internal object WebImages {
               var l=r.left+dx,t=r.top+dy,rr=r.right+dx,b=r.bottom+dy;
               if(r.width<$MIN_CSS||r.height<$MIN_CSS||rr<=ox||b<=oy||l>=ox+W||t>=oy+H)continue;
               var tag=e.tagName,src=null;
-              if(tag==='IMG'){if(e.complete&&e.naturalWidth>=$MIN_CSS)src=e.currentSrc||e.src}
+              if(tag==='IMG'){if(e.complete&&e.naturalWidth>=$MIN_CSS)src=bestImgSrc(e,doc)}
               else if(tag==='IFRAME'){if(d<3){try{var cd=e.contentDocument;if(cd)walk(cd,l+e.clientLeft,t+e.clientTop,d+1)}catch(x){}}continue}
               else src=bg(e,doc);
               if(src)out.push([l,t,rr,b,src]);
@@ -121,12 +143,75 @@ internal object WebImages {
             val full = r.width().toLong() * r.height()
             if (full <= 0 || !r.intersect(clip)) continue
             val src = a.getString(4)
-            if (!src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("data:image/")) continue
+            if (!src.startsWith("http://") && !src.startsWith("https://") && !src.startsWith("data:image/") && !src.startsWith("blob:")) continue
             // 被 WebView 边缘裁掉大半的不要（与原生控件同一个门槛）
             if (r.width().toLong() * r.height() < full * 6 / 10) continue
             out += Item(r, src)
         }
         return out
+    }
+
+    /**
+     * 主线程调用：在 [wv] 内把 `blob:` 图片异步读成 DataURL 字节数组（兼容 Telegram Web、加密图床与现代 SPA）。
+     */
+    fun fetchBlob(wv: WebView, blobUrl: String, done: (ByteArray?) -> Unit) {
+        val quoted = JSONObject.quote(blobUrl)
+        val js = """
+            (function(){
+              var k='__tsuzuri_blob_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+              window[k]=null;
+              fetch($quoted).then(function(r){return r.blob()}).then(function(b){
+                if(b.size>$MAX_BYTES){window[k]='ERR';return;}
+                var fr=new FileReader();
+                fr.onloadend=function(){window[k]=typeof fr.result==='string'?fr.result:'ERR';};
+                fr.onerror=function(){window[k]='ERR';};
+                fr.readAsDataURL(b);
+              }).catch(function(){window[k]='ERR';});
+              return k;
+            })()
+        """.trimIndent()
+        try {
+            wv.evaluateJavascript(js) { rawKey ->
+                val key = runCatching { JSONTokener(rawKey).nextValue() as? String }.getOrNull()
+                if (key.isNullOrBlank()) {
+                    done(null)
+                    return@evaluateJavascript
+                }
+                pollBlob(wv, key, 0, done)
+            }
+        } catch (_: Throwable) {
+            done(null)
+        }
+    }
+
+    private fun pollBlob(wv: WebView, key: String, attempt: Int, done: (ByteArray?) -> Unit) {
+        if (attempt > 12) {
+            done(null)
+            return
+        }
+        wv.postDelayed({
+            try {
+                val qk = JSONObject.quote(key)
+                wv.evaluateJavascript("(function(){var v=window[$qk];if(v!==null&&v!==undefined){delete window[$qk];return v;}return null;})()") { raw ->
+                    val v = runCatching { if (raw == null || raw == "null") null else JSONTokener(raw).nextValue() as? String }.getOrNull()
+                    when {
+                        v == null -> pollBlob(wv, key, attempt + 1, done)
+                        v == "ERR" || !v.startsWith("data:") -> done(null)
+                        else -> {
+                            val comma = v.indexOf(',')
+                            val bytes = if (comma > 0 && v.substring(0, comma).endsWith(";base64")) {
+                                runCatching { Base64.decode(v.substring(comma + 1), Base64.DEFAULT) }.getOrNull()
+                            } else {
+                                null
+                            }
+                            done(bytes)
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+                done(null)
+            }
+        }, 35L)
     }
 
     /**

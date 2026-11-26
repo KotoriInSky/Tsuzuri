@@ -20,6 +20,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.webkit.WebView
 import io.github.kotoriinsky.tsuzuri.capture.engine.DrawableBitmapFinder
+import io.github.kotoriinsky.tsuzuri.capture.engine.ImageUrlUpgrader
 import io.github.kotoriinsky.tsuzuri.capture.engine.PortalBitmapCapture
 import io.github.kotoriinsky.tsuzuri.capture.engine.SourceImageContract
 import java.util.concurrent.atomic.AtomicBoolean
@@ -158,6 +159,32 @@ object SourceImageServer {
 
     private fun tryNative(target: Rect, cb: IBinder, t0: Long, notes: MutableList<String>) {
         val view = findView(target)
+        // 0. 优先探测原文件与动图（Glide GifDrawable / 大图查看器本地原图 / Fresco・Glide・Coil 原始来源）：
+        // 拿到原字节直接通过 TX_MEDIA 无损回传（保留 GIF/动态 WebP/HEIF/原画分辨率）
+        if (view != null && view !is WebView) {
+            when (val media = MediaSourceFinder.find(view)) {
+                is MediaSourceFinder.Found.Raw -> {
+                    sendMedia(cb, media, view.javaClass.name, t0)
+                    return
+                }
+                is MediaSourceFinder.Found.RemoteUrl -> {
+                    Thread({
+                        val raw = MediaSourceFinder.downloadRemote(media, t0 + WEB_FETCH_BUDGET_MS, io)
+                        if (raw != null) {
+                            sendMedia(cb, raw, view.javaClass.name, t0)
+                        } else {
+                            main.post { guarded(cb) { tryNativeBitmapFallback(view, target, cb, t0, notes) } }
+                        }
+                    }, "FP-SourceMedia").start()
+                    return
+                }
+                null -> Unit
+            }
+        }
+        tryNativeBitmapFallback(view, target, cb, t0, notes)
+    }
+
+    private fun tryNativeBitmapFallback(view: View?, target: Rect, cb: IBinder, t0: Long, notes: MutableList<String>) {
         // 控件自己持有位图（ImageView、带位图的 Drawable）最可靠，先取；
         // 否则（Compose、自绘控件）在整窗记录里找，再退回画布拦截与网页
         if (view != null && view !is WebView && DrawableBitmapFinder.largest(view) != null) {
@@ -247,6 +274,14 @@ object SourceImageServer {
             if (best == null) {
                 notes += "WebView 里 ${items.size} 张图都对不上"
                 fail(cb, notes.joinToString("；"))
+            } else if (best.src.startsWith("blob:")) {
+                WebImages.fetchBlob(web, best.src) { bytes ->
+                    guarded(cb) {
+                        val raw = bytes?.let { MediaSourceFinder.bytesToRaw(it, "网页 Blob 原图") }
+                        if (raw != null) sendMedia(cb, raw, "WebView.blob", t0)
+                        else fail(cb, "网页 Blob 图片读取失败")
+                    }
+                }
             } else {
                 val ua = runCatching { web.settings.userAgentString }.getOrNull()
                 val referer = runCatching { web.url }.getOrNull()
@@ -270,30 +305,65 @@ object SourceImageServer {
         }
     }
 
-    /** 后台线程：下载网页图片原文件。不大于 [MAX_SIDE] 就原样转发字节（JPEG / WebP 不必重新编码），否则缩小后转 PNG。 */
+    /** 后台线程：下载网页图片原文件，优先尝试升级 CDN 原图 URL，并经 TX_MEDIA 保留动图/原格式字节。 */
     private fun sendWeb(cb: IBinder, src: String, ua: String?, referer: String?, t0: Long) {
         val label = src.substringBefore('?').takeLast(80)
         try {
-            val bytes = WebImages.download(src, ua, referer, t0 + WEB_FETCH_BUDGET_MS, io)
-            if (bytes == null) { fail(cb, "网页图片没取到（超时、失败或过大）：$label"); return }
-            val size = WebImages.bounds(bytes)
-            if (size == null) { fail(cb, "网页图片不是位图格式：$label"); return }
-            val (w, h) = size
-            if (max(w, h) <= MAX_SIDE) {
-                sendStream(cb, w, h, "网页原图", label, t0) { it.write(bytes) }
+            val urls = if (src.startsWith("data:")) listOf(src) else ImageUrlUpgrader.candidates(src)
+            var raw: MediaSourceFinder.Found.Raw? = null
+            for ((idx, candidate) in urls.withIndex()) {
+                val bytes = WebImages.download(candidate, ua, referer, t0 + WEB_FETCH_BUDGET_MS, io) ?: continue
+                val how = if (idx == 0 && urls.size > 1) "网页原图·升级" else "网页原图"
+                raw = MediaSourceFinder.bytesToRaw(bytes, how)
+                if (raw != null) break
+            }
+            if (raw == null) { fail(cb, "网页图片没取到（超时、失败或非位图）：$label"); return }
+            if (raw.animated || max(raw.width, raw.height) <= MAX_SIDE) {
+                sendMedia(cb, raw, label, t0)
                 return
             }
-            val sample = Integer.highestOneBit(max(w, h) / MAX_SIDE).coerceAtLeast(1)
-            val decoded = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+            val sample = Integer.highestOneBit(max(raw.width, raw.height) / MAX_SIDE).coerceAtLeast(1)
+            val decoded = android.graphics.BitmapFactory.decodeByteArray(raw.bytes, 0, raw.bytes.size,
                 android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
-            if (decoded == null) { fail(cb, "网页图片解码失败：$label"); return }
+            if (decoded == null) { sendMedia(cb, raw, label, t0); return }
             val copy = softCopy(decoded)
             if (copy !== decoded) decoded.recycle()
-            if (copy == null) { fail(cb, "网页图片缩小失败：$label"); return }
+            if (copy == null) { sendMedia(cb, raw, label, t0); return }
             sendBitmap(cb, copy, "网页原图（缩小）", label, t0)
         } catch (t: Throwable) {
             fail(cb, "网页图片异常：$t")
         }
+    }
+
+    /** 经 [SourceImageContract.TX_MEDIA] 回传未经重压的原始图片/动图文件字节流。 */
+    private fun sendMedia(cb: IBinder, raw: MediaSourceFinder.Found.Raw, what: String, t0: Long) {
+        val pipe = ParcelFileDescriptor.createPipe()
+        val data = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(SourceImageContract.DESCRIPTOR)
+            data.writeInt(raw.width)
+            data.writeInt(raw.height)
+            data.writeString(raw.mime)
+            data.writeInt(if (raw.animated) 1 else 0)
+            data.writeString(raw.how)
+            data.writeFileDescriptor(pipe[0].fileDescriptor)
+            cb.transact(SourceImageContract.TX_MEDIA, data, null, IBinder.FLAG_ONEWAY)
+        } catch (t: Throwable) {
+            runCatching { pipe[1].close() }
+            Log.w(TAG, "原媒体回传失败", t)
+            return
+        } finally {
+            data.recycle()
+            pipe[0].close()
+        }
+        Log.i(TAG, "区域原媒体：$what → ${raw.width}x${raw.height} ${raw.mime} animated=${raw.animated} ${raw.bytes.size}B（${raw.how}，${android.os.SystemClock.uptimeMillis() - t0}ms）")
+        Thread({
+            try {
+                ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { it.write(raw.bytes) }
+            } catch (t: Throwable) {
+                Log.w(TAG, "原媒体写出失败", t)
+            }
+        }, "FP-SourceMedia").start()
     }
 
     /**
@@ -388,8 +458,8 @@ object SourceImageServer {
                 n.rect.width().toLong() * n.rect.height() >= v.width.toLong() * v.height * MIN_VISIBLE_RATIO &&
                 found.none { it == visible }
             ) {
-                // 视频控件不看 Drawable：画面在它自己的缓冲里
-                if (!isVideo && DrawableBitmapFinder.largest(v) == null) continue
+                // 视频控件不看 Drawable：画面在它自己的缓冲里；同时纳入 AnimatedImageDrawable / GifDrawable / 大图查看器
+                if (!isVideo && !DrawableBitmapFinder.hasVisualContent(v)) continue
                 if (shown.exposedArea(n) < v.width.toLong() * v.height * MIN_VISIBLE_RATIO) { covered++; continue }
                 found += Rect(visible)
                 if (isVideo) videos++
