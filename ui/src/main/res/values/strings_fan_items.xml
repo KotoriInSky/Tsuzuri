@@ -42,6 +42,14 @@
     <string name="fan_items_up">上移</string>
     <string name="fan_items_down">下移</string>
     <string name="fan_items_remove">移除</string>
+    <string name="fan_items_menu_icon">更换图标</string>
+    <string name="fan_items_menu_name_icon">名称与图标</string>
+    <string name="fan_items_menu_pin_first">移至最前</string>
+    <string name="fan_items_add_apps">应用</string>
+    <string name="fan_items_add_shortcuts">快捷方式与页面</string>
+    <string name="fan_items_add_link">链接</string>
+    <string name="fan_items_add_activity">活动</string>
+    <string name="fan_items_grid_hint">长按调整选项或拖动排序</string>
 
 
     <!-- ⚠️ 原来有 `fan_items_row_changed`（详情页那行的「N 项 · 已改」），已删：

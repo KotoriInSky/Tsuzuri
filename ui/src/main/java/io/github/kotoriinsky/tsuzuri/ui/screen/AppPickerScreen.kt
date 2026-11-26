@@ -54,18 +54,7 @@ fun AppPickerScreen(
         },
         padding = padding,
         pickedOrder = items,
-        // 选应用是最常用的路，快捷方式等放一层下面，这一页才不用展开每个应用
-        extras = if (spec.appsOnly) null else ({
-            kit.Card {
-                kit.ActionRow(
-                    title = fpString("app_picker.more"),
-                    summary = null,
-                    trailingText = null,
-                    onClick = { onNavigate(Dest.AddItem(spec)) },
-                    navigates = true,
-                )
-            }
-        }),
+        extras = null,
         banners = {
             // 只说「这份清单现在不算数」的情况；已选数量段头已经写了。
             // 门槛只对 minCount > 1 的清单有意义：收藏与置顶空着就是没有，不会改用最近使用

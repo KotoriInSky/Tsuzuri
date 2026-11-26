@@ -298,7 +298,16 @@ private fun DrillPage(dest: Dest, back: () -> Unit, navigate: (Dest) -> Unit) {
     val kit = LocalFpKit.current
     // 页面身份：屏幕热区高亮只在「登记它的页面 == 栈顶」时画（见 ScreenHotZones）
     CompositionLocalProvider(LocalPageKey provides dest) {
-        kit.Scaffold(title = dest.title(), subtitle = dest.subtitle(), onBack = back) { padding ->
+        kit.Scaffold(
+            title = dest.title(),
+            subtitle = dest.subtitle(),
+            onBack = back,
+            actions = {
+                if (dest is Dest.FanItems) {
+                    io.github.kotoriinsky.tsuzuri.ui.screen.FanItemsAddAction(dest.spec, navigate)
+                }
+            },
+        ) { padding ->
             Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
                 ConfigChannelBanner()
                 ScreenContent(dest, PaddingValues(bottom = padding.calculateBottomPadding()), navigate)
@@ -441,7 +450,7 @@ private fun Dest.title(): String = fpString(
         // 应用多选页的标题是固定的「选择应用」，**参数的名**放在副标题里 ——
         // 标题栏里塞「扇形里的项」这种长名字会挤掉返回键，而副标题正好放得下
         is Dest.AppPicker -> "app_picker.title"
-        is Dest.AddItem -> "add_item.title"
+        is Dest.AddItem -> "fan_items.add.shortcuts"
         is Dest.IconPackPicker -> "icon_pack.title"
         is Dest.ShortcutImport -> "shortcut.title"
         is Dest.LinkImport -> "link_import_title"

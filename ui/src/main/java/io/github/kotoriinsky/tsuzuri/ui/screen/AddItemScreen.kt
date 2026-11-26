@@ -235,12 +235,6 @@ fun AddItemScreen(spec: PrefSpec.OrderedList, padding: PaddingValues, onNavigate
                                     appItems(group.items)
                                 }
                             }
-                            item(key = "manual") {
-                                kit.Divider()
-                                kit.ActionRow(fpString("add_item.manual.link"), null, null, { onNavigate(Dest.LinkImport(spec)) }, navigates = true)
-                                kit.Divider()
-                                kit.ActionRow(fpString("add_item.manual.activity"), null, null, { onNavigate(Dest.ActivityImport(spec)) }, navigates = true)
-                            }
                         }
                     }
                     if (showBar) {
