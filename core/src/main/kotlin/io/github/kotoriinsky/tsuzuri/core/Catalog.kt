@@ -1271,15 +1271,20 @@ object Catalog {
         FeatureSpec(
             key = ONNX_OCR,
             group = FeatureGroup.SCREEN_RECOGNITION,
-            // 推理在模块自身进程跑，传送门仅在需要 OCR 时通过 ContentProvider 调用；关闭时完全退回系统太乙 OCR。
+            // 推理在独立组件进程跑，传送门仅在需要 OCR 时通过 ContentProvider 调用；关闭时完全退回系统太乙 OCR。
             scope = listOf(ScopeTarget.CONTENT_EXTENSION),
             restart = RestartPolicy.HOT,
             maturity = Maturity.EXPERIMENTAL,
             prefs = listOf(
+                PrefSpec.Screen(
+                    key = p(ONNX_OCR, OnnxOcr.PREF_MODELS),
+                    labelKey = "pref.onnx_ocr.models",
+                    hintKey = null,
+                ),
                 PrefSpec.Choice(
                     key = p(ONNX_OCR, OnnxOcr.PREF_TIER),
                     labelKey = "pref.onnx_ocr.tier",
-                    hintKey = "pref.onnx_ocr.tier.hint",
+                    hintKey = null,
                     default = OnnxOcr.Tier.SMALL.id,
                     options = listOf(
                         PrefSpec.Choice.Option(OnnxOcr.Tier.TINY.id, "pref.onnx_ocr.tier.tiny"),
@@ -1290,7 +1295,7 @@ object Catalog {
                 PrefSpec.Choice(
                     key = p(ONNX_OCR, OnnxOcr.PREF_MIRROR),
                     labelKey = "pref.onnx_ocr.mirror",
-                    hintKey = "pref.onnx_ocr.mirror.hint",
+                    hintKey = null,
                     default = OnnxOcr.Mirror.MODELSCOPE.id,
                     options = listOf(
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.MODELSCOPE.id, "pref.onnx_ocr.mirror.modelscope"),
@@ -1298,21 +1303,6 @@ object Catalog {
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.HUGGINGFACE.id, "pref.onnx_ocr.mirror.huggingface"),
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.CUSTOM.id, "pref.onnx_ocr.mirror.custom"),
                     ),
-                ),
-                PrefSpec.Choice(
-                    key = p(ONNX_OCR, OnnxOcr.PREF_BACKEND),
-                    labelKey = "pref.onnx_ocr.backend",
-                    hintKey = "pref.onnx_ocr.backend.hint",
-                    default = OnnxOcr.Backend.AUTO.id,
-                    options = listOf(
-                        PrefSpec.Choice.Option(OnnxOcr.Backend.AUTO.id, "pref.onnx_ocr.backend.auto"),
-                        PrefSpec.Choice.Option(OnnxOcr.Backend.CPU.id, "pref.onnx_ocr.backend.cpu"),
-                    ),
-                ),
-                PrefSpec.Screen(
-                    key = p(ONNX_OCR, OnnxOcr.PREF_MODELS),
-                    labelKey = "pref.onnx_ocr.models",
-                    hintKey = "pref.onnx_ocr.models.hint",
                 ),
             ),
         ),

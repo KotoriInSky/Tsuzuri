@@ -81,7 +81,7 @@ object OnnxOcr {
             detBytes = 1_780_590L,
             recBytes = 4_462_639L,
             ymlBytes = 55_571L,
-            langSummary = "极速轻量 · 中英为主（约 6 MB）",
+            langSummary = "中英 · 6 MB",
         ),
         SMALL(
             id = "small",
@@ -90,7 +90,7 @@ object OnnxOcr {
             detBytes = 9_880_512L,
             recBytes = 21_159_378L,
             ymlBytes = 150_579L,
-            langSummary = "推荐均衡 · 50 语种含中英日欧（约 30 MB）",
+            langSummary = "50 语种 · 30 MB",
         ),
         MEDIUM(
             id = "medium",
@@ -99,7 +99,7 @@ object OnnxOcr {
             detBytes = 62_032_837L,
             recBytes = 76_554_979L,
             ymlBytes = 150_580L,
-            langSummary = "高精度档 · 50 语种复杂版面（约 132 MB）",
+            langSummary = "高精度 50 语种 · 132 MB",
         );
 
         val totalBytes: Long get() = detBytes + recBytes + ymlBytes
