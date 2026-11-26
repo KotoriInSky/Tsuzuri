@@ -31,3 +31,5 @@ include(":app")
 include(":capture-engine")
 include(":capture-stubs")
 include(":capture")
+// 端侧多语种 OCR（PP-OCRv6 + ONNX Runtime）：独立可选推理组件 APK，不膨胀主模块体积
+include(":ocr-runtime")

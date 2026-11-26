@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tsuzuri 端侧多语种 OCR 独立推理组件（无桌面图标，不污染启动器）。
+  仅通过受控 ContentProvider 对主模块 UI 与 com.miui.contentextension 提供模型管理及 PP-OCRv6 推理。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:hasCode="true"
+        android:label="Tsuzuri OCR 组件">
+
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ocr.OnnxOcrProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.ocr.provider"
+            android:enabled="true"
+            android:exported="true" />
+    </application>
+</manifest>

@@ -28,6 +28,9 @@ androidxTestRunner = "1.6.2"
 backdrop = "2.0.1"
 # 本地二维码解码（Apache-2.0，纯 Java 零 native，R8 会裁掉未用到的一维码类）。
 zxingCore = "3.5.3"
+# 端侧多语种 OCR 推理运行时（MIT，内置 XNNPACK ARMv9 NEON 加速，仅打包进模块进程；
+# 不选 onnxruntime-android-qnn 是因为其捆绑 6 代高通旧架构 HTP/DSP Skel + 80MB Prepare，会使 APK 膨胀 185MB，且 PP-OCRv6 为动态尺寸 FP32 模型）。
+onnxruntime = "1.29.0"
 
 [libraries]
 libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposed" }
@@ -59,6 +62,7 @@ kyant-backdrop = { module = "io.github.kyant0:backdrop", version.ref = "backdrop
 # M3 完整色调盘（纯 HCT 算法，不含 UI）—— 只为 :ui 的自定义取色用
 material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "materialColorUtilities" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxingCore" }
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestJunit" }

@@ -1,0 +1,3 @@
+-dontwarn ai.onnxruntime.**
+-keep class ai.onnxruntime.** { *; }
+-keep class io.github.kotoriinsky.tsuzuri.ocr.OnnxOcrProvider { *; }
