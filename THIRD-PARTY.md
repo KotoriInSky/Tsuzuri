@@ -20,6 +20,7 @@
 | [MiuiX](https://github.com/compose-miuix-ui/miuix) | Apache-2.0 | HyperOS 风格组件 |
 | [Backdrop（Kyant0/AndroidLiquidGlass）](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 | 液态玻璃 |
 | [MaterialKolor（material-color-utilities）](https://github.com/jordond/MaterialKolor) | MIT | Material 3 取色算法 |
+| [ZXing Core](https://github.com/zxing/zxing) | Apache-2.0 | 识屏纯本地二维码解码（仅引入 `core` 模块） |
 
 ## 参考并已声明许可的项目
 
