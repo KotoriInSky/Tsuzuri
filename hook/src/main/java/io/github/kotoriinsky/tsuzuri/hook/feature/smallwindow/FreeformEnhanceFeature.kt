@@ -66,6 +66,10 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
     private const val MINI_HANDLER_CLS = "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeMiniStateHandler"
     private const val TOUCH_RESULT_CLS = "com.android.wm.shell.multitasking.miuifreeform.MiuiFreeformModeTouchResult"
     private const val CONTROLLER_IMPL_CLS = "com.android.wm.shell.dagger.MultiTaskingControllerImpl"
+    private const val ANIM_TARGET_CLS = "com.android.wm.shell.multitasking.common.animation.MultiTaskingAnimTarget"
+    private const val DISPLAY_INFO_CLS = "com.android.wm.shell.multitasking.common.MultiTaskingDisplayInfo"
+
+    private const val GESTURE_ANIM_FREEFORM_TO_MINI = 11
 
     private const val WINDOWING_MODE_FULLSCREEN = 1
     private const val WINDOWING_MODE_FREEFORM = 5
@@ -111,6 +115,9 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
 
     /** 当前被本模块临时静音的 UID -> 对应 taskId 集合（同一 App 多小窗可共存）。 */
     private val mutedUids = ConcurrentHashMap<Int, MutableSet<Int>>()
+
+    /** 当前处于「略微放大迷你窗」态的 taskId -> 放大前的原始迷你缩放比。 */
+    private val enlargedMiniBaseScale = ConcurrentHashMap<Int, Float>()
 
     @Volatile
     private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
@@ -176,6 +183,7 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
         cancelPendingLongPress()
         restoreAllMutedUids()
         unregisterPlaybackCallback()
+        enlargedMiniBaseScale.clear()
         preExistingTasks.clear()
         taskWasInRecents.clear()
         repoRef = null
@@ -571,7 +579,7 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
             }.onFailure { ctx.log(Log.WARN, "[$TAG] hook $MINI_HANDLER_CLS.doubleTap 失败", it) }
         }
 
-        // 3c. 单击迷你小窗展开时：同步收起浮层（不影响原生单击行为）
+        // 3c. 单击迷你小窗展开时：同步收起浮层并清理放大态记录（不影响原生单击行为）
         val singleTapM = miniCls?.declaredMethods?.firstOrNull {
             it.name == "singleTap" && it.parameterTypes.size == 1
         }
@@ -581,6 +589,9 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
                 track(
                     ctx.module.hook(singleTapM).intercept { chain ->
                         if (chain.thisObject != null) miniHandlerRef = chain.thisObject
+                        val ffInfo = chain.args.firstOrNull()
+                        val tid = ffInfo?.let { call(it, "getTaskId") as? Int } ?: -1
+                        if (tid > 0) enlargedMiniBaseScale.remove(tid)
                         dismissOverlayAsync()
                         chain.proceed()
                     },
@@ -694,6 +705,7 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
         val taskId = runningTask.taskId
         val uid = resolveUid(context, pkg)
         val muted = uid >= 0 && isTaskMuted(uid, taskId)
+        val enlarged = enlargedMiniBaseScale.containsKey(taskId)
         val radius = if (cornerRadiusPx > 4f) cornerRadiusPx else 22f * density
 
         val root = FrameLayout(context).apply {
@@ -711,17 +723,18 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
         }
 
         val horizontal = bounds.width() >= bounds.height()
-        val minSide = min(bounds.width(), bounds.height())
-        val btnCount = if (bottomFull != null) 2 else 1
-        // 根据迷你小窗实际尺寸自适应按钮直径与间距，保证绝不溢出或裁切
-        val maxSlot = if (btnCount == 2) {
-            val major = if (horizontal) bounds.width() else bounds.height()
-            min(minSide * 0.62f, major * 0.36f)
-        } else {
-            minSide * 0.56f
-        }
-        val btnSize = maxSlot.roundToInt().coerceIn((34 * density).roundToInt(), (48 * density).roundToInt())
-        val gap = (minSide * 0.14f).roundToInt().coerceIn((10 * density).roundToInt(), (22 * density).roundToInt())
+        val major = (if (horizontal) bounds.width() else bounds.height()).toFloat()
+        val minor = (if (horizontal) bounds.height() else bounds.width()).toFloat()
+        val btnCount = 2 + if (bottomFull != null) 1 else 0
+        // 根据迷你小窗实际长短边与按钮数量自适应直径和间距，2 键与 3 键都居中舒展不裁切
+        val gap = min(major / (btnCount * 4.5f), minor * 0.14f)
+            .roundToInt()
+            .coerceIn((8 * density).roundToInt(), (18 * density).roundToInt())
+        val maxByMajor = (major - gap * (btnCount + 1)) / btnCount.toFloat()
+        val maxByMinor = minor * 0.56f
+        val btnSize = min(maxByMajor, maxByMinor)
+            .roundToInt()
+            .coerceIn((30 * density).roundToInt(), (46 * density).roundToInt())
 
         val row = LinearLayout(context).apply {
             orientation = if (horizontal) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
@@ -753,7 +766,28 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
         }
         row.addView(muteBtn, LinearLayout.LayoutParams(btnSize, btnSize))
 
-        // 按钮 2：与主屏互换（仅底层有普通全屏应用时显示）
+        // 按钮 2：Flyme 同款迷你窗大小切换（标准迷你 ↔ 略微放大迷你窗）
+        val scaleBtn = buildOverlayCircleButton(
+            context = context,
+            size = btnSize,
+            bgColor = if (enlarged) Color.argb(225, 43, 127, 255) else Color.argb(66, 255, 255, 255),
+            icon = MiniActionDrawable(
+                kind = if (enlarged) MiniIcon.SCALE_DOWN else MiniIcon.SCALE_UP,
+                color = Color.WHITE,
+                side = (btnSize * 0.52f).roundToInt(),
+                density = density,
+            ),
+            contentDesc = if (enlarged) "恢复迷你小窗尺寸" else "略微放大迷你小窗",
+        ) {
+            dismissOverlayImmediate()
+            toggleMiniSize(context, miniTaskInfo, taskId)
+        }
+        val scaleLp = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+            if (horizontal) marginStart = gap else topMargin = gap
+        }
+        row.addView(scaleBtn, scaleLp)
+
+        // 按钮 3：与主屏互换（仅底层有普通全屏应用时显示）
         if (bottomFull != null) {
             val swapBtn = buildOverlayCircleButton(
                 context = context,
@@ -893,6 +927,112 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
         activeOverlayTaskId = -1
         runCatching { view.animate().cancel() }
         runCatching { wm?.removeViewImmediate(view) }
+    }
+
+    // ── 迷你小窗大小形态切换（标准迷你 ↔ 略微放大，复用原生 Folme 物理弹簧） ───
+
+    private fun toggleMiniSize(context: Context, miniTaskInfo: Any, taskId: Int) {
+        postOnShell {
+            val cl = hostClassLoader ?: return@postOnShell
+            val ctrlImpl = getMultiTaskingControllerImpl() ?: return@postOnShell
+            val animation = call(ctrlImpl, "getMiuiFreeformModeAnimation") ?: return@postOnShell
+            val stillMini = (call(miniTaskInfo, "isMiniState") as? Boolean) == true
+            if (!stillMini) {
+                enlargedMiniBaseScale.remove(taskId)
+                return@postOnShell
+            }
+
+            val rawBounds = (call(miniTaskInfo, "getBounds") as? Rect)?.let { Rect(it) } ?: return@postOnShell
+            val curScaled = readMiniScreenBounds(miniTaskInfo) ?: return@postOnShell
+            val curScale = (call(miniTaskInfo, "getFreeformScale") as? Float) ?: return@postOnShell
+            if (rawBounds.width() <= 0 || rawBounds.height() <= 0 || curScale <= 0f) return@postOnShell
+
+            val displayCls = runCatching { cl.loadClass(DISPLAY_INFO_CLS) }.getOrNull()
+            val density = context.resources.displayMetrics.density
+            val paddingPx = (12 * density).roundToInt()
+            val movable = runCatching {
+                val m = displayCls?.getMethod(
+                    "getMovableBounds",
+                    Context::class.java,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                )
+                m?.invoke(null, context, paddingPx, paddingPx, 0) as? Rect
+            }.getOrNull() ?: Rect(
+                paddingPx,
+                (44 * density).roundToInt(),
+                context.resources.displayMetrics.widthPixels - paddingPx,
+                context.resources.displayMetrics.heightPixels - (88 * density).roundToInt(),
+            )
+            val displayWidth = runCatching {
+                displayCls?.getMethod("getDisplayWidth")?.invoke(null) as? Int
+            }.getOrNull() ?: context.resources.displayMetrics.widthPixels
+
+            val prevBase = enlargedMiniBaseScale[taskId]
+            val targetScale: Float
+            val goingEnlarge: Boolean
+            if (prevBase == null) {
+                val restoreScale = (call(miniTaskInfo, "getMiniRestoreScaleX") as? Float) ?: 0f
+                val isLandscape = (call(miniTaskInfo, "isLandscapeFreeform") as? Boolean)
+                    ?: (rawBounds.width() > rawBounds.height())
+                targetScale = FreeformEnhance.computeEnlargedMiniScale(
+                    baseScale = curScale,
+                    rawWidth = rawBounds.width(),
+                    rawHeight = rawBounds.height(),
+                    movableWidth = movable.width(),
+                    movableHeight = movable.height(),
+                    restoreScale = restoreScale,
+                    isLandscape = isLandscape,
+                )
+                if (targetScale <= curScale * 1.03f) {
+                    Log.d(TAG, "迷你小窗已接近上限，跳过放大 task=$taskId curScale=$curScale")
+                    return@postOnShell
+                }
+                enlargedMiniBaseScale[taskId] = curScale
+                goingEnlarge = true
+            } else {
+                targetScale = prevBase
+                enlargedMiniBaseScale.remove(taskId)
+                goingEnlarge = false
+            }
+
+            // 计算缩放后的屏幕左上角：维持原先所在左右侧，垂直围绕原中心并夹在可移动安全区内
+            val newW = (rawBounds.width() * targetScale).roundToInt()
+            val newH = (rawBounds.height() * targetScale).roundToInt()
+            val onRight = curScaled.centerX() >= displayWidth / 2
+            val newLeft = if (onRight) {
+                (movable.right - newW).coerceAtLeast(movable.left)
+            } else {
+                movable.left
+            }
+            val maxTop = (movable.bottom - newH).coerceAtLeast(movable.top)
+            val newTop = (curScaled.centerY() - newH / 2).coerceIn(movable.top, maxTop)
+
+            // MultiTaskingAnimTarget.setAnimParam 传入的 Rect 需保持原始未缩放宽高，仅 offsetTo 到目标左上角
+            val destRect = Rect(rawBounds).apply { offsetTo(newLeft, newTop) }
+
+            runCatching {
+                val targetCls = cl.loadClass(ANIM_TARGET_CLS)
+                val target = targetCls.getDeclaredConstructor().newInstance()
+                val setParam = targetCls.getMethod(
+                    "setAnimParam",
+                    Rect::class.java,
+                    Float::class.javaPrimitiveType,
+                    Float::class.javaPrimitiveType,
+                    Float::class.javaPrimitiveType,
+                )
+                setParam.invoke(target, destRect, targetScale, targetScale, 0f)
+                call(animation, "startGestureAnimation", GESTURE_ANIM_FREEFORM_TO_MINI, miniTaskInfo, target)
+                Log.i(
+                    TAG,
+                    "迷你小窗形态切换：task=$taskId ${if (goingEnlarge) "略微放大" else "恢复标准"} scale=$curScale→$targetScale rect=$destRect",
+                )
+            }.onFailure {
+                if (goingEnlarge) enlargedMiniBaseScale.remove(taskId)
+                Log.w(TAG, "迷你小窗缩放动画失败 task=$taskId：$it")
+            }
+        }
     }
 
     // ── 主副窗互换实现（迷你小窗 → 全屏，原全屏 → 迷你小窗/小窗） ───────────────
@@ -1081,6 +1221,7 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
     }
 
     private fun restoreTaskState(taskId: Int) {
+        enlargedMiniBaseScale.remove(taskId)
         val uidsToCheck = mutedUids.entries.filter { taskId in it.value }.map { it.key }
         for (uid in uidsToCheck) {
             unmuteTask(uid, taskId)
@@ -1098,7 +1239,7 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
 
     // ── 自绘精简矢量图标（Flyme 浮层风格） ───────────────────────────────────
 
-    private enum class MiniIcon { UNMUTED, MUTED, SWAP }
+    private enum class MiniIcon { UNMUTED, MUTED, SCALE_UP, SCALE_DOWN, SWAP }
 
     private class MiniActionDrawable(
         private val kind: MiniIcon,
@@ -1138,6 +1279,26 @@ object FreeformEnhanceFeature : Feature(Catalog.require(Catalog.FREEFORM_ENHANCE
                         lineTo(w * 0.34f, h * 0.63f); lineTo(w * 0.16f, h * 0.63f); close()
                         moveTo(w * 0.67f, h * 0.37f); lineTo(w * 0.88f, h * 0.63f)
                         moveTo(w * 0.88f, h * 0.37f); lineTo(w * 0.67f, h * 0.63f)
+                    }
+                    canvas.drawPath(p, paint)
+                }
+                MiniIcon.SCALE_UP -> {
+                    // 对角向外展开箭头（Flyme 略微放大迷你小窗）
+                    val p = Path().apply {
+                        moveTo(w * 0.56f, h * 0.18f); lineTo(w * 0.82f, h * 0.18f); lineTo(w * 0.82f, h * 0.44f)
+                        moveTo(w * 0.82f, h * 0.18f); lineTo(w * 0.56f, h * 0.44f)
+                        moveTo(w * 0.44f, h * 0.82f); lineTo(w * 0.18f, h * 0.82f); lineTo(w * 0.18f, h * 0.56f)
+                        moveTo(w * 0.18f, h * 0.82f); lineTo(w * 0.44f, h * 0.56f)
+                    }
+                    canvas.drawPath(p, paint)
+                }
+                MiniIcon.SCALE_DOWN -> {
+                    // 对角向内收缩箭头（Flyme 恢复标准迷你小窗）
+                    val p = Path().apply {
+                        moveTo(w * 0.56f, h * 0.18f); lineTo(w * 0.56f, h * 0.44f); lineTo(w * 0.82f, h * 0.44f)
+                        moveTo(w * 0.82f, h * 0.18f); lineTo(w * 0.56f, h * 0.44f)
+                        moveTo(w * 0.44f, h * 0.82f); lineTo(w * 0.44f, h * 0.56f); lineTo(w * 0.18f, h * 0.56f)
+                        moveTo(w * 0.18f, h * 0.82f); lineTo(w * 0.44f, h * 0.56f)
                     }
                     canvas.drawPath(p, paint)
                 }
