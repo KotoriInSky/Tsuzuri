@@ -750,7 +750,36 @@ object PasscodeRules {
      * ⚠️ 只在**取到像号的分享码**时才换（见 [match]）：scheme 目标的 URL 身份算不出来，
      * 不设门的话不同分享会撞成同一条通知。拉起来之后 App 是否自己识别剪贴板**待真机验证**。
      */
+    /**
+     * 百度网盘分享直达深链（2026-11-26 真机取证：`bdnetdisk://n/action.SHARE_LINK?surl=…&pwd=…`
+     * 直接解析到 `com.baidu.netdisk/.ui.WapLauncherActivity`，相比裸 `baiduyun://` 可直接
+     * 携带 `surl` 与提取码进入分享页；不满足形态或无提取码解析失败时回落 `baiduyun://` + 网页）。
+     */
     private const val BAIDU_PAN_SCHEME = "baiduyun://"
+
+    private val BAIDU_PAN_SHARE_CODE = Regex("""/s/([0-9A-Za-z_-]{4,})""")
+    private val BAIDU_PAN_SURL_PARAM = Regex("""[?&]surl=([0-9A-Za-z_-]{4,})""")
+    private val BAIDU_PAN_URL_PWD = Regex("""[?&]pwd=([0-9A-Za-z]{4,6})""", RegexOption.IGNORE_CASE)
+    private val BAIDU_PAN_TEXT_PWD = Regex("""(?:提取码|提取密码|密码)\s*[:：]?\s*([0-9A-Za-z]{4,6})""")
+
+    fun baiduPanShareTarget(url: String, text: String = url): String? {
+        val rawPathCode = BAIDU_PAN_SHARE_CODE.find(url)?.groupValues?.get(1)
+        val surl = when {
+            rawPathCode != null -> if ((rawPathCode.startsWith("1") || rawPathCode.startsWith("5")) && rawPathCode.length > 4) {
+                rawPathCode.substring(1)
+            } else {
+                rawPathCode
+            }
+            else -> BAIDU_PAN_SURL_PARAM.find(url)?.groupValues?.get(1)
+        }?.takeIf { it.isNotEmpty() } ?: return null
+        val pwd = BAIDU_PAN_URL_PWD.find(url)?.groupValues?.get(1)
+            ?: BAIDU_PAN_TEXT_PWD.find(text)?.groupValues?.get(1)
+        return if (pwd != null) {
+            "bdnetdisk://n/action.SHARE_LINK?surl=$surl&pwd=$pwd"
+        } else {
+            "bdnetdisk://n/action.SHARE_LINK?surl=$surl"
+        }
+    }
 
     /**
      * 一条口令规则（由 passcode_rules.json 的 passcodes 转来，模板与白名单见 [RuleCapabilities]）。
@@ -857,13 +886,19 @@ object PasscodeRules {
     /** 京东分享体『标题』——内层可含【】（如『小米平板9 Pro【国家补贴】』），必须先于【】查。 */
     private val TITLE_QUOTE_CN = Regex("""『([^『』]{2,48})』""")
     /** 口令 token（标题清理用）：符号集与 taokouling 规则保持同一份。 */
-    private val TAO_TOKEN = Regex("""[_$￥₳€£][0-9A-Za-z]{8,14}[_$￥₳€£]""")
+    private val TAO_TOKEN = Regex("""[_$¥￥₳€£¢][0-9A-Za-z]{8,14}[_$¥￥₳€£¢]""")
 
     /** 新版口令 token（含结尾空白）：与 taokouling_new 规则同一形态，标题清理时剥掉。 */
     private val NEW_TAO_TOKEN = Regex("""\d[A-Za-z0-9]:/[0-9A-Za-z\u4e00-\u9fa5]{1,16}\s""")
+
+    /** 抖音 / 快手 / 淘宝纯口令乱码碎片（清理用，不作为标题显示）。 */
+    private val PASSCODE_NOISE_TOKEN = Regex(
+        """(?:\b\d\.\d{2}\s+[A-Za-z0-9@._\-/]{3,16}(?:\s+\d{2}/\d{2})?|##[0-9A-Za-z]{6,24}##|\b[A-Z]{2}\d{4}\b)""",
+    )
     private val SHARE_NOISE = Regex(
-        """(复制此链接|复制这条信息|复制这条消息|复制整段话|复制打开|打开手?淘|打开抖音|""" +
-            """打开小红书|打开快手|浏览器打开|复制到浏览器|长按复制|手指长按|看看这个|快来看看)[^\dA-Za-z\u4e00-\u9fa5]*""",
+        """((?:长按)?复制(?:此|这)(?:条)?(?:链接|信息|消息|口令)|复制整段话|复制打开|打开手?淘|打开抖音|打开Dou音|打开抖[音陰]|""" +
+            """打开小红书|打开快手(?:极速版)?|浏览器打开|复制到浏览器|长按复制|手指长按|看看这个|快来看看|""" +
+            """搜索直接观看视频|直接观看视频|查看TA的更多作品|淘宝搜索直接打开|搜索)[^\dA-Za-z\u4e00-\u9fa5]*""",
     )
     /**
      * URL **之后**的分享话术起点：从这里截断（淘宝体：短链 → 标题 → 话术）。
@@ -970,6 +1005,7 @@ object PasscodeRules {
         val before = (if (httpIdx >= 0) t.substring(0, httpIdx) else t)
             .replace(TAO_TOKEN, " ")
             .replace(NEW_TAO_TOKEN, " ")
+            .replace(PASSCODE_NOISE_TOKEN, " ")
             // `/:/` 是淘口令的固定分隔符，「复制打开淘宝」是动词+平台名 —— 都不是标题。
             // 剥干净后整段只剩它们 → 下一步 firstOrNull 拿不到内容 → 返回 null，
             // 展示侧回落「打开淘宝」（视觉定稿：不显示乱码口令）。
@@ -1056,6 +1092,12 @@ object PasscodeRules {
     fun urlPlatforms(): List<Platform> = HOST_RULES.map { builtin(it.platform) }
         .distinctBy { it.pkg ?: it.name }
 
+    /** 按目标应用包名反查内置平台元数据（用于原生云解析命中但本地规则未命中时的展示补全）。 */
+    fun platformForPackage(pkg: String?): Platform? {
+        if (pkg.isNullOrBlank()) return null
+        return BUILTIN_PLATFORMS.values.firstOrNull { it.pkg == pkg }
+    }
+
     fun match(text: String, options: Options = Options()): Match? {
         val t = text.trim()
         if (t.length < 2 || t.length > MAX_LEN) return null
@@ -1088,9 +1130,14 @@ object PasscodeRules {
                 // `isIdLike(core)`：只有取到「像号」的分享码时才换 —— scheme 目标的 URL
                 // 身份算不出来，不设门就会让不同分享撞成同一条通知（单测钉住）。
                 val panApp = platform == P_BAIDUPAN && core != null && PasscodeIsland.isIdLike(core)
+                val panTarget = if (panApp) baiduPanShareTarget(url, t) ?: BAIDU_PAN_SCHEME else url
+                val panAlts = if (panApp) {
+                    listOf(BAIDU_PAN_SCHEME, url).filter { it != panTarget }
+                } else {
+                    articleAppTargets(url, platform.pkg)
+                }
                 return Match(
-                    "url", urlLabel(known), if (panApp) BAIDU_PAN_SCHEME else url, platform, core,
-                    if (panApp) listOf(url) else articleAppTargets(url, platform.pkg),
+                    "url", urlLabel(known), panTarget, platform, core, panAlts,
                 )
             }
             // 非白名单域且 generic 关着 → 这条 URL 不弹，继续往下试裸口令/内容号

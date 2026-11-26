@@ -797,4 +797,49 @@ class PasscodeRulesTest {
         assertEquals(emptyList(), match("BV1GJ411x7h7")?.alts)
         assertEquals(emptyList(), match("https://www.bilibili.com/video/BV1GJ411x7h7")?.alts)
     }
+
+    @Test
+    fun `抖音裸口令命中并提取标题且不误触普通句子`() {
+        val m = match("7.92 d@N.qE 03/18 复制此消息，打开Dou音搜索，看看【春日露营Vlog】")
+        assertNotNull(m)
+        assertEquals("douyin_passcode", m.ruleId)
+        assertEquals("snssdk1128://", m.target)
+        assertEquals(PasscodeRules.P_DOUYIN, m.platform)
+        assertEquals("春日露营Vlog", m.core)
+
+        val bare = match("长按复制此条消息，打开抖音搜索，查看TA的更多作品##AbCdEf1234##")
+        assertNotNull(bare)
+        assertEquals("douyin_passcode", bare.ruleId)
+        assertNull(bare.core)
+
+        assertNull(match("今天在抖音看到一个很好玩的视频"))
+    }
+
+    @Test
+    fun `快手裸口令命中并提取标题且不误触普通句子`() {
+        val m = match("复制此消息打开快手，看看【手工折纸教程】##Ks987654##")
+        assertNotNull(m)
+        assertEquals("kuaishou_passcode", m.ruleId)
+        assertEquals("kwai://home", m.target)
+        assertEquals(PasscodeRules.P_KUAISHOU, m.platform)
+        assertEquals("手工折纸教程", m.core)
+
+        assertNull(match("刚才在快手刷到一个视频"))
+    }
+
+    @Test
+    fun `新版无链淘口令与半角日元符号口令命中且拒绝异侧闭合`() {
+        val phrase = match("【淘宝】「全棉四件套」 MF1680 淘宝搜索直接打开")
+        assertNotNull(phrase)
+        assertEquals("taokouling_phrase", phrase.ruleId)
+        assertEquals("taobao://", phrase.target)
+        assertEquals("全棉四件套", phrase.core)
+
+        val halfYen = match("【淘宝】¥AbCdEfGh12¥ 打开淘宝")
+        assertNotNull(halfYen)
+        assertEquals("taokouling", halfYen.ruleId)
+
+        assertNull(match("¥AbCdEfGh12￥"))
+        assertNull(match("我在淘宝买了一件衣服"))
+    }
 }

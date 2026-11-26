@@ -20,20 +20,29 @@ class PasscodeBaiduPanTargetTest {
     private val shareUrl = "https://pan.baidu.com/s/1abcdEFG"
 
     @Test
-    fun `分享链用 App scheme 直达、网页退到候选链兜底`() {
+    fun `分享链用 bdnetdisk 深链直达、baiduyun 与网页退到候选链兜底`() {
         val m = PasscodeRules.match(shareUrl)
         assertNotNull(m)
         assertEquals(PasscodeRules.P_BAIDUPAN, m.platform)
-        assertEquals("baiduyun://", m.target)
-        assertEquals(listOf(shareUrl), m.alts)
+        assertEquals("bdnetdisk://n/action.SHARE_LINK?surl=abcdEFG", m.target)
+        assertEquals(listOf("baiduyun://", shareUrl), m.alts)
         assertEquals("1abcdEFG", m.core)
     }
 
     @Test
-    fun `旧形态 surl 同样取得到分享码`() {
-        val m = PasscodeRules.match("https://pan.baidu.com/share/init?surl=1aBcD2e")
+    fun `分享文案含提取码时一并拼进 bdnetdisk 深链`() {
+        val text = "链接: https://pan.baidu.com/s/1abcdEFG 提取码: 9k2m 复制这段内容后打开百度网盘"
+        val m = PasscodeRules.match(text)
         assertNotNull(m)
-        assertEquals("baiduyun://", m.target)
+        assertEquals("bdnetdisk://n/action.SHARE_LINK?surl=abcdEFG&pwd=9k2m", m.target)
+        assertEquals("1abcdEFG", m.core)
+    }
+
+    @Test
+    fun `旧形态 surl 与 URL 内 pwd 同样直达`() {
+        val m = PasscodeRules.match("https://pan.baidu.com/share/init?surl=1aBcD2e&pwd=ab12")
+        assertNotNull(m)
+        assertEquals("bdnetdisk://n/action.SHARE_LINK?surl=1aBcD2e&pwd=ab12", m.target)
         assertEquals("1aBcD2e", m.core)
     }
 

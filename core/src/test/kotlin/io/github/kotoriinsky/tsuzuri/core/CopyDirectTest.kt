@@ -122,4 +122,88 @@ class CopyDirectTest {
         }
         assertEquals(platforms.size, platforms.map { it.pkg ?: it.name }.distinct().size)
     }
+
+    @Test
+    fun `原生深链反推公开预览地址覆盖抖音京东淘宝`() {
+        assertEquals(
+            "https://www.iesdouyin.com/share/video/7692436928063127729/",
+            CopyDirect.previewUrlFromDeepLink("snssdk1128://aweme/detail/7692436928063127729?refer=web"),
+        )
+        assertEquals(
+            "https://www.iesdouyin.com/share/note/7692436928063127729/",
+            CopyDirect.previewUrlFromDeepLink("snssdk2329://note/7692436928063127729"),
+        )
+        assertEquals(
+            "https://item.m.jd.com/product/10181383335547.html",
+            CopyDirect.previewUrlFromDeepLink("openapp.jdmobile://virtual?params=%7B%22skuId%22%3A%2210181383335547%22%7D"),
+        )
+        assertEquals(
+            "https://item.taobao.com/item.htm?id=712345678901",
+            CopyDirect.previewUrlFromDeepLink("tbopen://m.taobao.com/tbopen/index.html?id=712345678901"),
+        )
+        assertNull(CopyDirect.previewUrlFromDeepLink("snssdk1128://feed"))
+    }
+
+    @Test
+    fun `原生云解析命中抖音裸口令时反推预览地址并补齐平台元数据`() {
+        val text = "7.92 d@N.qE 03/18 复制此消息，打开Dou音搜索，看看【春日露营Vlog】"
+        val match = PasscodeRules.match(text)
+        assertNotNull(match)
+        val signal = CopyDirect.resolveIslandSignal(
+            match = match,
+            sourceText = text,
+            targetPackage = "com.ss.android.ugc.aweme",
+            nativeDataUri = "snssdk1128://aweme/detail/7692436928063127729",
+            nativeTag = 16,
+            usedNative = true,
+            shareOnly = false,
+            fallbackId = "id-1",
+        )
+        assertEquals("https://www.iesdouyin.com/share/video/7692436928063127729/", signal.target)
+        assertEquals("抖音", signal.platformName)
+        assertEquals("#FE2C55", signal.accent)
+        assertEquals("春日露营Vlog", signal.core)
+        assertEquals(PasscodeIsland.ContentCategory.SHORT_VIDEO, signal.category)
+        assertTrue(signal.alts.contains("snssdk1128://aweme/detail/7692436928063127729"))
+    }
+
+    @Test
+    fun `本地未命中但原生命中番茄小说时按包名补齐平台色与文案标题`() {
+        val signal = CopyDirect.resolveIslandSignal(
+            match = null,
+            sourceText = "我在番茄免费小说看《十日终焉》，复制打开阅读",
+            targetPackage = "com.dragon.read",
+            nativeDataUri = "dragonread://book/detail?book_id=712345678",
+            nativeTag = 12,
+            usedNative = true,
+            shareOnly = false,
+            fallbackId = "id-2",
+        )
+        assertEquals("native:12", signal.ruleId)
+        assertEquals("番茄免费小说口令", signal.label)
+        assertEquals("番茄免费小说", signal.platformName)
+        assertEquals("com.dragon.read", signal.platformPkg)
+        assertEquals("#FF6A00", signal.accent)
+        assertEquals("十日终焉", signal.core)
+        assertEquals("dragonread://book/detail?book_id=712345678", signal.target)
+    }
+
+    @Test
+    fun `淘口令命中原生具体深链时不再退回裸 taobao scheme`() {
+        val text = "【淘宝】「全棉四件套」 MF1680 淘宝搜索直接打开"
+        val match = PasscodeRules.match(text)
+        assertNotNull(match)
+        val signal = CopyDirect.resolveIslandSignal(
+            match = match,
+            sourceText = text,
+            targetPackage = "com.taobao.taobao",
+            nativeDataUri = "tbopen://m.taobao.com/tbopen/index.html?h5Url=https%3A%2F%2Fa.m.taobao.com",
+            nativeTag = 2,
+            usedNative = true,
+            shareOnly = false,
+            fallbackId = "id-3",
+        )
+        assertEquals("tbopen://m.taobao.com/tbopen/index.html?h5Url=https%3A%2F%2Fa.m.taobao.com", signal.target)
+        assertEquals("全棉四件套", signal.core)
+    }
 }

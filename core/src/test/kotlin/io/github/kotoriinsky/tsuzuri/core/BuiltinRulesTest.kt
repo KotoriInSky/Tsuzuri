@@ -87,6 +87,11 @@ class BuiltinRulesTest {
                     // 贴吧帖子 2026-10-22 起多一个官方贴吧直达备选（官方贴吧不认网页地址）：备选按新规则核对
                     old.filterIndexed { i, _ -> i != 5 } == now.filterIndexed { i, _ -> i != 5 } &&
                         m.alts == PasscodeRules.articleAppTargets(m.target, m.platform.pkg)
+                } else if (old != null && now != null && m?.platform == PasscodeRules.P_BAIDUPAN && old[2] == "baiduyun://") {
+                    // 百度网盘 2026-11-26 起升级为 bdnetdisk://n/action.SHARE_LINK?surl=... 深链直达（baiduyun:// 退居备选首项）
+                    old.filterIndexed { i, _ -> i != 2 && i != 5 } == now.filterIndexed { i, _ -> i != 2 && i != 5 } &&
+                        m.target.startsWith("bdnetdisk://n/action.SHARE_LINK?surl=") &&
+                        m.alts.firstOrNull() == "baiduyun://"
                 } else {
                     old == now
                 }
@@ -110,7 +115,12 @@ class BuiltinRulesTest {
         fun plats(l: Collection<PasscodeRules.Platform>) =
             l.map { "${it.name}|${it.pkg}|${it.accent}|${it.category.wireName}" }.sorted()
         assertEquals(g["supported"], plats(PasscodeRules.supportedPlatforms()))
-        assertEquals(g["command"], plats(PasscodeRules.commandPlatforms()))
+        // 2026-11-26 新增抖音、快手离线裸口令规则，故 command 平台相对迁移基线多此两项
+        val expectedCommand = ((g["command"] as List<*>) + listOf(
+            "抖音|com.ss.android.ugc.aweme|#FE2C55|short_video",
+            "快手|com.smile.gifmaker|#FF5001|short_video",
+        )).sortedBy { it.toString() }
+        assertEquals(expectedCommand, plats(PasscodeRules.commandPlatforms()))
         assertEquals(g["url"], plats(PasscodeRules.urlPlatforms()))
         assertEquals(g["share"], plats(PasscodeRules.SHARE_PLATFORMS))
     }

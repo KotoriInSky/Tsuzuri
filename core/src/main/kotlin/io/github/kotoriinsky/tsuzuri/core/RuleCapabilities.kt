@@ -51,8 +51,8 @@ object RuleCapabilities {
      * 不许 `http`、`intent`、`javascript`、`file`、`content`、`data`。
      */
     val TARGET_SCHEMES: Set<String> = setOf(
-        "https", "taobao", "alipays", "baiduyun", "qqmusic", "dongqiudi", "huputiyu",
-        "com.sf-express", "openapp.jdlogistic",
+        "https", "taobao", "alipays", "baiduyun", "bdnetdisk", "snssdk1128", "kwai",
+        "qqmusic", "dongqiudi", "huputiyu", "com.sf-express", "openapp.jdlogistic",
     )
 }
 
