@@ -35,6 +35,9 @@
 | [microlinkhq/metascraper](https://github.com/microlinkhq/metascraper) | MIT | title / image / author / description 各规则包里「按什么顺序从哪儿取」的优先级（只借 meta、`<title>`、JSON-LD 部分） | `core/PageMetaExtract.kt` |
 | [mat/besticon](https://github.com/mat/besticon) | MIT | 「网站最好的图标是哪个」的挑选思路：apple-touch-icon / icon 按声明尺寸取最大 | `core/PageMetaExtract.kt` 的 `bestIcon` |
 | [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) | **Unlicense**（公有领域，无署名义务，此处为致谢） | 各中文平台抽取器 `_VALID_URL` 的链接形态与 `_TESTS` 样例链接 | `core/…/passcode_rules.json`、`core/PasscodeIsland.kt` 的 `contentCore`、`PasscodeYtDlpShapesTest` |
+| [ikooc/Gopeed-Extensions](https://github.com/ikooc/Gopeed-Extensions) | MIT | 夸克 / 天翼 / 123云盘公开分享只读接口的端点与字段事实（实现自写，未复制代码） | `core/ShareMetaParsers.kt`（`CloudShareMeta`）、`hook/…/PasscodeIslandPresenter.kt` |
+| [ByLsPro/JxPan](https://github.com/ByLsPro/JxPan) | Apache-2.0 | 主流网盘公开分享元信息端点与响应字段对照（实现自写，未复制代码） | `core/ShareMetaParsers.kt`（`CloudShareMeta`） |
+| [zaxtyson/LanZouCloud-API](https://github.com/zaxtyson/LanZouCloud-API) | MIT | 蓝奏云 / 蓝奏云优享公开分享域与静态页文件名/体积形态事实（实现自写，未复制代码） | `core/…/passcode_rules.json`、`core/ShareMetaParsers.kt`（`CloudShareMeta.parseLanzouHtml`） |
 
 ## 直接包含其代码/数据的项目
 

@@ -24,7 +24,7 @@ Tsuzuri 是一个 LSPosed 模块，把各家系统里成熟的交互设计带到
 | **扇形小窗** | 底角上滑展开应用环，松手用小窗打开，支持快捷方式 |
 | **侧滑索引** | 边缘滑动按拼音找应用，提供高斯模糊和液态玻璃背景 |
 | **识屏增强** | 更多应用可识字，卡片可编辑、分享、播放动图和实况 |
-| **复制直达** | 内置 105 个平台规则，复制链接或口令后在超级岛预览并跳转 |
+| **复制直达** | 内置 118 个平台规则，复制链接或口令后在超级岛预览并跳转 |
 | **小窗多开** | 所有应用可同时开多个小窗 |
 
 ## 功能
@@ -91,7 +91,7 @@ Tsuzuri 是一个 LSPosed 模块，把各家系统里成熟的交互设计带到
 
 <sub>同一套卡片适配各平台的封面、标题、作者和品牌色</sub>
 
-- 内置 105 个平台规则，可在超级岛或原生胶囊中提示。
+- 内置 118 个平台规则（含主流与小众网盘、磁力/电驴/迅雷链），可在超级岛或原生胶囊中提示。
 - 自动清理链接跟踪参数，支持快递单号和自定义规则。
 
 ### 其他
@@ -133,5 +133,5 @@ Tsuzuri 是一个 LSPosed 模块，把各家系统里成熟的交互设计带到
 - **框架**：[LSPosed](https://github.com/LSPosed/LSPosed)、[libxposed](https://github.com/libxposed)、[Kotlin](https://github.com/JetBrains/kotlin)
 - **界面**：[AndroidX 与 Jetpack Compose](https://github.com/androidx/androidx)、[Material Icons](https://github.com/google/material-design-icons)、[MiuiX](https://github.com/compose-miuix-ui/miuix)、[AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)、[MaterialKolor](https://github.com/jordond/MaterialKolor)
 - **内置代码与数据**：[libwebp](https://chromium.googlesource.com/webm/libwebp)、[tracking_number_data](https://github.com/jkeen/tracking_number_data)、[oembed](https://github.com/iamcal/oembed)、[tracking-query-params-registry](https://github.com/mpchadwick/tracking-query-params-registry)、[Public Suffix List](https://publicsuffix.org/list/)
-- **链接解析参考**：[astrbot_plugin_parser](https://github.com/Zhalslar/astrbot_plugin_parser)、[nonebot-plugin-parser-lite](https://github.com/sokoko-org/nonebot-plugin-parser-lite)、[nonebot-plugin-parser](https://github.com/fllesser/nonebot-plugin-parser)、[ParseHub](https://github.com/z-mio/ParseHub)、[FxEmbed](https://github.com/FxEmbed/FxEmbed)、[parse-video](https://github.com/wujunwei928/parse-video)、[lux](https://github.com/iawia002/lux)、[metascraper](https://github.com/microlinkhq/metascraper)、[besticon](https://github.com/mat/besticon)、[yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- **链接解析参考**：[astrbot_plugin_parser](https://github.com/Zhalslar/astrbot_plugin_parser)、[nonebot-plugin-parser-lite](https://github.com/sokoko-org/nonebot-plugin-parser-lite)、[nonebot-plugin-parser](https://github.com/fllesser/nonebot-plugin-parser)、[ParseHub](https://github.com/z-mio/ParseHub)、[FxEmbed](https://github.com/FxEmbed/FxEmbed)、[parse-video](https://github.com/wujunwei928/parse-video)、[lux](https://github.com/iawia002/lux)、[metascraper](https://github.com/microlinkhq/metascraper)、[besticon](https://github.com/mat/besticon)、[yt-dlp](https://github.com/yt-dlp/yt-dlp)、[Gopeed-Extensions](https://github.com/ikooc/Gopeed-Extensions)、[JxPan](https://github.com/ByLsPro/JxPan)、[LanZouCloud-API](https://github.com/zaxtyson/LanZouCloud-API)
 - **设计与格式参考**：[HyperCeiler](https://github.com/ReChronoRain/HyperCeiler)、[HyperIsland](https://github.com/1812z/HyperIsland)、[HyperCopy](https://github.com/1812z/HyperCopy)
