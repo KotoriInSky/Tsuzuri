@@ -68,7 +68,7 @@ fun OnnxOcrDetailContent() {
     val pluginUrlKey = Keys.pref(Catalog.ONNX_OCR, OnnxOcr.PREF_PLUGIN_URL)
 
     val activeTier = OnnxOcr.Tier.of(prefs.rawString(tierKey, OnnxOcr.Tier.SMALL.id))
-    val activeMirror = OnnxOcr.Mirror.of(prefs.rawString(mirrorKey, OnnxOcr.Mirror.MODELSCOPE.id))
+    val activeMirror = OnnxOcr.Mirror.of(prefs.rawString(mirrorKey, OnnxOcr.Mirror.BCEBOS.id))
     val savedCustomMirror = prefs.rawString(customMirrorKey, "").orEmpty()
     val savedPluginUrl = prefs.rawString(pluginUrlKey, "").orEmpty()
     var customMirrorDraft by remember(savedCustomMirror) { mutableStateOf(savedCustomMirror) }
@@ -95,6 +95,7 @@ fun OnnxOcrDetailContent() {
 
     val mirrorLabels = remember {
         listOf(
+            "百度飞桨（bj.bcebos.com）",
             "魔搭（modelscope.cn）",
             "HF 镜像（hf-mirror.com）",
             "Hugging Face（huggingface.co）",
@@ -314,13 +315,13 @@ fun OnnxOcrDetailContent() {
                             )
                             if (installed && isCurrent) {
                                 kit.Chip(label = "当前", emphasis = FpEmphasis.POSITIVE)
-                            } else if (isDownloadingThis && dl != null) {
+                            } else if (isDownloadingThis) {
                                 kit.Chip(label = "${(dl.fraction * 100).toInt()}%", emphasis = FpEmphasis.ACCENT)
                             }
                         }
                         Spacer(Modifier.height(2.dp))
                         val subtitle = when {
-                            isDownloadingThis && dl != null -> "${formatMb(dl.downloadedBytes)} / ${formatMb(dl.totalBytes)}"
+                            isDownloadingThis -> "${formatMb(dl.downloadedBytes)} / ${formatMb(dl.totalBytes)}"
                             installed && diskBytes > 0L -> "${tier.langSummary.substringBefore(" · ")} · ${formatMb(diskBytes)}"
                             else -> tier.langSummary
                         }
@@ -386,7 +387,7 @@ fun OnnxOcrDetailContent() {
                     }
                 }
 
-                if (isDownloadingThis && dl != null) {
+                if (isDownloadingThis) {
                     LinearProgressIndicator(
                         progress = { dl.fraction },
                         modifier = Modifier.fillMaxWidth().height(4.dp),

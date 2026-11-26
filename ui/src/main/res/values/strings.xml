@@ -962,6 +962,7 @@
     <string name="pref_onnx_ocr_tier_small">Small · 30 MB</string>
     <string name="pref_onnx_ocr_tier_medium">Medium · 132 MB</string>
     <string name="pref_onnx_ocr_mirror">下载源</string>
+    <string name="pref_onnx_ocr_mirror_bcebos">百度飞桨（bj.bcebos.com）</string>
     <string name="pref_onnx_ocr_mirror_modelscope">魔搭（modelscope.cn）</string>
     <string name="pref_onnx_ocr_mirror_hf_mirror">HF 镜像（hf-mirror.com）</string>
     <string name="pref_onnx_ocr_mirror_huggingface">Hugging Face（huggingface.co）</string>

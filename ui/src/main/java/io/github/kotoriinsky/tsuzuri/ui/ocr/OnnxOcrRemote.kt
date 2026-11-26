@@ -8,30 +8,35 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import io.github.kotoriinsky.tsuzuri.core.OnnxOcr
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 主模块 UI 侧对独立 OCR 组件（`io.github.kotoriinsky.tsuzuri.ocr`）的轻量客户端：
- * - 检测独立组件安装状态与版本；
- * - 支持按镜像源/自定义地址在线下载组件 APK 并拉起系统安装器；
- * - **在前台主模块进程执行模型 HTTP 下载**（避免 Android 15/16/17 后台进程网络冻结触发
- *   `Software caused connection abort`），下完后经 [OnnxOcr.METHOD_STORE_FILE] + `ParcelFileDescriptor`
- *   推送至独立组件私有目录原子落盘。
- *
- * 主模块自身零 ONNX Runtime 依赖。
+ * - 检测独立组件安装状态与版本、支持在线镜像下载安装与一键卸载；
+ * - **在前台主模块进程执行 4 线程 HTTP Range 分块并发下载**（避免后台进程网络冻结触发
+ *   `Software caused connection abort`，同时突破单连接限速）；
+ * - 百度飞桨官方北京 BOS 直连源自动解析 `.tar` 归档抽出模型并推送至独立组件私有目录原子落盘。
  */
 internal object OnnxOcrRemote {
 
     private const val TAG = "FP-OnnxOcrRemote"
     private const val MAX_RETRIES = 3
+    private const val RANGE_THREADS = 4
+    private const val RANGE_MIN_BYTES = 1L * 1024L * 1024L
     private val PROVIDER_URI: Uri = Uri.parse("content://${OnnxOcr.AUTHORITY}")
 
     data class RemoteState(
@@ -66,6 +71,12 @@ internal object OnnxOcrRemote {
         data object ReadyToInstall : PluginDownloadState
         data class Failed(val message: String) : PluginDownloadState
     }
+
+    private data class ProbeResult(
+        val finalUrl: String,
+        val contentLength: Long,
+        val supportsRange: Boolean,
+    )
 
     private val _modelDl = MutableStateFlow<ModelDownloadState>(ModelDownloadState.Idle)
     val modelDownloadState: StateFlow<ModelDownloadState> = _modelDl.asStateFlow()
@@ -110,7 +121,7 @@ internal object OnnxOcrRemote {
         )
     }
 
-    /** 在前台主模块进程执行模型下载并流式写入独立组件，彻底规避后台进程网络冻结断连。 */
+    /** 在前台主模块进程执行 4 线程分块下载，并同步至独立组件私有目录。 */
     fun startModelDownload(
         context: Context,
         tier: OnnxOcr.Tier,
@@ -121,32 +132,43 @@ internal object OnnxOcrRemote {
         val appCtx = context.applicationContext
         val cancelled = AtomicBoolean(false)
         modelCancel = cancelled
-        val files = OnnxOcr.modelFiles(tier)
-        val totalExpected = tier.totalBytes
+        val bceBundles = if (mirror == OnnxOcr.Mirror.BCEBOS) OnnxOcr.bcebosTarBundles(tier) else null
+        val totalExpected = bceBundles?.sumOf { it.expectedBytes } ?: tier.totalBytes
         _modelDl.value = ModelDownloadState.Downloading(tier, 0L, totalExpected)
 
         Thread({
             val tmpDir = File(appCtx.cacheDir, "ocr_dl_${tier.id}").apply { mkdirs() }
             var accumulated = 0L
             try {
-                for (mf in files) {
-                    if (cancelled.get()) throw InterruptedException("已取消")
-                    val tmpFile = File(tmpDir, mf.localName)
-                    val url = mirror.fileUrl(mf.repo, mf.remoteFile, customMirrorUrl)
-                    Log.i(TAG, "前台下载 ${tier.id}/${mf.localName} ← $url")
-                    val bytesWritten = downloadWithRetry(url, tmpFile, cancelled) { fileRead ->
-                        _modelDl.value = ModelDownloadState.Downloading(
-                            tier = tier,
-                            downloadedBytes = accumulated + fileRead,
-                            totalBytes = totalExpected,
-                        )
+                if (bceBundles != null) {
+                    // 百度飞桨官方北京 BOS 直连归档：4 线程分块下载 .tar 后流式抽文件推送组件
+                    for ((idx, bundle) in bceBundles.withIndex()) {
+                        if (cancelled.get()) throw InterruptedException("已取消")
+                        val tarFile = File(tmpDir, "bundle_$idx.tar")
+                        Log.i(TAG, "BOS 4 线程拉取 ${tier.id} 归档 ← ${bundle.url}")
+                        val written = downloadSmart(bundle.url, tarFile, cancelled) { read, _ ->
+                            _modelDl.value = ModelDownloadState.Downloading(tier, accumulated + read, totalExpected)
+                        }
+                        if (written < 1024L) throw IOException("归档体积异常（${written}B）")
+                        extractAndPushTar(appCtx, tier, tarFile, bundle.targets, tmpDir)
+                        runCatching { tarFile.delete() }
+                        accumulated += written
                     }
-                    if (bytesWritten < 512L) {
-                        throw IllegalStateException("文件体积异常（${bytesWritten}B）")
+                } else {
+                    val files = OnnxOcr.modelFiles(tier)
+                    for (mf in files) {
+                        if (cancelled.get()) throw InterruptedException("已取消")
+                        val tmpFile = File(tmpDir, mf.localName)
+                        val url = mirror.fileUrl(mf.repo, mf.remoteFile, customMirrorUrl)
+                        Log.i(TAG, "前台拉取 ${tier.id}/${mf.localName} ← $url")
+                        val written = downloadSmart(url, tmpFile, cancelled) { read, _ ->
+                            _modelDl.value = ModelDownloadState.Downloading(tier, accumulated + read, totalExpected)
+                        }
+                        if (written < 512L) throw IOException("文件体积异常（${written}B）")
+                        pushFileToPlugin(appCtx, tier, mf.localName, tmpFile)
+                        runCatching { tmpFile.delete() }
+                        accumulated += written
                     }
-                    pushFileToPlugin(appCtx, tier, mf.localName, tmpFile)
-                    runCatching { tmpFile.delete() }
-                    accumulated += bytesWritten
                 }
                 _modelDl.value = ModelDownloadState.Done(tier)
                 Log.i(TAG, "模型 ${tier.id} 下载并同步至独立组件完成（${accumulated / 1024}KB）")
@@ -163,6 +185,39 @@ internal object OnnxOcrRemote {
                 if (modelCancel === cancelled) modelCancel = null
             }
         }, "fp-ocr-fg-dl").start()
+    }
+
+    private fun extractAndPushTar(
+        context: Context,
+        tier: OnnxOcr.Tier,
+        tarFile: File,
+        targets: Map<String, String>,
+        tmpDir: File,
+    ) {
+        val found = HashSet<String>()
+        BufferedInputStream(FileInputStream(tarFile), 64 shl 10).use { bis ->
+            OnnxOcr.parseTarEntries(bis) { entryName, _, stream ->
+                val baseName = entryName.substringAfterLast('/')
+                val destName = targets[baseName] ?: return@parseTarEntries
+                val outFile = File(tmpDir, destName)
+                FileOutputStream(outFile).use { fos ->
+                    val buf = ByteArray(64 shl 10)
+                    while (true) {
+                        val n = stream.read(buf)
+                        if (n < 0) break
+                        fos.write(buf, 0, n)
+                    }
+                    fos.flush()
+                }
+                pushFileToPlugin(context, tier, destName, outFile)
+                runCatching { outFile.delete() }
+                found += destName
+            }
+        }
+        val missing = targets.values.filter { it !in found }
+        if (missing.isNotEmpty()) {
+            throw IOException("归档缺少文件：${missing.joinToString()}")
+        }
     }
 
     fun cancelModelDownload() {
@@ -185,7 +240,7 @@ internal object OnnxOcrRemote {
         pluginCancel?.set(true)
     }
 
-    /** 按用户配置的组件 APK 地址（可套用镜像加速前缀）流式下载并拉起系统安装器。 */
+    /** 按用户配置的组件 APK 地址（可套用镜像加速前缀）4 线程下载并拉起系统安装器。 */
     fun startPluginDownload(context: Context, rawUrl: String, mirror: OnnxOcr.PluginMirror) {
         if (_pluginDl.value is PluginDownloadState.Downloading) return
         val resolved = mirror.wrap(rawUrl)
@@ -203,7 +258,7 @@ internal object OnnxOcrRemote {
             val part = File(dir, "ocr-runtime.apk.part")
             val target = File(dir, "ocr-runtime.apk")
             try {
-                val written = downloadWithRetry(resolved, part, cancelled) { read, total ->
+                val written = downloadSmart(resolved, part, cancelled) { read, total ->
                     _pluginDl.value = PluginDownloadState.Downloading(read, total)
                 }
                 if (written < 64 * 1024L) {
@@ -265,12 +320,159 @@ internal object OnnxOcrRemote {
         }
     }
 
-    private fun downloadWithRetry(
+    /** 探测服务端是否支持 Range；≥ 1MB 且支持时启用 4 线程分块并发，否则平滑回退单线程重试。 */
+    private fun downloadSmart(
         initialUrl: String,
         dest: File,
         cancelled: AtomicBoolean,
-        onProgress: (Long) -> Unit,
-    ): Long = downloadWithRetry(initialUrl, dest, cancelled) { read, _ -> onProgress(read) }
+        onProgress: (Long, Long) -> Unit,
+    ): Long {
+        val probe = runCatching { probeHead(initialUrl) }.getOrNull()
+        if (probe != null && probe.supportsRange && probe.contentLength >= RANGE_MIN_BYTES) {
+            return try {
+                downloadMultiRange(probe.finalUrl, probe.contentLength, dest, cancelled, onProgress)
+            } catch (t: Throwable) {
+                if (cancelled.get() || t is InterruptedException) throw t
+                Log.w(TAG, "分块并发下载异常，回退单线程重试：${t.message}")
+                downloadWithRetry(probe.finalUrl, dest, cancelled, onProgress)
+            }
+        }
+        return downloadWithRetry(probe?.finalUrl ?: initialUrl, dest, cancelled, onProgress)
+    }
+
+    private fun probeHead(initialUrl: String): ProbeResult {
+        var currentUrl = initialUrl
+        repeat(7) {
+            val c = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                instanceFollowRedirects = false
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                useCaches = false
+                setRequestProperty("User-Agent", "Tsuzuri-OCR/1.0 (Android)")
+                setRequestProperty("Connection", "close")
+            }
+            try {
+                val code = c.responseCode
+                if (code in 301..308) {
+                    val loc = c.getHeaderField("Location")
+                    if (loc.isNullOrBlank()) throw IOException("HEAD 重定向缺 Location（$code）")
+                    currentUrl = URL(URL(currentUrl), loc).toString()
+                } else if (code in 200..299) {
+                    val len = c.contentLengthLong
+                    val acceptRanges = c.getHeaderField("Accept-Ranges").orEmpty()
+                    return ProbeResult(currentUrl, len, acceptRanges.contains("bytes", ignoreCase = true))
+                } else {
+                    throw IOException("HEAD 返回 $code")
+                }
+            } finally {
+                c.disconnect()
+            }
+        }
+        throw IOException("HEAD 重定向过多")
+    }
+
+    private fun downloadMultiRange(
+        finalUrl: String,
+        totalBytes: Long,
+        dest: File,
+        cancelled: AtomicBoolean,
+        onProgress: (Long, Long) -> Unit,
+    ): Long {
+        RandomAccessFile(dest, "rw").use { it.setLength(totalBytes) }
+        val downloaded = AtomicLong(0L)
+        val lastReportAt = AtomicLong(0L)
+        val chunkSize = (totalBytes + RANGE_THREADS - 1) / RANGE_THREADS
+        val pool = Executors.newFixedThreadPool(RANGE_THREADS)
+        val futures = ArrayList<Future<*>>(RANGE_THREADS)
+        try {
+            for (i in 0 until RANGE_THREADS) {
+                val start = i * chunkSize
+                if (start >= totalBytes) break
+                val end = minOf(totalBytes - 1, start + chunkSize - 1)
+                futures += pool.submit {
+                    downloadRangeChunk(finalUrl, dest, start, end, totalBytes, cancelled, downloaded, lastReportAt, onProgress)
+                }
+            }
+            for (f in futures) f.get()
+            onProgress(totalBytes, totalBytes)
+            return totalBytes
+        } catch (t: Throwable) {
+            for (f in futures) f.cancel(true)
+            val cause = (t as? java.util.concurrent.ExecutionException)?.cause ?: t
+            throw cause
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    private fun downloadRangeChunk(
+        url: String,
+        dest: File,
+        start: Long,
+        end: Long,
+        totalBytes: Long,
+        cancelled: AtomicBoolean,
+        downloaded: AtomicLong,
+        lastReportAt: AtomicLong,
+        onProgress: (Long, Long) -> Unit,
+    ) {
+        val expectedLen = end - start + 1
+        var chunkDone = 0L
+        var lastError: Throwable? = null
+        for (attempt in 1..MAX_RETRIES) {
+            if (cancelled.get() || Thread.currentThread().isInterrupted) throw InterruptedException("已取消")
+            var conn: HttpURLConnection? = null
+            try {
+                val reqStart = start + chunkDone
+                val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
+                    useCaches = false
+                    setRequestProperty("User-Agent", "Tsuzuri-OCR/1.0 (Android)")
+                    setRequestProperty("Range", "bytes=$reqStart-$end")
+                    setRequestProperty("Connection", "close")
+                }
+                conn = c
+                val code = c.responseCode
+                if (code != HttpURLConnection.HTTP_PARTIAL && !(code == HttpURLConnection.HTTP_OK && reqStart == 0L)) {
+                    throw IOException("Range 返回 HTTP $code")
+                }
+                RandomAccessFile(dest, "rw").use { raf ->
+                    raf.seek(reqStart)
+                    c.inputStream.use { input ->
+                        val buf = ByteArray(64 shl 10)
+                        while (chunkDone < expectedLen) {
+                            if (cancelled.get() || Thread.currentThread().isInterrupted) {
+                                throw InterruptedException("已取消")
+                            }
+                            val toRead = minOf(buf.size.toLong(), expectedLen - chunkDone).toInt()
+                            val n = input.read(buf, 0, toRead)
+                            if (n < 0) break
+                            raf.write(buf, 0, n)
+                            chunkDone += n
+                            val totalNow = downloaded.addAndGet(n.toLong())
+                            val now = SystemClock.uptimeMillis()
+                            val prev = lastReportAt.get()
+                            if (now - prev >= 90L && lastReportAt.compareAndSet(prev, now)) {
+                                onProgress(totalNow, totalBytes)
+                            }
+                        }
+                    }
+                }
+                if (chunkDone >= expectedLen) return
+                throw IOException("分块未读满（$chunkDone/$expectedLen）")
+            } catch (t: Throwable) {
+                if (cancelled.get() || t is InterruptedException) throw t
+                lastError = t
+                if (attempt < MAX_RETRIES) runCatching { Thread.sleep(600L * attempt) }
+            } finally {
+                runCatching { conn?.disconnect() }
+            }
+        }
+        throw lastError ?: IOException("分块下载失败")
+    }
 
     private fun downloadWithRetry(
         initialUrl: String,
