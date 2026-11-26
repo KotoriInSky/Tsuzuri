@@ -1235,7 +1235,7 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
         Thread {
             // 整体兜底：裸线程里逃出去的异常会带走宿主进程
             val glyphs = try {
-                PortalOcrSelect.recognize(instance, copy)
+                OnnxOcrClient.recognize(context, copy) ?: PortalOcrSelect.recognize(instance, copy)
             } catch (t: Throwable) {
                 PortalOcrSelect.log?.invoke(Log.WARN, "提取文字：识别线程异常 $t")
                 null

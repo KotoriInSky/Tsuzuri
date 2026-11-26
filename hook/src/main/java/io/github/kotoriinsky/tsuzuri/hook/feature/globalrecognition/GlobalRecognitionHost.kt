@@ -22,6 +22,7 @@ import io.github.kotoriinsky.tsuzuri.hook.HookContext
 import io.github.kotoriinsky.tsuzuri.hook.HookRegistry
 import io.github.kotoriinsky.tsuzuri.hook.InstallReport
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.LocalQrScanner
+import io.github.kotoriinsky.tsuzuri.hook.feature.portal.OnnxOcrClient
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalOcrSelect
 import java.lang.reflect.Method
 
@@ -210,7 +211,7 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
                 win.show()
             }
             try {
-                val glyphs = recognize(shot)
+                val glyphs = recognize(context, shot)
                 // 找图顺序：来源应用按内容列出的 → 系统控件树 → 截图像素算法。
                 // 像素算法补进来的多半是导航栏图标、带留白的卡片，看上去就是「还在截图上猜」，所以只作最后兜底
                 val listed = runCatching { listing?.get() }.getOrNull()
@@ -278,7 +279,9 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
             .onSuccess { hookCtx?.log(Log.INFO, "[$TAG] 控件树已存：${context.cacheDir}/global_recog_tree.xml") }
     }
 
-    private fun recognize(bitmap: Bitmap): List<PortalOcrSelect.Glyph>? {
+    private fun recognize(context: Context, bitmap: Bitmap): List<PortalOcrSelect.Glyph>? {
+        // 优先走用户启用的多语种 PP-OCRv6（ONNX Runtime / QNN NPU）；未开启或未下载模型时无缝回落系统太乙 OCR
+        OnnxOcrClient.recognize(context, bitmap)?.let { return it }
         val cl = classLoader ?: return null
         val ocr = runCatching {
             val companion = Class.forName(OCR_CLS, false, cl).getField("Companion").get(null)
