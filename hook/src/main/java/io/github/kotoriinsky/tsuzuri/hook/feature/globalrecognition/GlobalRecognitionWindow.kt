@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -13,11 +14,13 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
+import android.graphics.ImageDecoder
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +43,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import io.github.kotoriinsky.tsuzuri.core.GlobalRecognition
+import io.github.kotoriinsky.tsuzuri.core.PortalMediaContract
+import io.github.kotoriinsky.tsuzuri.core.QrJumpResolver
+import io.github.kotoriinsky.tsuzuri.core.ScreenEntityResolver
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.LocalQrScanner
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalImageActions
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalOcrSelect
@@ -71,8 +77,8 @@ internal class GlobalRecognitionWindow(
         fun translate(context: Context, text: String): Boolean
         fun log(priority: Int, msg: String)
 
-        /** 向来源应用要 [rect] 里那张图的源位图；回调可能在任意线程，拿不到给 null 和原因。 */
-        fun requestSourceImage(context: Context, rect: RectF, done: (Bitmap?, String) -> Unit)
+        /** 向来源应用要 [rect] 里那张图的源位图或原文件字节；回调可能在任意线程。 */
+        fun requestSourceImage(context: Context, rect: RectF, done: (SourceImageClient.Result) -> Unit)
     }
 
     /** 截图被窗口和识别线程同时持有，最后一个放手的人回收。 */
@@ -168,6 +174,8 @@ internal class GlobalRecognitionWindow(
     /** 手指还按在整屏画布上时选中的变化先记着，抬手再出面板（选完再动画，拖选途中面板不弹来弹去）。 */
     private var deferredSelection: SelectionState? = null
     private var textBar: View? = null
+    private var textEntitySlot: FrameLayout? = null
+    private var activeAnimatedPreview: AnimatedImageDrawable? = null
     private var closing = false
     private var attached = false
 
@@ -215,6 +223,7 @@ internal class GlobalRecognitionWindow(
         }
         screen.onTouchEnd = {
             deferredSelection?.let { state -> deferredSelection = null; onSelection(state) }
+            if (screen.selectedText().isNotEmpty() && sheetShown) refreshTextEntity()
             updateAvoid()
         }
         for (type in TYPES) {
@@ -284,6 +293,7 @@ internal class GlobalRecognitionWindow(
     }
 
     private fun finish() {
+        stopAnimatedPreview()
         stopSaveWatch()
         screen.stop()
         restoreHostBitmap()
@@ -291,11 +301,17 @@ internal class GlobalRecognitionWindow(
         onClosed()
     }
 
+    private fun stopAnimatedPreview() {
+        runCatching { activeAnimatedPreview?.stop() }
+        activeAnimatedPreview = null
+    }
+
     // ── 选择 → 底部 ─────────────────────────────────────────────────────
 
     /** 没选东西时底部什么都不放：底栏会挡住屏幕最下面那几行字。 */
     private fun onSelection(state: SelectionState) {
         pendingImage = null
+        stopAnimatedPreview()
         // 改选了别的：之前那次保存再完成也不该清掉新的选中
         stopSaveWatch()
         if (state.image != null || state.hasText || state.qr != null) collapsed = false
@@ -313,7 +329,100 @@ internal class GlobalRecognitionWindow(
     }
 
     private fun showTextBar() {
-        setSheet(textBar ?: textBar().also { textBar = it })
+        val bar = textBar ?: textBar().also { textBar = it }
+        refreshTextEntity()
+        setSheet(bar)
+    }
+
+    /** 根据当前选中文字刷新实体直达条（118 平台口令/链接、邮箱、电话），无实体时隐藏。 */
+    private fun refreshTextEntity() {
+        val slot = textEntitySlot ?: return
+        val action = ScreenEntityResolver.resolve(screen.selectedText())
+        slot.removeAllViews()
+        if (action == null) {
+            slot.visibility = View.GONE
+            return
+        }
+        slot.visibility = View.VISIBLE
+        slot.addView(entityBanner(action))
+    }
+
+    private fun entityBanner(action: QrJumpResolver.Action): View {
+        val accent = LocalQrScanner.accentColor(action.accent)
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padH = (14 * d).toInt()
+            val padV = (10 * d).toInt()
+            setPadding(padH, padV, padH, padV)
+            background = GradientDrawable().apply {
+                cornerRadius = 16 * d
+                setColor(palette.pillBg)
+            }
+            addView(
+                View(context).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(accent)
+                    }
+                },
+                LinearLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt()).apply {
+                    marginEnd = (10 * d).toInt()
+                },
+            )
+            addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(
+                        TextView(context).apply {
+                            text = action.title
+                            setTextColor(palette.ink)
+                            textSize = 13.5f
+                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                            isSingleLine = true
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        },
+                    )
+                    addView(
+                        TextView(context).apply {
+                            text = action.subtitle
+                            setTextColor(palette.inkSecondary)
+                            textSize = 11.5f
+                            isSingleLine = true
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        },
+                    )
+                },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            val actionBtn = TextView(context).apply {
+                text = action.actionLabel
+                setTextColor(Color.WHITE)
+                textSize = 12.5f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding((14 * d).toInt(), (7 * d).toInt(), (14 * d).toInt(), (7 * d).toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = 16 * d
+                    setColor(accent)
+                }
+                setOnClickListener {
+                    if (action.canLaunch && LocalQrScanner.launch(context, action)) {
+                        close()
+                    } else if (LocalQrScanner.copy(context, action.copyText)) {
+                        confirm("已复制", true)
+                    } else {
+                        toast("无法打开此内容")
+                    }
+                }
+            }
+            addView(
+                actionBtn,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = (10 * d).toInt()
+                },
+            )
+            setOnClickListener { actionBtn.performClick() }
+        }
     }
 
     /** 换面板内容；null 收起。 */
@@ -481,21 +590,22 @@ internal class GlobalRecognitionWindow(
     private fun showCard(rect: RectF, preferSource: Boolean) {
         pendingImage = rect
         if (!preferSource) {
-            showCardWith(rect, source = null, fromSource = false)
+            showCardWith(rect, result = null)
             return
         }
         setSheet(loadingContent())
-        host.requestSourceImage(context, rect) { source, detail ->
+        host.requestSourceImage(context, rect) { res ->
             main.post {
-                if (pendingImage !== rect || closing) { source?.recycle(); return@post }
+                if (pendingImage !== rect || closing) { res.bitmap?.recycle(); return@post }
                 pendingImage = null
-                host.log(Log.INFO, if (source != null) "选图用 $detail" else "选图用截图裁图：$detail")
-                showCardWith(rect, source, fromSource = source != null)
+                host.log(Log.INFO, if (res.bitmap != null) "选图用 ${res.detail}" else "选图用截图裁图：${res.detail}")
+                showCardWith(rect, res)
             }
         }
     }
 
-    private fun showCardWith(rect: RectF, source: Bitmap?, fromSource: Boolean) {
+    private fun showCardWith(rect: RectF, result: SourceImageClient.Result?) {
+        val source = result?.bitmap
         val crop = source ?: crop(rect)
         if (crop == null) { setSheet(null); return }
         if (!swappedHost) {
@@ -519,7 +629,7 @@ internal class GlobalRecognitionWindow(
             orientation = LinearLayout.VERTICAL
         }
         val qrSlot = FrameLayout(context)
-        val header = imageHeaderBar(crop, fromSource, qrSlot)
+        val header = imageHeaderBar(crop, result, qrSlot)
         container.addView(
             header,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
@@ -534,14 +644,58 @@ internal class GlobalRecognitionWindow(
         scanCroppedQrAsync(crop, qrSlot)
     }
 
-    /** 图片面板顶部的轻量信息与动作条：显示原图/选区尺寸、一键复制图片，以及局部二维码直达插槽。 */
-    private fun imageHeaderBar(crop: Bitmap, fromSource: Boolean, qrSlot: FrameLayout): View {
-        val label = if (fromSource) "原图 ${crop.width}×${crop.height}" else "选区 ${crop.width}×${crop.height}"
+    /** 图片面板顶部的轻量信息与动作条：显示原图/动图格式与尺寸、原文件无损保存、一键复制图片与局部二维码直达。 */
+    private fun imageHeaderBar(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
+        val rawBytes = result?.rawBytes
+        val mime = result?.mime
+        val animated = result?.animated == true && rawBytes != null
+        val fmtTag = when (mime) {
+            "image/gif" -> "GIF"
+            "image/webp" -> "WebP"
+            "image/avif" -> "AVIF"
+            "image/heic" -> "HEIC"
+            "image/heif" -> "HEIF"
+            "image/jpeg" -> "JPEG"
+            "image/png" -> "PNG"
+            else -> null
+        }
+        val label = when {
+            animated -> "${fmtTag ?: "动图"} 动图 ${crop.width}×${crop.height}"
+            rawBytes != null -> "原图${fmtTag?.let { " $it" }.orEmpty()} ${crop.width}×${crop.height}"
+            result?.bitmap != null -> "原图 ${crop.width}×${crop.height}"
+            else -> "选区 ${crop.width}×${crop.height}"
+        }
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val padH = (20 * d).toInt()
             setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
+
+            if (animated && rawBytes != null) {
+                runCatching {
+                    val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(java.nio.ByteBuffer.wrap(rawBytes)))
+                    if (drawable is AnimatedImageDrawable) {
+                        drawable.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
+                        drawable.start()
+                        activeAnimatedPreview = drawable
+                        addView(
+                            ImageView(context).apply {
+                                setImageDrawable(drawable)
+                                scaleType = ImageView.ScaleType.CENTER_CROP
+                                clipToOutline = true
+                                outlineProvider = object : android.view.ViewOutlineProvider() {
+                                    override fun getOutline(v: View, o: android.graphics.Outline) {
+                                        o.setRoundRect(0, 0, v.width, v.height, 8 * d)
+                                    }
+                                }
+                            },
+                            LinearLayout.LayoutParams((32 * d).toInt(), (32 * d).toInt()).apply {
+                                marginEnd = (10 * d).toInt()
+                            },
+                        )
+                    }
+                }
+            }
 
             addView(
                 TextView(context).apply {
@@ -559,6 +713,28 @@ internal class GlobalRecognitionWindow(
                     marginEnd = (8 * d).toInt()
                 },
             )
+            if (rawBytes != null) {
+                val saveLabel = if (animated) "存原动图" else "存原图"
+                addView(
+                    TextView(context).apply {
+                        text = saveLabel
+                        setTextColor(Color.WHITE)
+                        textSize = 12.5f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
+                        background = GradientDrawable().apply {
+                            cornerRadius = 16 * d
+                            setColor(0xFF3482FF.toInt())
+                        }
+                        setOnClickListener {
+                            saveRawMediaToGallery(rawBytes, mime, animated)
+                        }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginEnd = (8 * d).toInt()
+                    },
+                )
+            }
             addView(
                 TextView(context).apply {
                     text = "复制图片"
@@ -585,6 +761,56 @@ internal class GlobalRecognitionWindow(
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
             )
         }
+    }
+
+    /** 把原文件字节（GIF / 动态 WebP / HEIF・AVIF / 无损原图）原样写入系统图库，不经过重压拍扁。 */
+    private fun saveRawMediaToGallery(bytes: ByteArray, mime: String?, animated: Boolean) {
+        val fmt = PortalMediaContract.sniff(bytes)
+            ?: when (mime) {
+                "image/gif" -> PortalMediaContract.Format.GIF
+                "image/webp" -> PortalMediaContract.Format.WEBP
+                "image/avif" -> PortalMediaContract.Format.AVIF
+                "image/heic" -> PortalMediaContract.Format.HEIC
+                "image/heif" -> PortalMediaContract.Format.HEIF
+                "image/png" -> PortalMediaContract.Format.PNG
+                else -> PortalMediaContract.Format.JPEG
+            }
+        val name = PortalMediaContract.savedName(System.currentTimeMillis(), fmt)
+        Thread({
+            val saved = try {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Images.Media.MIME_TYPE, fmt.mime)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Tsuzuri")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("insert MediaStore 返回 null")
+                try {
+                    resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: throw IllegalStateException("openOutputStream 返回 null")
+                    resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+                    true
+                } catch (t: Throwable) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    throw t
+                }
+            } catch (t: Throwable) {
+                host.log(Log.WARN, "保存原媒体失败：$t")
+                false
+            }
+            main.post {
+                if (closing) return@post
+                if (saved) {
+                    screen.clearSelection()
+                    confirm(if (animated) "原动图已保存" else "原图已保存", true)
+                    host.log(Log.INFO, "已无损保存原媒体 $name (${fmt.mime}, ${bytes.size}B)")
+                } else {
+                    toast("保存原文件失败")
+                }
+            }
+        }, "fp-gr-save-raw").start()
     }
 
     private fun scanCroppedQrAsync(crop: Bitmap, qrSlot: FrameLayout) {
@@ -972,13 +1198,13 @@ internal class GlobalRecognitionWindow(
             val text = screen.selectedText()
             if (text.isEmpty()) toast("请选择文字") else block(text)
         }
-        return GapRow(context, (HOST_BUTTON_GAP_DP * d).toInt()).apply {
+        val row = GapRow(context, (HOST_BUTTON_GAP_DP * d).toInt()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             // 与识图卡片同样落在面板外壳的内边距之内，两种面板的按钮行离顶边一样远
             setPadding(0, (HOST_ROW_TOP_DP * d).toInt(), 0, (HOST_ROW_BOTTOM_DP * d).toInt())
             val lp = { LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
-            addView(btn("全选", PortalImageActions.PortalIcon.SELECT_ALL) { screen.selectAll() }, lp())
+            addView(btn("全选", PortalImageActions.PortalIcon.SELECT_ALL) { screen.selectAll(); refreshTextEntity() }, lp())
             addView(btn("复制", PortalImageActions.PortalIcon.COPY) {
                 withText { text ->
                     try {
@@ -1013,6 +1239,17 @@ internal class GlobalRecognitionWindow(
                     if (host.translate(context, text)) close() else toast("翻译不可用")
                 }
             }, lp())
+        }
+        val entitySlot = FrameLayout(context).apply {
+            val padH = (16 * d).toInt()
+            setPadding(padH, (12 * d).toInt(), padH, 0)
+            visibility = View.GONE
+        }
+        textEntitySlot = entitySlot
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(entitySlot, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
     }
 

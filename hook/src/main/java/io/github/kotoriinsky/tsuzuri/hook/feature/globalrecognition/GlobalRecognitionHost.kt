@@ -320,10 +320,13 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
         return r.rects?.map { RectF(it) }
     }
 
-    override fun requestSourceImage(context: Context, rect: RectF, done: (Bitmap?, String) -> Unit) {
+    override fun requestSourceImage(context: Context, rect: RectF, done: (SourceImageClient.Result) -> Unit) {
         val pkg = frontPackage
         val w = worker
-        if (pkg == null || w == null) { done(null, "没有前台包名（控件树没拿到）"); return }
+        if (pkg == null || w == null) {
+            done(SourceImageClient.Result(null, "没有前台包名（控件树没拿到）"))
+            return
+        }
         val box = android.graphics.Rect(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
         w.post {
             val r = try {
@@ -331,7 +334,15 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
             } catch (t: Throwable) {
                 SourceImageClient.Result(null, "请求异常：$t")
             }
-            done(r.bitmap, "$pkg：${r.detail}")
+            done(
+                SourceImageClient.Result(
+                    bitmap = r.bitmap,
+                    detail = "$pkg：${r.detail}",
+                    rawBytes = r.rawBytes,
+                    mime = r.mime,
+                    animated = r.animated,
+                ),
+            )
         }
     }
 

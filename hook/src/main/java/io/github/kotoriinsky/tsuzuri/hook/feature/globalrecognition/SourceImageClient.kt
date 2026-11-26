@@ -24,7 +24,16 @@ import java.util.concurrent.TimeUnit
  */
 internal object SourceImageClient {
 
-    class Result(val bitmap: Bitmap?, val detail: String)
+    private const val MAX_MEDIA_BYTES = 24 shl 20
+
+    class Result(
+        val bitmap: Bitmap?,
+        val detail: String,
+        /** 未经重压的原文件字节（GIF / 动态 WebP / HEIF・AVIF / 无损原图）；走旧协议或截图时为 null。 */
+        val rawBytes: ByteArray? = null,
+        val mime: String? = null,
+        val animated: Boolean = false,
+    )
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -84,20 +93,36 @@ internal object SourceImageClient {
         var pipe: ParcelFileDescriptor? = null
         var info = ""
         var failure: String? = null
+        var isMedia = false
+        var mediaMime: String? = null
+        var mediaAnimated = false
         val callback = object : Binder() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                if (code != SourceImageContract.TX_RESULT && code != SourceImageContract.TX_FAIL) {
+                if (code != SourceImageContract.TX_RESULT &&
+                    code != SourceImageContract.TX_MEDIA &&
+                    code != SourceImageContract.TX_FAIL
+                ) {
                     return super.onTransact(code, data, reply, flags)
                 }
                 try {
                     data.enforceInterface(SourceImageContract.DESCRIPTOR)
-                    if (code == SourceImageContract.TX_RESULT) {
-                        val w = data.readInt()
-                        val h = data.readInt()
-                        info = "${w}x$h ${data.readString()}"
-                        pipe = data.readFileDescriptor()
-                    } else {
-                        failure = data.readString()
+                    when (code) {
+                        SourceImageContract.TX_RESULT -> {
+                            val w = data.readInt()
+                            val h = data.readInt()
+                            info = "${w}x$h ${data.readString()}"
+                            pipe = data.readFileDescriptor()
+                        }
+                        SourceImageContract.TX_MEDIA -> {
+                            isMedia = true
+                            val w = data.readInt()
+                            val h = data.readInt()
+                            mediaMime = data.readString()
+                            mediaAnimated = data.readInt() != 0
+                            info = "${w}x$h ${mediaMime.orEmpty()} ${data.readString()}"
+                            pipe = data.readFileDescriptor()
+                        }
+                        else -> failure = data.readString()
                     }
                 } catch (t: Throwable) {
                     failure = "应答解析失败：$t"
@@ -126,13 +151,45 @@ internal object SourceImageClient {
         val guard = Runnable { runCatching { fd.close() } }
         main.postDelayed(guard, remaining)
         return try {
-            val bmp = ParcelFileDescriptor.AutoCloseInputStream(fd).use { BitmapFactory.decodeStream(it) }
-            if (bmp == null) Result(null, "解码失败（$info）")
-            else Result(bmp, "源位图 $info，${SystemClock.uptimeMillis() - t0}ms")
+            if (isMedia) {
+                val bytes = ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(32 shl 10)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        if (out.size() > MAX_MEDIA_BYTES) throw IllegalStateException("原文件超过 24MB")
+                    }
+                    out.toByteArray()
+                }
+                val bmp = decodePreviewBitmap(bytes)
+                if (bmp == null) Result(null, "原媒体解码失败（$info）")
+                else Result(
+                    bitmap = bmp,
+                    detail = "原文件 $info (${bytes.size / 1024}KB)，${SystemClock.uptimeMillis() - t0}ms",
+                    rawBytes = bytes,
+                    mime = mediaMime,
+                    animated = mediaAnimated,
+                )
+            } else {
+                val bmp = ParcelFileDescriptor.AutoCloseInputStream(fd).use { BitmapFactory.decodeStream(it) }
+                if (bmp == null) Result(null, "解码失败（$info）")
+                else Result(bmp, "源位图 $info，${SystemClock.uptimeMillis() - t0}ms")
+            }
         } catch (t: Throwable) {
             Result(null, "读取失败（$info）：$t")
         } finally {
             main.removeCallbacks(guard)
         }
+    }
+
+    /** 把原文件字节解成用于卡片/扫码/编辑的首帧位图；超大图自动降采样防 OOM，原文件字节完整保留在 rawBytes 中。 */
+    private fun decodePreviewBitmap(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        val sample = if (maxEdge > 2048) Integer.highestOneBit(maxEdge / 2048).coerceAtLeast(1) else 1
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 }
