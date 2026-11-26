@@ -38,6 +38,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.WindowInsetsAnimation
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.animation.LinearInterpolator
@@ -168,6 +169,8 @@ internal class GlobalRecognitionWindow(
         minimumHeight = (SHEET_DP * d).toInt()
         // 吃掉面板空白处的触摸，免得漏到下面的整屏画布上变成「点空白清除选中」
         isClickable = true
+        isFocusable = true
+        isFocusableInTouchMode = true
         visibility = View.GONE
     }
     private val grip = View(context).apply {
@@ -188,7 +191,6 @@ internal class GlobalRecognitionWindow(
     private var textEntitySlot: FrameLayout? = null
     private var textTranslateSlot: FrameLayout? = null
     private var textPreviewEditor: EditText? = null
-    private var textPreviewCount: TextView? = null
     private var textPreviewReset: TextView? = null
     private var textPreviewSyncing = false
     private var textEditedByUser = false
@@ -226,6 +228,22 @@ internal class GlobalRecognitionWindow(
         }
         root.addView(screen, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(bottom, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        // 窗口设了 fitInsetsTypes=0 与 FLAG_LAYOUT_NO_LIMITS，必须显式消费 IME insets 才能让底部面板随软键盘同步抬起
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom
+            bottom.translationY = -imeBottom.toFloat()
+            insets
+        }
+        root.setWindowInsetsAnimationCallback(object : WindowInsetsAnimation.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+            override fun onProgress(
+                insets: WindowInsets,
+                runningAnimations: MutableList<WindowInsetsAnimation>,
+            ): WindowInsets {
+                val imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom
+                bottom.translationY = -imeBottom.toFloat()
+                return insets
+            }
+        })
         bottom.addView(sheet, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         sheet.addView(grip, FrameLayout.LayoutParams((36 * d).toInt(), (4 * d).toInt(), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = -(6 * d).toInt()
@@ -327,7 +345,9 @@ internal class GlobalRecognitionWindow(
 
     private fun hideSoftKeyboard() {
         val editor = textPreviewEditor ?: return
+        editor.isCursorVisible = false
         editor.clearFocus()
+        sheet.requestFocus()
         runCatching {
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(editor.windowToken, 0)
@@ -617,7 +637,7 @@ internal class GlobalRecognitionWindow(
     private fun activeSelectedText(): String =
         textPreviewEditor?.text?.toString()?.takeIf { it.isNotEmpty() } ?: screen.selectedText()
 
-    /** 将屏幕最新选区文字同步进底部可编辑预览框，并重置「已编辑」状态。 */
+    /** 将屏幕最新选区文字同步进底部可编辑预览框；默认不抢焦点也不闪光标，点进框内才编辑。 */
     private fun syncTextPreviewFromSelection() {
         val editor = textPreviewEditor ?: return
         val selected = screen.selectedText()
@@ -627,16 +647,14 @@ internal class GlobalRecognitionWindow(
                 editor.setText(selected)
                 editor.setSelection(selected.length)
             }
+            editor.isCursorVisible = false
+            editor.clearFocus()
+            sheet.requestFocus()
             textEditedByUser = false
-            updateTextPreviewMeta(selected.length, edited = false)
+            textPreviewReset?.visibility = View.GONE
         } finally {
             textPreviewSyncing = false
         }
-    }
-
-    private fun updateTextPreviewMeta(charCount: Int, edited: Boolean) {
-        textPreviewCount?.text = if (edited) "已编辑 · $charCount 字" else "$charCount 字"
-        textPreviewReset?.visibility = if (edited) View.VISIBLE else View.GONE
     }
 
     /** 根据当前选中或编辑后的文字刷新实体直达条（118 平台口令/链接、邮箱、电话），无实体时隐藏。 */
@@ -950,11 +968,11 @@ internal class GlobalRecognitionWindow(
     }
 
     /**
-     * 图片面板顶部的预览与快捷操作卡片：
-     * - 左侧 56×56 dp 圆角缩略图（动图循环播放、实况照片带橙色双环角标、静图高清裁切预览）；
-     * - 中间两行元信息（格式类型 + 完整分辨率与原文件体积，绝不挤压截断）；
-     * - 右侧紧凑主动作胶囊（「存实况 / 存动图 / 存原图」+「复制」）；
-     * - 局部二维码直达条独立排在预览卡片下方，避免挤压尺寸与按钮。
+     * 图片面板顶部的同比例预览与操作卡片：
+     * - 左侧：按原图真实宽高比缩放的圆角缩略图（不裁切，动图同比例循环播、实况带右下橙环）；
+     * - 右侧：上层展示格式与完整分辨率体积，下层左对齐放置「复制」与「存原图 / 存动图 / 存实况」胶囊，
+     *   信息与按钮互不挤压，垂直高度与缩略图自然对齐；
+     * - 局部二维码直达条独立排在卡片下方。
      */
     private fun imageHeaderBar(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
         val rawBytes = result?.rawBytes
@@ -998,10 +1016,24 @@ internal class GlobalRecognitionWindow(
             }
         }
 
-        val thumbSide = (52 * d).toInt()
+        // 同比例计算缩略图尺寸（横图最大 116×78dp，竖图最高 82dp、最窄 44dp，保持原图真实比例不裁切）
+        val aspect = crop.width.toFloat() / crop.height.coerceAtLeast(1).toFloat()
+        val thumbWdp: Float
+        val thumbHdp: Float
+        if (aspect >= 1f) {
+            thumbWdp = (78f * aspect).coerceIn(52f, 116f)
+            thumbHdp = (thumbWdp / aspect).coerceIn(44f, 78f)
+        } else {
+            thumbHdp = 82f
+            thumbWdp = (thumbHdp * aspect).coerceIn(44f, 82f)
+        }
+        val thumbW = (thumbWdp * d).toInt()
+        val thumbH = (thumbHdp * d).toInt()
         val thumbCorner = 10 * d
+
         val thumbView = ImageView(context).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = false
             clipToOutline = true
             outlineProvider = object : android.view.ViewOutlineProvider() {
                 override fun getOutline(v: View, o: android.graphics.Outline) {
@@ -1028,9 +1060,10 @@ internal class GlobalRecognitionWindow(
         val thumbFrame = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 cornerRadius = thumbCorner
+                setColor(if (palette.dark) 0xFF14161A.toInt() else 0xFFE6E9EF.toInt())
                 setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
             }
-            addView(thumbView, FrameLayout.LayoutParams(thumbSide, thumbSide))
+            addView(thumbView, FrameLayout.LayoutParams(thumbW, thumbH))
             if (isLive) {
                 addView(
                     View(context).apply {
@@ -1041,82 +1074,16 @@ internal class GlobalRecognitionWindow(
                         }
                     },
                     FrameLayout.LayoutParams((14 * d).toInt(), (14 * d).toInt(), Gravity.BOTTOM or Gravity.END).apply {
-                        marginEnd = (4 * d).toInt()
-                        bottomMargin = (4 * d).toInt()
+                        marginEnd = (5 * d).toInt()
+                        bottomMargin = (5 * d).toInt()
                     },
                 )
             }
         }
 
-        val cardRow = LinearLayout(context).apply {
+        val actionRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding((10 * d).toInt(), (10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 16 * d
-                setColor(palette.pillBg)
-                setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
-            }
-
-            addView(
-                thumbFrame,
-                LinearLayout.LayoutParams(thumbSide, thumbSide).apply {
-                    marginEnd = (12 * d).toInt()
-                },
-            )
-
-            addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(
-                        TextView(context).apply {
-                            text = titleText
-                            setTextColor(palette.ink)
-                            textSize = 14f
-                            typeface = android.graphics.Typeface.DEFAULT_BOLD
-                            isSingleLine = true
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                        },
-                    )
-                    addView(
-                        TextView(context).apply {
-                            text = sizeText
-                            setTextColor(palette.inkSecondary)
-                            textSize = 12f
-                            isSingleLine = true
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                        },
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                            topMargin = (3 * d).toInt()
-                        },
-                    )
-                },
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = (8 * d).toInt()
-                },
-            )
-
-            if (isLive && rawBytes != null && liveVideo != null) {
-                addView(
-                    actionChip("存实况", Color.WHITE, 0xFFFF9F0A.toInt()) {
-                        saveMotionPhotoToGallery(rawBytes, liveVideo)
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        marginEnd = (6 * d).toInt()
-                    },
-                )
-            } else if (rawBytes != null) {
-                val saveLabel = if (animated) "存动图" else "存原图"
-                addView(
-                    actionChip(saveLabel, Color.WHITE, 0xFF3482FF.toInt()) {
-                        saveRawMediaToGallery(rawBytes, mime, animated)
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        marginEnd = (6 * d).toInt()
-                    },
-                )
-            }
-
             addView(
                 actionChip(
                     label = "复制",
@@ -1136,11 +1103,84 @@ internal class GlobalRecognitionWindow(
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
             )
+            if (isLive && rawBytes != null && liveVideo != null) {
+                addView(
+                    actionChip("存实况", Color.WHITE, 0xFFFF9F0A.toInt()) {
+                        saveMotionPhotoToGallery(rawBytes, liveVideo)
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = (8 * d).toInt()
+                    },
+                )
+            } else if (rawBytes != null) {
+                val saveLabel = if (animated) "存动图" else "存原图"
+                addView(
+                    actionChip(saveLabel, Color.WHITE, 0xFF3482FF.toInt()) {
+                        saveRawMediaToGallery(rawBytes, mime, animated)
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = (8 * d).toInt()
+                    },
+                )
+            }
+        }
+
+        val cardRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((12 * d).toInt(), (10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 16 * d
+                setColor(palette.pillBg)
+                setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
+            }
+
+            addView(
+                thumbFrame,
+                LinearLayout.LayoutParams(thumbW, thumbH).apply {
+                    marginEnd = (14 * d).toInt()
+                },
+            )
+
+            addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(
+                        TextView(context).apply {
+                            text = titleText
+                            setTextColor(palette.ink)
+                            textSize = 14.5f
+                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                            isSingleLine = true
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        },
+                    )
+                    addView(
+                        TextView(context).apply {
+                            text = sizeText
+                            setTextColor(palette.inkSecondary)
+                            textSize = 12f
+                            isSingleLine = true
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        },
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            topMargin = (2 * d).toInt()
+                        },
+                    )
+                    addView(
+                        actionRow,
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            topMargin = (10 * d).toInt()
+                        },
+                    )
+                },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
         }
 
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            val padH = (16 * d).toInt()
+            val padH = (20 * d).toInt()
             setPadding(padH, (8 * d).toInt(), padH, (2 * d).toInt())
             addView(cardRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(
@@ -1702,17 +1742,13 @@ internal class GlobalRecognitionWindow(
             }, lp())
         }
 
-        // 选中文字可编辑预览卡片：点选即看全文，点框内直接增删改，复制/分享/翻译/实体直达实时联动
-        val countView = TextView(context).apply {
-            setTextColor(palette.inkSecondary)
-            textSize = 11.5f
-            isSingleLine = true
-        }
+        // 选中文字可编辑预览卡片：无字数统计、默认不显示光标，宽度严格对齐下方按钮行；点击即可编辑且软键盘同步抬起
         val resetView = TextView(context).apply {
             text = "还原"
             setTextColor(0xFF3482FF.toInt())
             textSize = 12f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding((8 * d).toInt(), (2 * d).toInt(), 0, (2 * d).toInt())
             visibility = View.GONE
             setOnClickListener {
                 syncTextPreviewFromSelection()
@@ -1722,16 +1758,26 @@ internal class GlobalRecognitionWindow(
         val editor = EditText(context).apply {
             setTextColor(palette.ink)
             setHintTextColor(palette.inkSecondary)
-            hint = "点击可直接编辑选中文字"
             textSize = 14f
             background = null
-            setPadding(0, (4 * d).toInt(), 0, 0)
+            setPadding(0, 0, 0, 0)
             minLines = 1
             maxLines = 4
             gravity = Gravity.TOP or Gravity.START
+            isCursorVisible = false
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             isVerticalScrollBarEnabled = true
+            setOnFocusChangeListener { _, hasFocus ->
+                isCursorVisible = hasFocus
+            }
+            setOnClickListener {
+                isCursorVisible = true
+                requestFocus()
+            }
             setOnTouchListener { v, ev ->
+                if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                    isCursorVisible = true
+                }
                 if (v.canScrollVertically(1) || v.canScrollVertically(-1)) {
                     v.parent?.requestDisallowInterceptTouchEvent(ev.actionMasked != MotionEvent.ACTION_UP && ev.actionMasked != MotionEvent.ACTION_CANCEL)
                 }
@@ -1745,51 +1791,54 @@ internal class GlobalRecognitionWindow(
                     val cur = s?.toString().orEmpty()
                     val edited = cur != screen.selectedText()
                     textEditedByUser = edited
-                    updateTextPreviewMeta(cur.length, edited)
+                    textPreviewReset?.visibility = if (edited) View.VISIBLE else View.GONE
                     refreshTextEntity()
                 }
             })
         }
         textPreviewEditor = editor
-        textPreviewCount = countView
         textPreviewReset = resetView
 
         val previewCard = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             val padH = (12 * d).toInt()
             val padV = (10 * d).toInt()
             setPadding(padH, padV, padH, padV)
             background = GradientDrawable().apply {
-                cornerRadius = 16 * d
+                cornerRadius = 14 * d
                 setColor(palette.pillBg)
                 setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
             }
-            addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(countView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                    addView(resetView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-            )
-            addView(editor, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(editor, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(resetView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+        val defaultSidePad = (24 * d).toInt()
         val previewWrapper = FrameLayout(context).apply {
-            val padH = (16 * d).toInt()
-            setPadding(padH, (8 * d).toInt(), padH, 0)
+            setPadding(defaultSidePad, (8 * d).toInt(), defaultSidePad, 0)
             addView(previewCard, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
 
         val entitySlot = FrameLayout(context).apply {
-            val padH = (16 * d).toInt()
-            setPadding(padH, (8 * d).toInt(), padH, 0)
+            setPadding(defaultSidePad, (8 * d).toInt(), defaultSidePad, 0)
             visibility = View.GONE
         }
         val translateSlot = FrameLayout(context).apply {
-            val padH = (16 * d).toInt()
-            setPadding(padH, (8 * d).toInt(), padH, 0)
+            setPadding(defaultSidePad, (8 * d).toInt(), defaultSidePad, 0)
             visibility = View.GONE
+        }
+        // 宽度与下方选项行左右边缘 1px 严格对齐
+        row.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (row.childCount > 0) {
+                val leftEdge = row.getChildAt(0).left
+                val rightEdge = (row.width - row.getChildAt(row.childCount - 1).right).coerceAtLeast(0)
+                val side = minOf(leftEdge, rightEdge).coerceIn((16 * d).toInt(), (48 * d).toInt())
+                if (previewWrapper.paddingLeft != side || previewWrapper.paddingRight != side) {
+                    previewWrapper.setPadding(side, previewWrapper.paddingTop, side, 0)
+                    entitySlot.setPadding(side, entitySlot.paddingTop, side, 0)
+                    translateSlot.setPadding(side, translateSlot.paddingTop, side, 0)
+                }
+            }
         }
         textEntitySlot = entitySlot
         textTranslateSlot = translateSlot
