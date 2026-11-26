@@ -202,7 +202,7 @@ object QrJumpResolver {
     }
 
     /** 清理 HTTP(S) 链接里的跟踪参数；保留小红书等携带访问凭据域名的原参数。 */
-    private fun cleanTrackingUrl(url: String): String {
+    internal fun cleanTrackingUrl(url: String): String {
         if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
             return url
         }
