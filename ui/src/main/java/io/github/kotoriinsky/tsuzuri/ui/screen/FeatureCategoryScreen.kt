@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,10 +19,13 @@ import androidx.compose.ui.unit.dp
 import io.github.kotoriinsky.tsuzuri.core.Catalog
 import io.github.kotoriinsky.tsuzuri.core.FeaturePreview
 import io.github.kotoriinsky.tsuzuri.core.FeatureSpec
+import io.github.kotoriinsky.tsuzuri.core.Keys
+import io.github.kotoriinsky.tsuzuri.core.LauncherScope
 import io.github.kotoriinsky.tsuzuri.core.PrefCategory
 import io.github.kotoriinsky.tsuzuri.core.PrefCategoryGroup
 import io.github.kotoriinsky.tsuzuri.core.PrefGroup
 import io.github.kotoriinsky.tsuzuri.core.Prefs
+import io.github.kotoriinsky.tsuzuri.core.SideIndexPreviewPass
 import io.github.kotoriinsky.tsuzuri.core.changedCount
 import io.github.kotoriinsky.tsuzuri.core.geometry.feedsFanPreview
 import io.github.kotoriinsky.tsuzuri.core.isListedInSettings
@@ -31,6 +36,7 @@ import io.github.kotoriinsky.tsuzuri.ui.kit.FpEmphasis
 import io.github.kotoriinsky.tsuzuri.ui.kit.FpSpace
 import io.github.kotoriinsky.tsuzuri.ui.kit.LocalFpKit
 import io.github.kotoriinsky.tsuzuri.ui.kit.ShowScreenHotZones
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.kotoriinsky.tsuzuri.ui.kit.Paragraph
 import io.github.kotoriinsky.tsuzuri.ui.nav.Dest
@@ -102,6 +108,9 @@ fun FeatureCategoryScreen(
                 triggerHotZones(spec, prefs, w, h, metrics.density)
             }
             ShowScreenHotZones(zones)
+            if (spec.key == Catalog.SIDE_INDEX) {
+                SideIndexPreviewPassCard(prefs)
+            }
         }
 
         val visibleGroups = category.groups.mapNotNull { g ->
@@ -181,5 +190,69 @@ fun FeatureCategoryScreen(
         }
 
         kit.VSpace(24.dp)
+    }
+}
+
+/**
+ * 侧滑索引「触发」页的临时通行开关：
+ * 仅在当前页生效，借跨进程瞬态信号向 SystemUI 申请短租期放行，离页自动撤销。
+ */
+@Composable
+private fun SideIndexPreviewPassCard(prefs: Prefs) {
+    val kit = LocalFpKit.current
+    val messages = io.github.kotoriinsky.tsuzuri.ui.kit.LocalFpMessageHost.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val currentScope = prefs.rawString(Keys.pref(Catalog.SIDE_INDEX, "scope"), LauncherScope.LAUNCHER_ONLY)
+    val alreadyCovered = currentScope != LauncherScope.LAUNCHER_ONLY
+    val remoteReady = ConfigStore.isRemote
+    var passEnabled by remember { mutableStateOf(false) }
+    val unavailableText = fpString("side_index.preview_pass.unavailable")
+
+    LaunchedEffect(passEnabled, alreadyCovered) {
+        if (!passEnabled || alreadyCovered) return@LaunchedEffect
+        while (true) {
+            val ok = ConfigStore.signal(
+                SideIndexPreviewPass.SIGNAL_KEY,
+                System.currentTimeMillis() + SideIndexPreviewPass.LEASE_MS,
+            )
+            if (!ok) {
+                passEnabled = false
+                messages.showSnackbar(unavailableText)
+                break
+            }
+            delay(SideIndexPreviewPass.RENEW_INTERVAL_MS)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (passEnabled) {
+                ConfigStore.signal(SideIndexPreviewPass.SIGNAL_KEY, 0L)
+            }
+        }
+    }
+
+    kit.VSpace(FpSpace.s)
+    kit.Card {
+        kit.SwitchRow(
+            title = fpString("side_index.preview_pass.title"),
+            summary = when {
+                alreadyCovered -> fpString("side_index.preview_pass.covered")
+                !remoteReady -> unavailableText
+                else -> fpString("side_index.preview_pass.hint")
+            },
+            checked = alreadyCovered || passEnabled,
+            enabled = !alreadyCovered && remoteReady,
+            onCheckedChange = { on ->
+                if (!on) {
+                    passEnabled = false
+                    ConfigStore.signal(SideIndexPreviewPass.SIGNAL_KEY, 0L)
+                } else if (ConfigStore.isRemote) {
+                    passEnabled = true
+                } else {
+                    scope.launch { messages.showSnackbar(unavailableText) }
+                }
+            },
+        )
     }
 }

@@ -342,6 +342,10 @@
     <string name="side_index_preview_unavailable">预览不可用：参数读取失败</string>
     <string name="side_index_preview_scene_bar">手指在字母条上</string>
     <string name="side_index_preview_scene_panel">手指拖到面板上</string>
+    <string name="side_index_preview_pass_title">页内试划验证</string>
+    <string name="side_index_preview_pass_hint">临时放行当前页边缘触发，离页自动关闭</string>
+    <string name="side_index_preview_pass_covered">当前生效范围已覆盖本页，可直接试划</string>
+    <string name="side_index_preview_pass_unavailable">连接框架后可在本页临时试划</string>
     <string name="side_index_preview_apps">假应用数量</string>
     <string name="pref_side_index_letter_offset">字母条位置</string>
     <string name="pref_side_index_letter_offset_hint">0% 靠上 · 100% 靠下</string>
