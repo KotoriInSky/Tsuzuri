@@ -92,6 +92,9 @@ class BuiltinRulesTest {
                     old.filterIndexed { i, _ -> i != 2 && i != 5 } == now.filterIndexed { i, _ -> i != 2 && i != 5 } &&
                         m.target.startsWith("bdnetdisk://n/action.SHARE_LINK?surl=") &&
                         m.alts.firstOrNull() == "baiduyun://"
+                } else if (old != null && now != null && m?.platform == PasscodeRules.P_ALIYUNPAN && old[4] == null && m.target.contains("/s/")) {
+                    // 阿里云盘 2026-11-26 起支持从 /s/<分享码> 提取核心内容
+                    old.filterIndexed { i, _ -> i != 4 } == now.filterIndexed { i, _ -> i != 4 } && !m.core.isNullOrEmpty()
                 } else {
                     old == now
                 }
@@ -114,14 +117,32 @@ class BuiltinRulesTest {
         val g = MiniJson.parse(resource("passcode_golden.json")) as Map<*, *>
         fun plats(l: Collection<PasscodeRules.Platform>) =
             l.map { "${it.name}|${it.pkg}|${it.accent}|${it.category.wireName}" }.sorted()
-        assertEquals(g["supported"], plats(PasscodeRules.supportedPlatforms()))
-        // 2026-11-26 新增抖音、快手离线裸口令规则，故 command 平台相对迁移基线多此两项
+        // 2026-11-26 补齐全量网盘（123/移动/UC/蓝奏/天翼/115/PikPak/微云/城通/MEGA/Google Drive/OneDrive）与下载协议
+        val addedCloudPlatforms = listOf(
+            "115网盘|com.ylmf.androidclient|#2378F4|image_text",
+            "123云盘|com.mfcloudcalculate.networkdisk|#3B7BFF|image_text",
+            "Google Drive|com.google.android.apps.docs|#0F9D58|image_text",
+            "MEGA|mega.privacy.android.app|#D9272E|image_text",
+            "OneDrive|com.microsoft.skydrive|#0078D4|image_text",
+            "PikPak|com.pikcloud.pikpak|#306EFF|image_text",
+            "UC网盘|com.UCMobile|#FF7F00|image_text",
+            "城通网盘|null|#1677FF|image_text",
+            "天翼云盘|com.cn21.ecloud|#1E88E5|image_text",
+            "微云|com.qq.qcloud|#00A4FF|image_text",
+            "移动云盘|com.chinamobile.mcloud|#0085D0|image_text",
+            "蓝奏云|null|#2F80ED|image_text",
+        )
+        val expectedSupported = ((g["supported"] as List<*>) + addedCloudPlatforms).sortedBy { it.toString() }
+        assertEquals(expectedSupported, plats(PasscodeRules.supportedPlatforms()))
+        // 2026-11-26 新增抖音、快手离线裸口令规则与迅雷磁力/电驴/迅雷下载链规则
         val expectedCommand = ((g["command"] as List<*>) + listOf(
             "抖音|com.ss.android.ugc.aweme|#FE2C55|short_video",
             "快手|com.smile.gifmaker|#FF5001|short_video",
+            "迅雷|com.xunlei.downloadprovider|#4285F4|image_text",
         )).sortedBy { it.toString() }
         assertEquals(expectedCommand, plats(PasscodeRules.commandPlatforms()))
-        assertEquals(g["url"], plats(PasscodeRules.urlPlatforms()))
+        val expectedUrl = ((g["url"] as List<*>) + addedCloudPlatforms).sortedBy { it.toString() }
+        assertEquals(expectedUrl, plats(PasscodeRules.urlPlatforms()))
         assertEquals(g["share"], plats(PasscodeRules.SHARE_PLATFORMS))
     }
 }

@@ -51,7 +51,8 @@ object RuleCapabilities {
      * 不许 `http`、`intent`、`javascript`、`file`、`content`、`data`。
      */
     val TARGET_SCHEMES: Set<String> = setOf(
-        "https", "taobao", "alipays", "baiduyun", "bdnetdisk", "snssdk1128", "kwai",
+        "https", "taobao", "alipays", "baiduyun", "bdnetdisk", "pan", "snssdk1128", "kwai",
+        "magnet", "thunder", "ed2k",
         "qqmusic", "dongqiudi", "huputiyu", "com.sf-express", "openapp.jdlogistic",
     )
 }
@@ -76,12 +77,13 @@ class RuleTemplate private constructor(
     /** 构造器参数省略时的模板。 */
     val hasExplicitArg: Boolean = parts.isNotEmpty()
 
-    /** 字面量开头的 scheme（`https://…` → `https`）；scheme 里有占位符或不是 `x://` 形态返回 null。 */
+    /** 字面量开头的 scheme（`https://…` → `https`，也支持 `magnet:?…`）；含占位符或无 scheme 返回 null。 */
     fun literalScheme(): String? {
         val head = (parts.firstOrNull() as? Lit)?.s ?: return null
         val i = head.indexOf("://")
-        if (i <= 0) return null
-        return head.substring(0, i).lowercase()
+        if (i > 0) return head.substring(0, i).lowercase()
+        if (head.startsWith("magnet:?", ignoreCase = true)) return "magnet"
+        return null
     }
 
     /**

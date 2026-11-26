@@ -47,8 +47,14 @@ class CopyDirectTest {
 
     @Test
     fun `网盘不混入普通网页和口令名单`() {
-        assertTrue(CopyDirect.platformsForAbility("jump_link").any { it.packageName == "com.quark.browser" })
+        val cloudApps = CopyDirect.platformsForAbility("jump_link").mapNotNull { it.packageName }
+        assertTrue("com.quark.browser" in cloudApps)
+        assertTrue("com.quark.clouddrive" in cloudApps)
+        assertTrue("com.mfcloudcalculate.networkdisk" in cloudApps)
+        assertTrue("com.chinamobile.mcloud" in cloudApps)
+        assertTrue("com.xunlei.downloadprovider" in cloudApps)
         assertFalse(CopyDirect.platformsForAbility("command").any { it.packageName == "com.quark.browser" })
+        assertFalse(CopyDirect.platformsForAbility("command").any { it.packageName == "com.xunlei.downloadprovider" })
         assertFalse(CopyDirect.platformsForAbility("jump_url").any { it.packageName == "com.quark.browser" })
     }
 

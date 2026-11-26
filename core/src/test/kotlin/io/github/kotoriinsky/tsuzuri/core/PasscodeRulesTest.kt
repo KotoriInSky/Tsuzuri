@@ -842,4 +842,44 @@ class PasscodeRulesTest {
         assertNull(match("¥AbCdEfGh12￥"))
         assertNull(match("我在淘宝买了一件衣服"))
     }
+
+    @Test
+    fun `全量网盘与磁力电驴迅雷下载协议识别并提取核心标识`() {
+        val pan123 = match("https://www.123684.com/s/XfT9-YxPod.html")
+        assertNotNull(pan123)
+        assertEquals(PasscodeRules.P_PAN123, pan123.platform)
+        assertEquals("pan://", pan123.target)
+        assertEquals(listOf("https://www.123684.com/s/XfT9-YxPod.html"), pan123.alts)
+        assertEquals("XfT9-YxPod", pan123.core)
+
+        assertEquals(PasscodeRules.P_MCLOUD, match("https://caiyun.139.com/m/i?123456")?.platform)
+        assertEquals(PasscodeRules.P_UCPAN, match("https://drive.uc.cn/s/abcdef1234")?.platform)
+        assertEquals(PasscodeRules.P_LANZOU, match("https://wwa.lanzoux.com/iS52f26ttyab")?.platform)
+        assertEquals("iS52f26ttyab", match("https://wwa.lanzoux.com/iS52f26ttyab")?.core)
+        assertEquals(PasscodeRules.P_CLOUD189, match("https://cloud.189.cn/t/nEanIvr2Uv6z")?.platform)
+        assertEquals("nEanIvr2Uv6z", match("https://cloud.189.cn/t/nEanIvr2Uv6z")?.core)
+        assertEquals(PasscodeRules.P_PAN115, match("https://115.com/s/sw3abcd1234")?.platform)
+        assertEquals(PasscodeRules.P_PIKPAK, match("https://mypikpak.com/s/VN12345678")?.platform)
+        assertEquals(PasscodeRules.P_WEIYUN, match("https://share.weiyun.com/AbCdEf12")?.platform)
+        assertEquals(PasscodeRules.P_CTFILE, match("https://url12.ctfile.com/f/123456-789012-abcd")?.platform)
+        assertEquals(PasscodeRules.P_MEGA, match("https://mega.nz/file/AbCdEf12#key12345")?.platform)
+        assertEquals(PasscodeRules.P_GDRIVE, match("https://drive.google.com/file/d/1AbCdEfGh/view")?.platform)
+        assertEquals(PasscodeRules.P_ONEDRIVE, match("https://1drv.ms/u/s!AbCdEf123456")?.platform)
+
+        val magnet = match("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=demo")
+        assertNotNull(magnet)
+        assertEquals("magnet_link", magnet.ruleId)
+        assertEquals(PasscodeRules.P_XUNLEI, magnet.platform)
+        assertEquals("0123456789ABCDEF0123456789ABCDEF01234567", magnet.core)
+
+        val thunder = match("thunder://QUFodHRwOi8vZXhhbXBsZS5jb20vWlo=")
+        assertNotNull(thunder)
+        assertEquals("thunder_link", thunder.ruleId)
+        assertEquals(PasscodeRules.P_XUNLEI, thunder.platform)
+
+        val ed2k = match("ed2k://|file|test.zip|1024|0123456789ABCDEF0123456789ABCDEF|/")
+        assertNotNull(ed2k)
+        assertEquals("ed2k_link", ed2k.ruleId)
+        assertEquals(PasscodeRules.P_XUNLEI, ed2k.platform)
+    }
 }

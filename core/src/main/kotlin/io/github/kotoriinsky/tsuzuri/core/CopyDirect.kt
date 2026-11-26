@@ -50,6 +50,7 @@ object CopyDirect {
         Platform("com.ss.android.ugc.aweme.lite", "抖音极速版", "com.ss.android.ugc.aweme.lite"),
         Platform("com.ss.android.ugc.live", "抖音火山版", "com.ss.android.ugc.live"),
         Platform("cn.wps.moffice_eng", "WPS", "cn.wps.moffice_eng"),
+        Platform("com.quark.clouddrive", "夸克网盘", "com.quark.clouddrive"),
         Platform("com.android.browser", "小米浏览器", "com.android.browser"),
     )
 
@@ -59,7 +60,23 @@ object CopyDirect {
                 Platform(it.platformPkg ?: "custom:${it.id}", it.platformName ?: it.label, it.platformPkg)
             }).distinctBy { it.id }
 
-    private val cloudPackages = setOf("com.baidu.netdisk", "com.xunlei.downloadprovider", "com.quark.browser", "com.alicloud.databox")
+    private val cloudPackages = setOf(
+        "com.baidu.netdisk",
+        "com.xunlei.downloadprovider",
+        "com.quark.browser",
+        "com.quark.clouddrive",
+        "com.alicloud.databox",
+        "com.mfcloudcalculate.networkdisk",
+        "com.chinamobile.mcloud",
+        "com.UCMobile",
+        "com.cn21.ecloud",
+        "com.ylmf.androidclient",
+        "com.pikcloud.pikpak",
+        "com.qq.qcloud",
+        "mega.privacy.android.app",
+        "com.google.android.apps.docs",
+        "com.microsoft.skydrive",
+    )
 
     /** 按原生许可类型补充：裸口令、网盘分享、网页链接各自登记。 */
     fun platformsForAbility(ability: String, customRules: List<PasscodeCustomRules.Rule> = emptyList()): List<Platform> {

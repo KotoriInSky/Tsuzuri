@@ -357,6 +357,18 @@ object PasscodeRules {
     val P_QUARKPAN = builtin("quarkpan")
     val P_ALIYUNPAN = builtin("aliyunpan")
     val P_XUNLEI = builtin("xunlei")
+    val P_PAN123 = builtin("pan123")
+    val P_MCLOUD = builtin("mcloud")
+    val P_UCPAN = builtin("ucpan")
+    val P_LANZOU = builtin("lanzou")
+    val P_CLOUD189 = builtin("cloud189")
+    val P_PAN115 = builtin("pan115")
+    val P_PIKPAK = builtin("pikpak")
+    val P_WEIYUN = builtin("weiyun")
+    val P_CTFILE = builtin("ctfile")
+    val P_MEGA = builtin("mega")
+    val P_GDRIVE = builtin("gdrive")
+    val P_ONEDRIVE = builtin("onedrive")
     val P_AMAP = builtin("amap")
     val P_BAIDUMAP = builtin("baidumap")
     val P_CTRIP = builtin("ctrip")
@@ -756,6 +768,8 @@ object PasscodeRules {
      * 携带 `surl` 与提取码进入分享页；不满足形态或无提取码解析失败时回落 `baiduyun://` + 网页）。
      */
     private const val BAIDU_PAN_SCHEME = "baiduyun://"
+    /** 123云盘未声明 https App Links，但 `pan://` 唯一解析到 `com.mfcloudcalculate.networkdisk/.activity.LauncherActivity`（2026-11-26 真机取证）。 */
+    private const val PAN123_SCHEME = "pan://"
 
     private val BAIDU_PAN_SHARE_CODE = Regex("""/s/([0-9A-Za-z_-]{4,})""")
     private val BAIDU_PAN_SURL_PARAM = Regex("""[?&]surl=([0-9A-Za-z_-]{4,})""")
@@ -1130,14 +1144,19 @@ object PasscodeRules {
                 // `isIdLike(core)`：只有取到「像号」的分享码时才换 —— scheme 目标的 URL
                 // 身份算不出来，不设门就会让不同分享撞成同一条通知（单测钉住）。
                 val panApp = platform == P_BAIDUPAN && core != null && PasscodeIsland.isIdLike(core)
-                val panTarget = if (panApp) baiduPanShareTarget(url, t) ?: BAIDU_PAN_SCHEME else url
-                val panAlts = if (panApp) {
-                    listOf(BAIDU_PAN_SCHEME, url).filter { it != panTarget }
-                } else {
-                    articleAppTargets(url, platform.pkg)
+                val pan123App = platform == P_PAN123 && core != null && PasscodeIsland.isIdLike(core)
+                val finalTarget = when {
+                    panApp -> baiduPanShareTarget(url, t) ?: BAIDU_PAN_SCHEME
+                    pan123App -> PAN123_SCHEME
+                    else -> url
+                }
+                val finalAlts = when {
+                    panApp -> listOf(BAIDU_PAN_SCHEME, url).filter { it != finalTarget }
+                    pan123App -> listOf(url)
+                    else -> articleAppTargets(url, platform.pkg)
                 }
                 return Match(
-                    "url", urlLabel(known), panTarget, platform, core, panAlts,
+                    "url", urlLabel(known), finalTarget, platform, core, finalAlts,
                 )
             }
             // 非白名单域且 generic 关着 → 这条 URL 不弹，继续往下试裸口令/内容号
@@ -1235,9 +1254,14 @@ object PasscodeRules {
         // 以前一律取裸数字，`song?id=123` 与 `playlist?id=123` 会被当成**同一条内容**去重。
         // 歌曲保持裸数字（与旧身份兼容），其余类型带上类型前缀。
         P_NETEASE -> neteaseId(url)
-        // 网盘分享码：夸克/迅雷与百度同形（`/s/<码>`）。⚠️ 这个形态来自分享链的通行约定，
-        // **还没有真实样本逐条验证**，错了也只是抽不到号（与改动前一样），不会更差。
-        P_QUARKPAN, P_XUNLEI -> firstId(url, Regex("""/s/([0-9A-Za-z_-]{6,})"""))
+        // 网盘分享码：夸克/迅雷/阿里/123/UC/115/PikPak/天翼/微云/蓝奏/城通
+        P_QUARKPAN, P_XUNLEI, P_ALIYUNPAN, P_UCPAN, P_PAN115, P_PIKPAK ->
+            firstId(url, Regex("""/s/([0-9A-Za-z_-]{6,})"""))
+        P_PAN123 -> firstId(url, Regex("""/s/([0-9A-Za-z_-]{4,})(?:\.html)?"""))
+        P_CLOUD189 -> firstId(url, Regex("""/t/([0-9A-Za-z_-]{6,})"""), Regex("""[?&]code=([0-9A-Za-z_-]{6,})"""))
+        P_WEIYUN -> firstId(url, Regex("""share\.weiyun\.com/([0-9A-Za-z_-]{5,})"""))
+        P_LANZOU -> firstId(url, Regex("""/(?:tp/|s/)?([0-9A-Za-z]{6,20})(?:[/?#]|$)"""))
+        P_CTFILE -> firstId(url, Regex("""/[fd]/([0-9A-Za-z_-]{6,})"""))
         else -> null
     }?.let { id ->
         // owner/repo 这类可能超长的截断到展示预算内
