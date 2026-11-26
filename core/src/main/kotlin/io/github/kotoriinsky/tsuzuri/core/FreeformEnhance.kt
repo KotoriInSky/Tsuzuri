@@ -39,6 +39,50 @@ object FreeformEnhance {
         "android",
     )
 
+    /** 竖屏迷你小窗略微放大倍率（贴近 Flyme 大小迷你窗两档切换）。 */
+    const val MINI_ENLARGE_FACTOR_PORTRAIT = 1.38f
+
+    /** 横屏视频迷你小窗略微放大倍率（方便看清字幕/直播画面）。 */
+    const val MINI_ENLARGE_FACTOR_LANDSCAPE = 1.45f
+
+    /**
+     * 计算迷你小窗切换为「略微放大」形态时的目标缩放比。
+     *
+     * 约束：
+     *  - 竖屏窗口宽/高均不超过可移动区域的 56%，且不超过普通小窗缩放比的 84%；
+     *  - 横屏窗口宽不超过可移动区域的 88%、高不超过 52%，且不超过普通小窗缩放比的 92%；
+     *  - 若受限于屏幕或普通小窗尺寸已无足够放大空间（< 1.05x），则返回原缩放比。
+     */
+    fun computeEnlargedMiniScale(
+        baseScale: Float,
+        rawWidth: Int,
+        rawHeight: Int,
+        movableWidth: Int,
+        movableHeight: Int,
+        restoreScale: Float,
+        isLandscape: Boolean,
+    ): Float {
+        if (!baseScale.isFinite() || baseScale <= 0f || rawWidth <= 0 || rawHeight <= 0) {
+            return baseScale
+        }
+        val factor = if (isLandscape) MINI_ENLARGE_FACTOR_LANDSCAPE else MINI_ENLARGE_FACTOR_PORTRAIT
+        var target = baseScale * factor
+
+        if (movableWidth > 0) {
+            val maxW = movableWidth * if (isLandscape) 0.88f else 0.56f
+            target = minOf(target, maxW / rawWidth.toFloat())
+        }
+        if (movableHeight > 0) {
+            val maxH = movableHeight * if (isLandscape) 0.52f else 0.56f
+            target = minOf(target, maxH / rawHeight.toFloat())
+        }
+        if (restoreScale.isFinite() && restoreScale > baseScale) {
+            val restoreCap = restoreScale * if (isLandscape) 0.92f else 0.84f
+            target = minOf(target, restoreCap)
+        }
+        return if (target >= baseScale * 1.05f) target else baseScale
+    }
+
     data class Config(
         val ephemeralRecents: Boolean,
         val ephemeralScope: String,
