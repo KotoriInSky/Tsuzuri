@@ -948,96 +948,156 @@ internal class GlobalRecognitionWindow(
             return
         }
         compactCard(c)
+        val hasCustomSave = enhanceCardActions(c, crop, result)
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
         val qrSlot = FrameLayout(context)
-        val header = imageHeaderBar(crop, result, qrSlot)
-        container.addView(
-            header,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-        )
+        // 仿照长按传送门跳出的识图卡片：上方统一细线按钮区，下方居中同比例纯净预览图（零参数信息）
         container.addView(
             c,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
+        container.addView(
+            imagePreviewBlock(crop, result, qrSlot),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
         setSheet(container)
-        closeAfterActions(c)
+        closeAfterActions(c, skipSaveTouch = hasCustomSave)
         // 对选定/微调后的高分裁图做一次局部二维码精扫（补齐整屏初扫可能漏掉的超小码/反色码）
         scanCroppedQrAsync(crop, qrSlot)
     }
 
     /**
-     * 图片面板顶部的同比例预览与操作卡片：
-     * - 左侧：按原图真实宽高比缩放的圆角缩略图（不裁切，动图同比例循环播、实况带右下橙环）；
-     * - 右侧：上层展示格式与完整分辨率体积，下层左对齐放置「复制」与「存原图 / 存动图 / 存实况」胶囊，
-     *   信息与按钮互不挤压，垂直高度与缩略图自然对齐；
-     * - 局部二维码直达条独立排在卡片下方。
+     * 无缝融入宿主识图卡片按钮行（与长按传送门同款统一风格）：
+     * - 抓到实况照片 / 原动图 / 无损原图时，直接升级「保存」按钮为无损保存（不再出现两个保存按钮）；
+     * - 在按钮行中以相同细线图标 + 配色加入「复制」按钮。
+     * @return 是否接管了保存按钮（true 时无需再走宿主保存监听）。
      */
-    private fun imageHeaderBar(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
+    private fun enhanceCardActions(card: View, crop: Bitmap, result: SourceImageClient.Result?): Boolean {
         val rawBytes = result?.rawBytes
         val liveVideo = result?.liveVideoBytes
         val isLive = rawBytes != null && liveVideo != null
         val mime = result?.mime
         val animated = result?.animated == true && rawBytes != null
-        val fmtTag = when (mime) {
-            "image/gif" -> "GIF"
-            "image/webp" -> "WebP"
-            "image/avif" -> "AVIF"
-            "image/heic" -> "HEIC"
-            "image/heif" -> "HEIF"
-            "image/jpeg" -> "JPEG"
-            "image/png" -> "PNG"
+
+        var customSaveHooked = false
+        val saveId = context.resources.getIdentifier("edit_image", "id", context.packageName)
+        val saveView = card.findViewWithTag<View>(SAVE_CELL_TAG)
+            ?: (if (saveId != 0) card.findViewById<View>(saveId) else null)
+        if (saveView != null && (isLive || rawBytes != null)) {
+            saveView.setOnClickListener {
+                when {
+                    isLive && rawBytes != null && liveVideo != null -> saveMotionPhotoToGallery(rawBytes, liveVideo)
+                    rawBytes != null -> saveRawMediaToGallery(rawBytes, mime, animated)
+                }
+            }
+            customSaveHooked = true
+        }
+
+        // 在 PortalImageActions 扩展行里并入同风格细线「复制」按钮；找不到扩展行时自动补一行
+        val actionRow = card.findViewWithTag<ViewGroup>(ACTION_ROW_TAG)
+        val copyCell = buildCopyActionCell(crop)
+        if (actionRow != null && actionRow.findViewWithTag<View>(COPY_CELL_TAG) == null) {
+            // 克隆现有同级按钮的布局参数（均分权重或等距），保持视觉严丝合缝
+            val sampleLp = (0 until actionRow.childCount).map { actionRow.getChildAt(it) }
+                .firstOrNull { it.visibility == View.VISIBLE }?.layoutParams
+            val lp = if (sampleLp is LinearLayout.LayoutParams && sampleLp.weight > 0f) {
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, sampleLp.weight)
+            } else {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+            actionRow.addView(copyCell, lp)
+        } else if (actionRow == null && card is ViewGroup) {
+            val fallbackRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                setPadding(0, (6 * d).toInt(), 0, (12 * d).toInt())
+                addView(copyCell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+            card.addView(fallbackRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        return customSaveHooked
+    }
+
+    private fun buildCopyActionCell(crop: Bitmap): View {
+        val ink = palette.ink
+        val iconSide = (HOST_ICON_SLOT_DP * d).toInt()
+        return LinearLayout(context).apply {
+            tag = COPY_CELL_TAG
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(
+                ImageView(context).apply {
+                    setImageDrawable(PortalImageActions.PortalStrokeIcon(PortalImageActions.PortalIcon.COPY, ink, iconSide))
+                },
+                LinearLayout.LayoutParams(iconSide, iconSide).apply {
+                    marginEnd = (HOST_ICON_GAP_DP * d).toInt()
+                },
+            )
+            addView(
+                TextView(context).apply {
+                    text = "复制"
+                    setTextColor(ink)
+                    textSize = HOST_TEXT_SP
+                    isSingleLine = true
+                },
+            )
+            setOnClickListener {
+                PortalImageActions.copyBitmapToClipboard(context, crop) { ok ->
+                    if (closing) return@copyBitmapToClipboard
+                    if (ok) {
+                        confirm("已复制图片", true)
+                        host.log(Log.INFO, "已复制选区图片 ${crop.width}x${crop.height}")
+                    } else {
+                        toast("复制图片失败")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 仿照长按传送门跳出的图片预览区：
+     * 去除一切文字参数条，只保留居中同比例不裁切的圆角大图；
+     * 仅实况照片 / 动图在右下角叠一枚极克制角标，局部二维码直达条紧贴下方。
+     */
+    private fun imagePreviewBlock(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
+        val rawBytes = result?.rawBytes
+        val liveVideo = result?.liveVideoBytes
+        val isLive = rawBytes != null && liveVideo != null
+        val mime = result?.mime
+        val animated = result?.animated == true && rawBytes != null
+        val badgeText = when {
+            isLive -> "实况"
+            animated && mime == "image/gif" -> "GIF"
+            animated && mime == "image/webp" -> "WebP"
+            animated -> "动图"
             else -> null
         }
-        val titleText = when {
-            isLive -> "实况照片"
-            animated -> "${fmtTag ?: "动图"} 动图"
-            rawBytes != null -> if (fmtTag != null) "原图 · $fmtTag" else "原图"
-            result?.bitmap != null -> "原图"
-            else -> "选区图片"
-        }
-        val sizeText = buildString {
-            append("${crop.width} × ${crop.height}")
-            val bytes = when {
-                isLive -> rawBytes.size.toLong() + liveVideo.size.toLong()
-                rawBytes != null -> rawBytes.size.toLong()
-                else -> 0L
-            }
-            if (bytes > 0L) {
-                append(" · ")
-                append(
-                    if (bytes >= 1024L * 1024L) {
-                        String.format(java.util.Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
-                    } else {
-                        "${(bytes / 1024L).coerceAtLeast(1L)} KB"
-                    },
-                )
-            }
-        }
 
-        // 同比例计算缩略图尺寸（横图最大 116×78dp，竖图最高 82dp、最窄 44dp，保持原图真实比例不裁切）
+        // 同比例计算预览尺寸（不裁切：最大高 200dp，最大宽占屏幕宽减左右 24dp）
+        val screenW = context.resources.displayMetrics.widthPixels
+        val maxW = (screenW - (48 * d).toInt()).coerceAtLeast((160 * d).toInt())
+        val maxH = (200 * d).toInt()
         val aspect = crop.width.toFloat() / crop.height.coerceAtLeast(1).toFloat()
-        val thumbWdp: Float
-        val thumbHdp: Float
-        if (aspect >= 1f) {
-            thumbWdp = (78f * aspect).coerceIn(52f, 116f)
-            thumbHdp = (thumbWdp / aspect).coerceIn(44f, 78f)
+        val previewW: Int
+        val previewH: Int
+        if (maxW.toFloat() / maxH.toFloat() >= aspect) {
+            previewH = maxH
+            previewW = (maxH * aspect).toInt().coerceIn((72 * d).toInt(), maxW)
         } else {
-            thumbHdp = 82f
-            thumbWdp = (thumbHdp * aspect).coerceIn(44f, 82f)
+            previewW = maxW
+            previewH = (maxW / aspect).toInt().coerceIn((64 * d).toInt(), maxH)
         }
-        val thumbW = (thumbWdp * d).toInt()
-        val thumbH = (thumbHdp * d).toInt()
-        val thumbCorner = 10 * d
+        val corner = 14 * d
 
-        val thumbView = ImageView(context).apply {
+        val imageView = ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = false
             clipToOutline = true
             outlineProvider = object : android.view.ViewOutlineProvider() {
                 override fun getOutline(v: View, o: android.graphics.Outline) {
-                    o.setRoundRect(0, 0, v.width, v.height, thumbCorner)
+                    o.setRoundRect(0, 0, v.width, v.height, corner)
                 }
             }
             var boundAnimated = false
@@ -1057,161 +1117,70 @@ internal class GlobalRecognitionWindow(
                 setImageBitmap(crop)
             }
         }
-        val thumbFrame = FrameLayout(context).apply {
+
+        val frame = FrameLayout(context).apply {
             background = GradientDrawable().apply {
-                cornerRadius = thumbCorner
-                setColor(if (palette.dark) 0xFF14161A.toInt() else 0xFFE6E9EF.toInt())
+                cornerRadius = corner
+                setColor(if (palette.dark) 0xFF14161A.toInt() else 0xFFEAECEF.toInt())
                 setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
             }
-            addView(thumbView, FrameLayout.LayoutParams(thumbW, thumbH))
-            if (isLive) {
-                addView(
-                    View(context).apply {
-                        background = GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(0xCC1A1A1A.toInt())
-                            setStroke((1.8f * d).toInt().coerceAtLeast(2), 0xFFFF9F0A.toInt())
-                        }
-                    },
-                    FrameLayout.LayoutParams((14 * d).toInt(), (14 * d).toInt(), Gravity.BOTTOM or Gravity.END).apply {
-                        marginEnd = (5 * d).toInt()
-                        bottomMargin = (5 * d).toInt()
-                    },
-                )
-            }
-        }
-
-        val actionRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(
-                actionChip(
-                    label = "复制",
-                    textColor = palette.ink,
-                    bgColor = if (palette.dark) 0xFF3A3F4B.toInt() else Color.WHITE,
-                    strokeColor = palette.sheetStroke,
-                ) {
-                    PortalImageActions.copyBitmapToClipboard(context, crop) { ok ->
-                        if (closing) return@copyBitmapToClipboard
-                        if (ok) {
-                            confirm("已复制图片", true)
-                            host.log(Log.INFO, "已复制选区图片 ${crop.width}x${crop.height}")
-                        } else {
-                            toast("复制图片失败")
-                        }
+            addView(imageView, FrameLayout.LayoutParams(previewW, previewH))
+            if (badgeText != null) {
+                val badge = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding((8 * d).toInt(), (4 * d).toInt(), (8 * d).toInt(), (4 * d).toInt())
+                    background = GradientDrawable().apply {
+                        cornerRadius = 10 * d
+                        setColor(0x99121418.toInt())
                     }
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-            )
-            if (isLive && rawBytes != null && liveVideo != null) {
-                addView(
-                    actionChip("存实况", Color.WHITE, 0xFFFF9F0A.toInt()) {
-                        saveMotionPhotoToGallery(rawBytes, liveVideo)
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        marginStart = (8 * d).toInt()
-                    },
-                )
-            } else if (rawBytes != null) {
-                val saveLabel = if (animated) "存动图" else "存原图"
-                addView(
-                    actionChip(saveLabel, Color.WHITE, 0xFF3482FF.toInt()) {
-                        saveRawMediaToGallery(rawBytes, mime, animated)
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        marginStart = (8 * d).toInt()
-                    },
-                )
-            }
-        }
-
-        val cardRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((12 * d).toInt(), (10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 16 * d
-                setColor(palette.pillBg)
-                setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
-            }
-
-            addView(
-                thumbFrame,
-                LinearLayout.LayoutParams(thumbW, thumbH).apply {
-                    marginEnd = (14 * d).toInt()
-                },
-            )
-
-            addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
+                    if (isLive) {
+                        addView(
+                            View(context).apply {
+                                background = GradientDrawable().apply {
+                                    shape = GradientDrawable.OVAL
+                                    setColor(Color.TRANSPARENT)
+                                    setStroke((1.6f * d).toInt().coerceAtLeast(2), 0xFFFF9F0A.toInt())
+                                }
+                            },
+                            LinearLayout.LayoutParams((10 * d).toInt(), (10 * d).toInt()).apply {
+                                marginEnd = (4 * d).toInt()
+                            },
+                        )
+                    }
                     addView(
                         TextView(context).apply {
-                            text = titleText
-                            setTextColor(palette.ink)
-                            textSize = 14.5f
+                            text = badgeText
+                            setTextColor(Color.WHITE)
+                            textSize = 11f
                             typeface = android.graphics.Typeface.DEFAULT_BOLD
                             isSingleLine = true
-                            ellipsize = android.text.TextUtils.TruncateAt.END
                         },
                     )
-                    addView(
-                        TextView(context).apply {
-                            text = sizeText
-                            setTextColor(palette.inkSecondary)
-                            textSize = 12f
-                            isSingleLine = true
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                        },
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                            topMargin = (2 * d).toInt()
-                        },
-                    )
-                    addView(
-                        actionRow,
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                            topMargin = (10 * d).toInt()
-                        },
-                    )
-                },
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-            )
+                }
+                addView(
+                    badge,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply {
+                        marginEnd = (8 * d).toInt()
+                        bottomMargin = (8 * d).toInt()
+                    },
+                )
+            }
         }
 
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            val padH = (20 * d).toInt()
-            setPadding(padH, (8 * d).toInt(), padH, (2 * d).toInt())
-            addView(cardRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            gravity = Gravity.CENTER_HORIZONTAL
+            val padH = (24 * d).toInt()
+            setPadding(padH, (2 * d).toInt(), padH, (6 * d).toInt())
+            addView(frame, LinearLayout.LayoutParams(previewW, previewH))
             addView(
                 qrSlot,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (6 * d).toInt()
+                    topMargin = (8 * d).toInt()
                 },
             )
         }
-    }
-
-    private fun actionChip(
-        label: String,
-        textColor: Int,
-        bgColor: Int,
-        strokeColor: Int = Color.TRANSPARENT,
-        onClick: () -> Unit,
-    ): TextView = TextView(context).apply {
-        text = label
-        setTextColor(textColor)
-        textSize = 12.5f
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-        setPadding((12 * d).toInt(), (7 * d).toInt(), (12 * d).toInt(), (7 * d).toInt())
-        background = GradientDrawable().apply {
-            cornerRadius = 16 * d
-            setColor(bgColor)
-            if (strokeColor != Color.TRANSPARENT) {
-                setStroke((1 * d).toInt().coerceAtLeast(1), strokeColor)
-            }
-        }
-        setOnClickListener { onClick() }
     }
 
     /** 把主静图 JPEG 与短视频 MP4 拼成标准 Google/MIUI Motion Photo 实况照片写入系统图库。 */
@@ -1381,18 +1350,21 @@ internal class GlobalRecognitionWindow(
      * 结果提示：宿主的成功 / 失败 toast 被截下，改在本界面中央显示（[onSaveResult]）；截不到时仍是宿主自己弹。
      * 保存按钮可能是宿主原来的 `edit_image`，也可能是 [PortalImageActions] 换上的那一格（tag 区分）。
      */
-    private fun closeAfterActions(card: View) {
+    private fun closeAfterActions(card: View, skipSaveTouch: Boolean = false) {
         val saveId = context.resources.getIdentifier("edit_image", "id", context.packageName)
         fun walk(v: View) {
             if (v.hasOnClickListeners()) {
+                val isCopy = v.tag == COPY_CELL_TAG
                 val isSave = (saveId != 0 && v.id == saveId) || v.tag == SAVE_CELL_TAG
-                v.setOnTouchListener { view, e ->
-                    if (e.actionMasked == MotionEvent.ACTION_UP && view.isEnabled &&
-                        e.x in 0f..view.width.toFloat() && e.y in 0f..view.height.toFloat()
-                    ) {
-                        if (isSave) watchSave() else main.postDelayed(::close, CLOSE_AFTER_ACTION_MS)
+                if (!isCopy && !(skipSaveTouch && isSave)) {
+                    v.setOnTouchListener { view, e ->
+                        if (e.actionMasked == MotionEvent.ACTION_UP && view.isEnabled &&
+                            e.x in 0f..view.width.toFloat() && e.y in 0f..view.height.toFloat()
+                        ) {
+                            if (isSave) watchSave() else main.postDelayed(::close, CLOSE_AFTER_ACTION_MS)
+                        }
+                        false
                     }
-                    false
                 }
             }
             if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
@@ -2667,6 +2639,8 @@ internal class GlobalRecognitionWindow(
         const val SAVE_WATCH_MS = 15_000L
         /** [PortalImageActions] 换上的保存格的 tag（它的 TAG_PREFIX + 「保存」）。 */
         const val SAVE_CELL_TAG = "fp_portal_action_保存"
+        const val ACTION_ROW_TAG = "fp_portal_action_row"
+        const val COPY_CELL_TAG = "fp_portal_action_复制"
         /** 中央结果提示：淡入放大、停留、淡出，共约 1.5s（Flyme「已保存到图库」的节奏）。 */
         const val CONFIRM_IN_MS = 180L
         const val CONFIRM_HOLD_MS = 1100L
