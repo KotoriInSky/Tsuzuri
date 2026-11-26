@@ -78,9 +78,11 @@ internal object GlobalRecognitionTrigger : Feature(Catalog.require(Catalog.GLOBA
                         return
                     }
                     if (!HookRegistry.prefs().isEnabled(key)) return
-                    collapse(c)
+                    val instant = intent.getBooleanExtra(GlobalRecognition.EXTRA_INSTANT, false)
+                    if (!instant) collapse(c)
                     main.removeCallbacks(wake)
-                    main.postDelayed(wake, GlobalRecognition.COLLAPSE_WAIT_MS)
+                    val waitMs = if (instant) GlobalRecognition.INSTANT_WAIT_MS else GlobalRecognition.COLLAPSE_WAIT_MS
+                    main.postDelayed(wake, waitMs)
                 } catch (t: Throwable) {
                     // SystemUI 里逃出去的异常 = 黑屏
                     ctx.log(Log.WARN, "[$TAG] 处理磁贴请求失败", t)

@@ -6,6 +6,7 @@ import android.graphics.BlendMode
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import android.graphics.Shader
@@ -33,7 +34,7 @@ internal class RecognitionFx(
     private val d: Float,
     private val invalidate: () -> Unit,
     private val log: (String) -> Unit,
-) {
+) : RecognitionEffect {
 
     private enum class Phase { IDLE, SPHERE, BURST, COLLAPSE, DONE }
 
@@ -87,7 +88,7 @@ internal class RecognitionFx(
      * 扩散圈的进度，给结果亮起用：炸开前 -1（都不亮），炸开中 0..1，结束或系统关了动画时取一个大值（都全亮）。
      * 与粒子同一套「按方向归一化」的坐标。
      */
-    var wave = -1f
+    override var wave = -1f
         private set
 
     private val glowPaint = Paint().apply { blendMode = BlendMode.PLUS }
@@ -98,12 +99,12 @@ internal class RecognitionFx(
 
     private val clock = TimeAnimator().apply { setTimeListener { _, _, _ -> invalidate() } }
 
-    val active get() = phase == Phase.SPHERE || phase == Phase.BURST || phase == Phase.COLLAPSE
+    override val active get() = phase == Phase.SPHERE || phase == Phase.BURST || phase == Phase.COLLAPSE
 
     /** 聚拢完成、并露足最少时间的时刻；早于它到的结果要等到这时再炸。 */
-    fun burstReadyAt(): Long = if (phase == Phase.SPHERE) t0 + GATHER_MS + MIN_SHOW_MS else 0L
+    override fun burstReadyAt(): Long = if (phase == Phase.SPHERE) t0 + GATHER_MS + MIN_SHOW_MS else 0L
 
-    fun start() {
+    override fun start() {
         if (!ValueAnimator.areAnimatorsEnabled()) {
             phase = Phase.DONE
             wave = DONE_WAVE
@@ -135,7 +136,7 @@ internal class RecognitionFx(
     }
 
     /** 结果到了：从当前帧的位置炸开。[w]、[h] 是画布尺寸。 */
-    fun burst(w: Int, h: Int) {
+    override fun burst(w: Int, h: Int) {
         if (phase != Phase.SPHERE || w <= 0 || h <= 0) { finish(); return }
         val cx = w / 2f
         val cy = h / 2f
@@ -168,7 +169,7 @@ internal class RecognitionFx(
     }
 
     /** 什么都没识别到：粒子向球心塌缩、淡出。 */
-    fun collapse(w: Int, h: Int) {
+    override fun collapse(w: Int, h: Int) {
         if (phase != Phase.SPHERE) { finish(); return }
         sphere(SystemClock.uptimeMillis(), w / 2f, h / 2f)
         for (i in 0 until n) { bx[i] = px[i]; by[i] = py[i] }
@@ -176,9 +177,19 @@ internal class RecognitionFx(
         phase = Phase.COLLAPSE
     }
 
-    fun stop() {
+    override fun stop() {
         clock.cancel()
         if (phase != Phase.DONE) phase = Phase.DONE
+    }
+
+    override fun revealPos(r: RectF, w: Int, h: Int): Float {
+        val cx = w / 2f
+        val cy = h / 2f
+        val x = if (cx in r.left..r.right) cx else if (abs(r.left - cx) < abs(r.right - cx)) r.left else r.right
+        val y = if (cy in r.top..r.bottom) cy else if (abs(r.top - cy) < abs(r.bottom - cy)) r.top else r.bottom
+        val dist = hypot(x - cx, y - cy)
+        if (dist < 1f) return 0f
+        return (dist / edgeDistance(kotlin.math.atan2(y - cy, x - cx), cx, cy)).coerceIn(0f, 1f)
     }
 
     private fun finish() {
@@ -197,7 +208,7 @@ internal class RecognitionFx(
         return min(dx, dy)
     }
 
-    fun draw(canvas: Canvas, w: Int, h: Int) {
+    override fun draw(canvas: Canvas, w: Int, h: Int) {
         if (!active || w <= 0 || h <= 0) return
         val now = SystemClock.uptimeMillis()
         val cx = w / 2f

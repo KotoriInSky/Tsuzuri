@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.database.ContentObserver
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -38,6 +39,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import io.github.kotoriinsky.tsuzuri.core.GlobalRecognition
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.LocalQrScanner
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalImageActions
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalOcrSelect
@@ -57,6 +59,7 @@ internal class GlobalRecognitionWindow(
     private val context: Context,
     val shot: Shot,
     private val host: Host,
+    private val fxStyle: String = GlobalRecognition.FX_AURORA,
     private val onClosed: () -> Unit,
 ) {
 
@@ -82,9 +85,58 @@ internal class GlobalRecognitionWindow(
     private val main = Handler(Looper.getMainLooper())
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val d = context.resources.displayMetrics.density
+    private val palette = Palette.of(context)
     private val root = Root(context)
     private val screen = ScreenView(context)
     private val bottom = FrameLayout(context)
+
+    /** 跟随系统深浅色的底部面板与提示卡配色。 */
+    private data class Palette(
+        val dark: Boolean,
+        val sheetBg: Int,
+        val sheetStroke: Int,
+        val grip: Int,
+        val ink: Int,
+        val inkSecondary: Int,
+        val pillBg: Int,
+        val confirmBg: Int,
+        val confirmStroke: Int,
+        val spinner: Int,
+    ) {
+        companion object {
+            fun of(context: Context): Palette {
+                val dark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+                return if (dark) {
+                    Palette(
+                        dark = true,
+                        sheetBg = 0xFF1E2025.toInt(),
+                        sheetStroke = 0x1FFFFFFF,
+                        grip = 0x4DFFFFFF,
+                        ink = 0xFFF2F4F8.toInt(),
+                        inkSecondary = 0xFFA2A8B4.toInt(),
+                        pillBg = 0xFF2D313A.toInt(),
+                        confirmBg = 0xFF23262D.toInt(),
+                        confirmStroke = 0x26FFFFFF,
+                        spinner = 0xFFB0B6C2.toInt(),
+                    )
+                } else {
+                    Palette(
+                        dark = false,
+                        sheetBg = 0xFFFDFDFE.toInt(),
+                        sheetStroke = 0x12000000,
+                        grip = 0x33000000,
+                        ink = 0xFF141518.toInt(),
+                        inkSecondary = 0xFF666B75.toInt(),
+                        pillBg = 0xFFF0F2F6.toInt(),
+                        confirmBg = Color.WHITE,
+                        confirmStroke = 0x12000000,
+                        spinner = 0xFF8A8A8A.toInt(),
+                    )
+                }
+            }
+        }
+    }
 
     /**
      * 文字栏、加载中、识图卡片共用的底部面板：外壳只有这一个，内容按选中项换。
@@ -104,7 +156,7 @@ internal class GlobalRecognitionWindow(
     private val grip = View(context).apply {
         background = GradientDrawable().apply {
             cornerRadius = 2 * d
-            setColor(0x33000000)
+            setColor(palette.grip)
         }
     }
     private var sheetContent: View? = null
@@ -123,6 +175,7 @@ internal class GlobalRecognitionWindow(
         val image: RectF? = null,
         val hasText: Boolean = false,
         val qr: LocalQrScanner.Detection? = null,
+        val preferSource: Boolean = true,
     )
 
     /** 第一次把识图位图换成选区之前，宿主原来那张；关窗时还原。 */
@@ -156,8 +209,8 @@ internal class GlobalRecognitionWindow(
             topMargin = statusBarHeight() + (8 * d).toInt()
             marginEnd = (16 * d).toInt()
         })
-        screen.onSelection = { image, hasText, qr ->
-            val state = SelectionState(image, hasText, qr)
+        screen.onSelection = { image, hasText, qr, preferSource ->
+            val state = SelectionState(image, hasText, qr, preferSource)
             if (screen.touching) deferredSelection = state else onSelection(state)
         }
         screen.onTouchEnd = {
@@ -248,7 +301,7 @@ internal class GlobalRecognitionWindow(
         if (state.image != null || state.hasText || state.qr != null) collapsed = false
         when {
             state.qr != null -> showQrBar(state.qr)
-            state.image != null -> showCard(state.image)
+            state.image != null -> showCard(state.image, state.preferSource)
             state.hasText -> showTextBar()
             else -> setSheet(null)
         }
@@ -414,7 +467,7 @@ internal class GlobalRecognitionWindow(
         setPadding(0, (HOST_ROW_TOP_DP * d).toInt() - (12 * d).toInt(), 0, 0)
         addView(ProgressBar(context).apply {
             isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(0xFF8A8A8A.toInt())
+            indeterminateTintList = ColorStateList.valueOf(palette.spinner)
             alpha = 0f
             animate().alpha(1f).setStartDelay(SPINNER_DELAY_MS).setDuration(SHEET_IN_MS).start()
         }, FrameLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt(), Gravity.CENTER))
@@ -423,21 +476,26 @@ internal class GlobalRecognitionWindow(
     /**
      * 先向来源应用要这张图的源位图（应用解码进内存的那张，不带叠加文字、通常比屏幕上大），
      * 最多等 [GlobalRecognitionHost] 的时限；拿不到就用截图裁图。等待期间选中框已经画出来了。
+     * 手动自由画框或拉手柄微调后 [preferSource] 为 false，直接按精确选区裁图。
      */
-    private fun showCard(rect: RectF) {
+    private fun showCard(rect: RectF, preferSource: Boolean) {
         pendingImage = rect
+        if (!preferSource) {
+            showCardWith(rect, source = null, fromSource = false)
+            return
+        }
         setSheet(loadingContent())
         host.requestSourceImage(context, rect) { source, detail ->
             main.post {
                 if (pendingImage !== rect || closing) { source?.recycle(); return@post }
                 pendingImage = null
                 host.log(Log.INFO, if (source != null) "选图用 $detail" else "选图用截图裁图：$detail")
-                showCardWith(rect, source)
+                showCardWith(rect, source, fromSource = source != null)
             }
         }
     }
 
-    private fun showCardWith(rect: RectF, source: Bitmap?) {
+    private fun showCardWith(rect: RectF, source: Bitmap?, fromSource: Boolean) {
         val crop = source ?: crop(rect)
         if (crop == null) { setSheet(null); return }
         if (!swappedHost) {
@@ -457,8 +515,121 @@ internal class GlobalRecognitionWindow(
             return
         }
         compactCard(c)
-        setSheet(c)
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val qrSlot = FrameLayout(context)
+        val header = imageHeaderBar(crop, fromSource, qrSlot)
+        container.addView(
+            header,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
+        container.addView(
+            c,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
+        setSheet(container)
         closeAfterActions(c)
+        // 对选定/微调后的高分裁图做一次局部二维码精扫（补齐整屏初扫可能漏掉的超小码/反色码）
+        scanCroppedQrAsync(crop, qrSlot)
+    }
+
+    /** 图片面板顶部的轻量信息与动作条：显示原图/选区尺寸、一键复制图片，以及局部二维码直达插槽。 */
+    private fun imageHeaderBar(crop: Bitmap, fromSource: Boolean, qrSlot: FrameLayout): View {
+        val label = if (fromSource) "原图 ${crop.width}×${crop.height}" else "选区 ${crop.width}×${crop.height}"
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val padH = (20 * d).toInt()
+            setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
+
+            addView(
+                TextView(context).apply {
+                    text = label
+                    setTextColor(palette.inkSecondary)
+                    textSize = 12f
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(
+                qrSlot,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = (8 * d).toInt()
+                },
+            )
+            addView(
+                TextView(context).apply {
+                    text = "复制图片"
+                    setTextColor(palette.ink)
+                    textSize = 12.5f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
+                    background = GradientDrawable().apply {
+                        cornerRadius = 16 * d
+                        setColor(palette.pillBg)
+                    }
+                    setOnClickListener {
+                        PortalImageActions.copyBitmapToClipboard(context, crop) { ok ->
+                            if (closing) return@copyBitmapToClipboard
+                            if (ok) {
+                                confirm("已复制图片", true)
+                                host.log(Log.INFO, "已复制选区图片 ${crop.width}x${crop.height}")
+                            } else {
+                                toast("复制图片失败")
+                            }
+                        }
+                    }
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+            )
+        }
+    }
+
+    private fun scanCroppedQrAsync(crop: Bitmap, qrSlot: FrameLayout) {
+        if (crop.isRecycled) return
+        val copy = runCatching { crop.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return
+        val slotRef = java.lang.ref.WeakReference(qrSlot)
+        Thread({
+            val det = try {
+                LocalQrScanner.scanFirst(copy)
+            } catch (_: Throwable) {
+                null
+            } finally {
+                if (!copy.isRecycled) copy.recycle()
+            }
+            if (det == null) return@Thread
+            main.post {
+                val slot = slotRef.get() ?: return@post
+                if (closing || !slot.isAttachedToWindow || ourCrop !== crop) return@post
+                val action = det.action
+                val accent = LocalQrScanner.accentColor(action.accent)
+                slot.removeAllViews()
+                slot.addView(
+                    TextView(context).apply {
+                        text = if (action.canLaunch) action.actionLabel else "复制码内容"
+                        setTextColor(Color.WHITE)
+                        textSize = 12.5f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
+                        background = GradientDrawable().apply {
+                            cornerRadius = 16 * d
+                            setColor(accent)
+                        }
+                        setOnClickListener {
+                            if (action.canLaunch && LocalQrScanner.launch(context, action)) {
+                                close()
+                            } else if (LocalQrScanner.copy(context, action.copyText)) {
+                                confirm("已复制", true)
+                            } else {
+                                toast("无法打开此二维码")
+                            }
+                        }
+                    },
+                )
+            }
+        }, "fp-gr-crop-qr").start()
     }
 
     /**
@@ -467,6 +638,7 @@ internal class GlobalRecognitionWindow(
      * 只藏预览图本身；保存按钮若还在这个区域里（图片卡片按钮没开时），区域收成按钮大小照样能点。
      */
     private fun compactCard(card: View) {
+        card.background = null
         val res = context.resources
         fun id(name: String) = res.getIdentifier(name, "id", context.packageName)
         card.findViewById<View>(id("capture_image"))?.visibility = View.GONE
@@ -565,7 +737,8 @@ internal class GlobalRecognitionWindow(
             val padV = (14 * d).toInt()
             setPadding(padH, padV, padH, padV)
             background = GradientDrawable().apply {
-                setColor(Color.WHITE)
+                setColor(palette.confirmBg)
+                setStroke((1 * d).toInt().coerceAtLeast(1), palette.confirmStroke)
                 cornerRadius = 16 * d
             }
             elevation = 8 * d
@@ -573,7 +746,7 @@ internal class GlobalRecognitionWindow(
                 LinearLayout.LayoutParams((22 * d).toInt(), (22 * d).toInt()).apply { marginEnd = (10 * d).toInt() })
             addView(TextView(context).apply {
                 this.text = text
-                setTextColor(Color.BLACK)
+                setTextColor(palette.ink)
                 textSize = 15f
                 isSingleLine = true
             })
@@ -680,7 +853,7 @@ internal class GlobalRecognitionWindow(
             header.addView(
                 TextView(context).apply {
                     text = action.title
-                    setTextColor(Color.BLACK)
+                    setTextColor(palette.ink)
                     textSize = 16f
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
                     isSingleLine = true
@@ -693,7 +866,7 @@ internal class GlobalRecognitionWindow(
             addView(
                 TextView(context).apply {
                     text = action.subtitle
-                    setTextColor(0xFF666666.toInt())
+                    setTextColor(palette.inkSecondary)
                     textSize = 13f
                     maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
@@ -710,7 +883,7 @@ internal class GlobalRecognitionWindow(
             fun pill(label: String, primary: Boolean, onClick: () -> Unit): TextView = TextView(context).apply {
                 text = label
                 textSize = 14f
-                setTextColor(if (primary) Color.WHITE else Color.BLACK)
+                setTextColor(if (primary) Color.WHITE else palette.ink)
                 typeface = if (primary) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
                 gravity = Gravity.CENTER
                 val ph = (18 * d).toInt()
@@ -718,7 +891,7 @@ internal class GlobalRecognitionWindow(
                 setPadding(ph, pv, ph, pv)
                 background = GradientDrawable().apply {
                     cornerRadius = 20 * d
-                    setColor(if (primary) accent else 0xFFF0F1F5.toInt())
+                    setColor(if (primary) accent else palette.pillBg)
                 }
                 setOnClickListener { onClick() }
             }
@@ -778,7 +951,7 @@ internal class GlobalRecognitionWindow(
      * 选字和选图切换时两种面板的按钮看起来是一套。
      */
     private fun textBar(): View {
-        val ink = Color.BLACK
+        val ink = palette.ink
         val iconSide = (HOST_ICON_SLOT_DP * d).toInt()
         fun btn(text: String, icon: PortalImageActions.PortalIcon, onClick: () -> Unit) = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -844,7 +1017,8 @@ internal class GlobalRecognitionWindow(
     }
 
     private fun sheetBackground() = GradientDrawable().apply {
-        setColor(Color.WHITE)
+        setColor(palette.sheetBg)
+        setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
         val r = 24 * d
         cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
     }
@@ -935,7 +1109,7 @@ internal class GlobalRecognitionWindow(
      */
     @SuppressLint("ViewConstructor")
     private inner class ScreenView(context: Context) : View(context) {
-        var onSelection: ((RectF?, Boolean, LocalQrScanner.Detection?) -> Unit)? = null
+        var onSelection: ((RectF?, Boolean, LocalQrScanner.Detection?, Boolean) -> Unit)? = null
 
         /** 抬手（含取消）时回调；手指按着期间 [touching] 为 true。 */
         var onTouchEnd: (() -> Unit)? = null
@@ -971,11 +1145,13 @@ internal class GlobalRecognitionWindow(
         private var dim = 0f
 
         /**
-         * 识别动画：粒子光球 → 炸向四边，由 [RecognitionFx] 负责。
-         * 文字和图片跟着扩散圈从中心往外亮起来：每个可选项按「离中心距离 / 该方向中心到边的距离」
-         * 得到 [0,1] 的位置（[wavePos]），扩散进度 [RecognitionFx.wave] 走到这里它就亮起，亮起时先冲高一下再回落。
+         * 识别过渡动效：默认流光扫描（[AuroraRecognitionFx]），可在设置里切换回经典星云粒子（[RecognitionFx]）。
+         * 文字和图片跟着 [RecognitionEffect.wave] 顺势点亮，亮起时先轻提亮再回落。
          */
-        private val fx = RecognitionFx(d, ::invalidate) { host.log(Log.WARN, it) }
+        private val fx: RecognitionEffect = when (fxStyle) {
+            GlobalRecognition.FX_PARTICLES -> RecognitionFx(d, ::invalidate) { host.log(Log.WARN, it) }
+            else -> AuroraRecognitionFx(d, ::invalidate) { host.log(Log.WARN, it) }
+        }
         private var lineAt = FloatArray(0)
         private var regionAt = FloatArray(0)
         private val litPaint = Paint().apply { color = Color.WHITE }
@@ -992,6 +1168,16 @@ internal class GlobalRecognitionWindow(
             style = Paint.Style.STROKE; strokeWidth = 2 * d; color = Color.WHITE
             setShadowLayer(3 * d, 0f, 0f, 0xB3000000.toInt())
         }
+        /** 图片选区四角 L 形微调手柄：纯白圆头粗线配深色暗影，深浅底都清晰可拖拽。 */
+        private val cropHandlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 3.5f * d
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            color = Color.WHITE
+            setShadowLayer(4 * d, 0f, 1 * d, 0xCC000000.toInt())
+        }
+        private val cropHandlePath = Path()
         private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
         private val badgePath = Path()
         private val badgeBox = RectF()
@@ -1007,6 +1193,8 @@ internal class GlobalRecognitionWindow(
         private val tapSlop = 24 * d
         private var onTarget = false
         private val handleSlop = 28 * d
+        private val cropCornerSlop = 24 * d
+        private val cropEdgeSlop = 16 * d
         private val tmp = RectF()
         private val clip = Path()
 
@@ -1015,10 +1203,8 @@ internal class GlobalRecognitionWindow(
             addUpdateListener { dim = it.animatedValue as Float; invalidate() }
         }
         private val startBurst = Runnable {
-            val cx = width / 2f
-            val cy = height / 2f
-            lineAt = FloatArray(lines.size) { wavePos(lines[it], cx, cy) }
-            regionAt = FloatArray(regions.size) { wavePos(regions[it], cx, cy) }
+            lineAt = FloatArray(lines.size) { fx.revealPos(RectF(toView(lines[it])), width, height) }
+            regionAt = FloatArray(regions.size) { fx.revealPos(RectF(toView(regions[it])), width, height) }
             fx.burst(width, height)
             invalidate()
         }
@@ -1067,22 +1253,9 @@ internal class GlobalRecognitionWindow(
             selStart = -1; selEnd = -1; image = null
             selectedQr = det
             focusAnim.start()
-            onSelection?.invoke(null, false, det)
+            onSelection?.invoke(null, false, det, true)
             invalidate()
         }
-
-        /** 可选项 [r]（截图坐标）在扩散圈上的位置：0 = 中心，1 = 它那个方向上的屏幕边缘。 */
-        private fun wavePos(r: RectF, cx: Float, cy: Float): Float {
-            val v = toView(r)
-            // 取离中心最近的点：大图跨过中心时一开始就亮
-            val x = if (cx in v.left..v.right) cx else nearest(v.left, v.right, cx)
-            val y = if (cy in v.top..v.bottom) cy else nearest(v.top, v.bottom, cy)
-            val dist = hypot(x - cx, y - cy)
-            if (dist < 1f) return 0f
-            return (dist / fx.edgeDistance(kotlin.math.atan2(y - cy, x - cx), cx, cy)).coerceIn(0f, 1f)
-        }
-
-        private fun nearest(lo: Float, hi: Float, c: Float) = if (kotlin.math.abs(lo - c) < kotlin.math.abs(hi - c)) lo else hi
 
         /** 位置在 [at] 的可选项此刻的亮度：扩散圈没到不亮，到了渐亮，炸完（含系统关了动画）全亮。 */
         private fun revealAt(at: Float): Float {
@@ -1111,6 +1284,12 @@ internal class GlobalRecognitionWindow(
         override fun onDraw(canvas: Canvas) {
             val b = shot.bitmap
             if (b.isRecycled) return
+            val ps = fx.pressScale
+            val scaled = kotlin.math.abs(ps - 1f) > 0.0005f
+            if (scaled) {
+                canvas.save()
+                canvas.scale(ps, ps, width / 2f, height / 2f)
+            }
             canvas.drawBitmap(b, ox, oy, null)
             canvas.drawColor(((0xA0 * dim).toInt() shl 24))
             // 可选的东西按原亮度挖出来；每一项跟着扩散圈各自亮起
@@ -1151,14 +1330,15 @@ internal class GlobalRecognitionWindow(
             }
             image?.let { r ->
                 bmpPaint.alpha = 255
-                val v = toView(r)
-                // 选中时轻轻放大一下再回来（B4）
-                val sc = 1f + SELECT_POP * kotlin.math.sin(Math.PI * focus).toFloat()
+                val v = RectF(toView(r))
+                // 选中时轻轻放大一下再回来（B4）；正在拖手柄微调时保持 1:1 跟手
+                val sc = if (mode == 7) 1f else 1f + SELECT_POP * kotlin.math.sin(Math.PI * focus).toFloat()
                 canvas.save()
                 canvas.scale(sc, sc, v.centerX(), v.centerY())
                 spot(canvas, b, r, 0f)
                 imageStroke.alpha = (255 * fade).toInt()
-                canvas.drawRoundRect(toView(r), radius, radius, imageStroke)
+                canvas.drawRoundRect(v, radius, radius, imageStroke)
+                drawCropHandles(canvas, v, fade)
                 canvas.restore()
             }
             for (det in qrDetections) {
@@ -1181,6 +1361,61 @@ internal class GlobalRecognitionWindow(
                 drawHandle(canvas, RectF(toView(glyphs[hi].box)), false)
             }
             fx.draw(canvas, width, height)
+            if (scaled) canvas.restore()
+        }
+
+        /** 绘制图片选区四角的 L 形拖拽手柄与四边中点微妙短条。 */
+        private fun drawCropHandles(canvas: Canvas, v: RectF, alpha: Float) {
+            val a = (255 * alpha).toInt().coerceIn(0, 255)
+            if (a <= 0) return
+            cropHandlePaint.alpha = a
+            val arm = minOf(18 * d, v.width() * 0.28f, v.height() * 0.28f).coerceAtLeast(8 * d)
+            val p = cropHandlePath
+            p.reset()
+            // 左上
+            p.moveTo(v.left, v.top + arm); p.lineTo(v.left, v.top); p.lineTo(v.left + arm, v.top)
+            // 右上
+            p.moveTo(v.right - arm, v.top); p.lineTo(v.right, v.top); p.lineTo(v.right, v.top + arm)
+            // 左下
+            p.moveTo(v.left, v.bottom - arm); p.lineTo(v.left, v.bottom); p.lineTo(v.left + arm, v.bottom)
+            // 右下
+            p.moveTo(v.right - arm, v.bottom); p.lineTo(v.right, v.bottom); p.lineTo(v.right, v.bottom - arm)
+            // 足够宽/高时在四边中点补一小段短杠，提示四边同样可拉
+            if (v.width() >= 96 * d) {
+                val bar = 10 * d
+                p.moveTo(v.centerX() - bar, v.top); p.lineTo(v.centerX() + bar, v.top)
+                p.moveTo(v.centerX() - bar, v.bottom); p.lineTo(v.centerX() + bar, v.bottom)
+            }
+            if (v.height() >= 96 * d) {
+                val bar = 10 * d
+                p.moveTo(v.left, v.centerY() - bar); p.lineTo(v.left, v.centerY() + bar)
+                p.moveTo(v.right, v.centerY() - bar); p.lineTo(v.right, v.centerY() + bar)
+            }
+            canvas.drawPath(p, cropHandlePaint)
+        }
+
+        /** 检测按压点是否落在当前图片选区的四角或四边微调热区。 */
+        private fun cropHandleAt(x: Float, y: Float): GlobalRecognition.CropHandle? {
+            val r = image ?: return null
+            val v = RectF(toView(r))
+            val corners = listOf(
+                Triple(GlobalRecognition.CropHandle.TOP_LEFT, v.left, v.top),
+                Triple(GlobalRecognition.CropHandle.TOP_RIGHT, v.right, v.top),
+                Triple(GlobalRecognition.CropHandle.BOTTOM_LEFT, v.left, v.bottom),
+                Triple(GlobalRecognition.CropHandle.BOTTOM_RIGHT, v.right, v.bottom),
+            )
+            corners.minByOrNull { hypot(x - it.second, y - it.third) }?.let { (h, cx, cy) ->
+                if (hypot(x - cx, y - cy) <= cropCornerSlop) return h
+            }
+            if (y in (v.top + cropEdgeSlop)..(v.bottom - cropEdgeSlop)) {
+                if (kotlin.math.abs(x - v.left) <= cropEdgeSlop) return GlobalRecognition.CropHandle.LEFT
+                if (kotlin.math.abs(x - v.right) <= cropEdgeSlop) return GlobalRecognition.CropHandle.RIGHT
+            }
+            if (x in (v.left + cropEdgeSlop)..(v.right - cropEdgeSlop)) {
+                if (kotlin.math.abs(y - v.top) <= cropEdgeSlop) return GlobalRecognition.CropHandle.TOP
+                if (kotlin.math.abs(y - v.bottom) <= cropEdgeSlop) return GlobalRecognition.CropHandle.BOTTOM
+            }
+            return null
         }
 
         /** 把截图上 [r] 这块按原亮度画回来（圆角）；[lit] > 0 时再叠一层白，表现刚被光扫过。 */
@@ -1296,8 +1531,10 @@ internal class GlobalRecognitionWindow(
                 RectF(toView(r)).apply { inset(-8 * d, -8 * d) }.contains(x, y)
             }
 
-        // 0 无，1 起点手柄，2 终点手柄，3 拖选文字，4 画框；待定：5 按在字上，6 按在别处
+        // 0 无，1 起点手柄，2 终点手柄，3 拖选文字，4 画框；待定：5 按在字上，6 按在别处；7 调整图片选区手柄
         private var mode = 0
+        private var activeCropHandle: GlobalRecognition.CropHandle? = null
+        private var cropOrigin: GlobalRecognition.BoxF? = null
 
         /**
          * 拖手柄、在字上拖选时的放大镜（Flyme 识屏同样用系统 `Magnifier`）：
@@ -1326,7 +1563,13 @@ internal class GlobalRecognitionWindow(
                     downX = e.x; downY = e.y
                     val s = handlePos(true)
                     val t = handlePos(false)
+                    val cropHandle = cropHandleAt(e.x, e.y)
                     mode = when {
+                        cropHandle != null -> {
+                            activeCropHandle = cropHandle
+                            cropOrigin = image?.let { GlobalRecognition.BoxF(it.left, it.top, it.right, it.bottom) }
+                            7
+                        }
                         s != null && hypot(e.x - s.first, e.y - s.second) < handleSlop -> 1
                         t != null && hypot(e.x - t.first, e.y - t.second) < handleSlop -> 2
                         glyphAt(e.x, e.y) >= 0 -> 5
@@ -1350,6 +1593,22 @@ internal class GlobalRecognitionWindow(
                             mode = 4
                             dragRect = shotRect(downX, downY, e.x, e.y)
                         }
+                        7 -> {
+                            val h = activeCropHandle
+                            val orig = cropOrigin
+                            if (h != null && orig != null) {
+                                val next = GlobalRecognition.adjustCropBox(
+                                    origin = orig,
+                                    handle = h,
+                                    dx = e.x - downX,
+                                    dy = e.y - downY,
+                                    maxW = shot.bitmap.width.toFloat(),
+                                    maxH = shot.bitmap.height.toFloat(),
+                                    minSide = MIN_FRAME_DP * d,
+                                )
+                                image = RectF(next.left, next.top, next.right, next.bottom)
+                            }
+                        }
                     }
                     invalidate()
                 }
@@ -1362,8 +1621,20 @@ internal class GlobalRecognitionWindow(
                         4 -> {
                             val r = dragRect
                             dragRect = null
-                            if (r != null && r.width() >= MIN_FRAME_DP * d && r.height() >= MIN_FRAME_DP * d) selectImage(r)
-                            else tap(downX, downY)
+                            if (r != null && r.width() >= MIN_FRAME_DP * d && r.height() >= MIN_FRAME_DP * d) {
+                                selectImage(r, preferSource = false)
+                            } else {
+                                tap(downX, downY)
+                            }
+                        }
+                        7 -> {
+                            val adjusted = image?.let { RectF(it) }
+                            activeCropHandle = null
+                            cropOrigin = null
+                            if (adjusted != null) {
+                                // 微调后的选区直接裁截图，完整保留用户微调的边界
+                                selectImage(adjusted, preferSource = false, pop = false)
+                            }
                         }
                     }
                     normalize()
@@ -1373,7 +1644,7 @@ internal class GlobalRecognitionWindow(
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     hideMagnifier()
-                    dragRect = null; mode = 0; touching = false; invalidate()
+                    dragRect = null; activeCropHandle = null; cropOrigin = null; mode = 0; touching = false; invalidate()
                     onTouchEnd?.invoke()
                 }
             }
@@ -1406,20 +1677,20 @@ internal class GlobalRecognitionWindow(
             selectedQr = null
             selStart = a; selEnd = b
             if (a >= 0) focusAnim.start()
-            onSelection?.invoke(null, a >= 0, null)
+            onSelection?.invoke(null, a >= 0, null, true)
         }
 
-        private fun selectImage(r: RectF) {
+        private fun selectImage(r: RectF, preferSource: Boolean = true, pop: Boolean = true) {
             selStart = -1; selEnd = -1
             selectedQr = null
             image = r
-            focusAnim.start()
-            onSelection?.invoke(r, false, null)
+            if (pop) focusAnim.start() else focus = 1f
+            onSelection?.invoke(r, false, null, preferSource)
         }
 
         private fun clear() {
             selStart = -1; selEnd = -1; image = null; selectedQr = null
-            onSelection?.invoke(null, false, null)
+            onSelection?.invoke(null, false, null, true)
         }
 
         /** 当前选中项在本视图坐标里（不含平移）的范围，文字选区含两端手柄；没选中返回 null。 */

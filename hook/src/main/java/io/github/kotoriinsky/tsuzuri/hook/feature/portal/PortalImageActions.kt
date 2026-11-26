@@ -1451,6 +1451,52 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
         }
     }
 
+    /**
+     * 把任意位图写入模块私有只读分享通道并放入系统剪贴板（不进 MediaStore，不污染相册）。
+     * 供全局识别图片选区直接「复制图片」使用；[onDone] 恒在主线程回调。
+     */
+    internal fun copyBitmapToClipboard(context: Context, bitmap: Bitmap, onDone: (Boolean) -> Unit) {
+        if (bitmap.isRecycled) {
+            main.post { onDone(false) }
+            return
+        }
+        val copy = runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
+        if (copy == null) {
+            main.post { onDone(false) }
+            return
+        }
+        Thread({
+            val uri = try {
+                publishPrivateImage(context, copy, PortalTempImageContract.SHARE_SEGMENT)
+            } catch (t: Throwable) {
+                Log.w(TAG, "写剪贴板临时图失败", t)
+                null
+            } finally {
+                if (!copy.isRecycled) copy.recycle()
+            }
+            main.post {
+                if (uri == null) {
+                    onDone(false)
+                    return@post
+                }
+                val ok = try {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    if (cm == null) {
+                        false
+                    } else {
+                        cm.setPrimaryClip(ClipData.newUri(context.contentResolver, "image", uri))
+                        true
+                    }
+                } catch (t: Throwable) {
+                    deletePrivateImage(context, uri)
+                    Log.w(TAG, "写入图片剪贴板失败", t)
+                    false
+                }
+                onDone(ok)
+            }
+        }, "fp-copy-image").start()
+    }
+
     // ── 小工具 ────────────────────────────────────────────────────────────
 
     private fun currentBitmap(): Bitmap? = try {

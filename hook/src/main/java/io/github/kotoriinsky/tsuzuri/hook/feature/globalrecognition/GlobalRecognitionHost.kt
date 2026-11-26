@@ -200,9 +200,12 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
             }
             val shared = GlobalRecognitionWindow.Shot(shot)
             shared.retain() // 识别线程自己的一份：窗口先关也不会把它从手里回收掉
+            val fxStyle = GlobalRecognition.normalizeFxStyle(
+                HookRegistry.prefs().rawString(Keys.pref(Catalog.GLOBAL_RECOGNITION, GlobalRecognition.PREF_FX_STYLE), GlobalRecognition.FX_AURORA),
+            )
             main.post {
                 if (window != null) { shared.release(); return@post }
-                val win = GlobalRecognitionWindow(context, shared, this) { window = null }
+                val win = GlobalRecognitionWindow(context, shared, this, fxStyle) { window = null }
                 window = win
                 win.show()
             }
