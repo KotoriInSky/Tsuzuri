@@ -948,18 +948,18 @@ internal class GlobalRecognitionWindow(
             return
         }
         compactCard(c)
-        val hasCustomSave = enhanceCardActions(c, crop, result)
+        val hasCustomSave = upgradeSaveAction(c, result)
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
         val qrSlot = FrameLayout(context)
-        // 仿照长按传送门跳出的识图卡片：上方统一细线按钮区，下方居中同比例纯净预览图（零参数信息）
+        // 与选字面板保持统一「上预览、下操作」：上方同比例纯净预览图，下方原生 3+3 细线按钮区落在拇指热区
         container.addView(
-            c,
+            imagePreviewBlock(crop, result, qrSlot),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         container.addView(
-            imagePreviewBlock(crop, result, qrSlot),
+            c,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         setSheet(container)
@@ -969,98 +969,33 @@ internal class GlobalRecognitionWindow(
     }
 
     /**
-     * 无缝融入宿主识图卡片按钮行（与长按传送门同款统一风格）：
-     * - 抓到实况照片 / 原动图 / 无损原图时，直接升级「保存」按钮为无损保存（不再出现两个保存按钮）；
-     * - 在按钮行中以相同细线图标 + 配色加入「复制」按钮。
-     * @return 是否接管了保存按钮（true 时无需再走宿主保存监听）。
+     * 抓到实况照片 / 原动图 / 无损原图时，直接升级宿主卡片里的「保存」按钮为无损保存，
+     * 不往原有按钮行里硬塞额外按钮（保持原生 3+3 对称排布与间距）。
      */
-    private fun enhanceCardActions(card: View, crop: Bitmap, result: SourceImageClient.Result?): Boolean {
-        val rawBytes = result?.rawBytes
-        val liveVideo = result?.liveVideoBytes
-        val isLive = rawBytes != null && liveVideo != null
-        val mime = result?.mime
-        val animated = result?.animated == true && rawBytes != null
+    private fun upgradeSaveAction(card: View, result: SourceImageClient.Result?): Boolean {
+        val rawBytes = result?.rawBytes ?: return false
+        val liveVideo = result.liveVideoBytes
+        val isLive = liveVideo != null
+        val mime = result.mime
+        val animated = result.animated
 
-        var customSaveHooked = false
         val saveId = context.resources.getIdentifier("edit_image", "id", context.packageName)
         val saveView = card.findViewWithTag<View>(SAVE_CELL_TAG)
             ?: (if (saveId != 0) card.findViewById<View>(saveId) else null)
-        if (saveView != null && (isLive || rawBytes != null)) {
-            saveView.setOnClickListener {
-                when {
-                    isLive && rawBytes != null && liveVideo != null -> saveMotionPhotoToGallery(rawBytes, liveVideo)
-                    rawBytes != null -> saveRawMediaToGallery(rawBytes, mime, animated)
-                }
-            }
-            customSaveHooked = true
-        }
-
-        // 在 PortalImageActions 扩展行里并入同风格细线「复制」按钮；找不到扩展行时自动补一行
-        val actionRow = card.findViewWithTag<ViewGroup>(ACTION_ROW_TAG)
-        val copyCell = buildCopyActionCell(crop)
-        if (actionRow != null && actionRow.findViewWithTag<View>(COPY_CELL_TAG) == null) {
-            // 克隆现有同级按钮的布局参数（均分权重或等距），保持视觉严丝合缝
-            val sampleLp = (0 until actionRow.childCount).map { actionRow.getChildAt(it) }
-                .firstOrNull { it.visibility == View.VISIBLE }?.layoutParams
-            val lp = if (sampleLp is LinearLayout.LayoutParams && sampleLp.weight > 0f) {
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, sampleLp.weight)
+            ?: return false
+        saveView.setOnClickListener {
+            if (isLive && liveVideo != null) {
+                saveMotionPhotoToGallery(rawBytes, liveVideo)
             } else {
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
-            actionRow.addView(copyCell, lp)
-        } else if (actionRow == null && card is ViewGroup) {
-            val fallbackRow = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                setPadding(0, (6 * d).toInt(), 0, (12 * d).toInt())
-                addView(copyCell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            }
-            card.addView(fallbackRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        return customSaveHooked
-    }
-
-    private fun buildCopyActionCell(crop: Bitmap): View {
-        val ink = palette.ink
-        val iconSide = (HOST_ICON_SLOT_DP * d).toInt()
-        return LinearLayout(context).apply {
-            tag = COPY_CELL_TAG
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(
-                ImageView(context).apply {
-                    setImageDrawable(PortalImageActions.PortalStrokeIcon(PortalImageActions.PortalIcon.COPY, ink, iconSide))
-                },
-                LinearLayout.LayoutParams(iconSide, iconSide).apply {
-                    marginEnd = (HOST_ICON_GAP_DP * d).toInt()
-                },
-            )
-            addView(
-                TextView(context).apply {
-                    text = "复制"
-                    setTextColor(ink)
-                    textSize = HOST_TEXT_SP
-                    isSingleLine = true
-                },
-            )
-            setOnClickListener {
-                PortalImageActions.copyBitmapToClipboard(context, crop) { ok ->
-                    if (closing) return@copyBitmapToClipboard
-                    if (ok) {
-                        confirm("已复制图片", true)
-                        host.log(Log.INFO, "已复制选区图片 ${crop.width}x${crop.height}")
-                    } else {
-                        toast("复制图片失败")
-                    }
-                }
+                saveRawMediaToGallery(rawBytes, mime, animated)
             }
         }
+        return true
     }
 
     /**
-     * 仿照长按传送门跳出的图片预览区：
-     * 去除一切文字参数条，只保留居中同比例不裁切的圆角大图；
-     * 仅实况照片 / 动图在右下角叠一枚极克制角标，局部二维码直达条紧贴下方。
+     * 纯净同比例预览图区块：去除一切文字参数条，仅保留居中同比例不裁切圆角图；
+     * 实况照片 / 动图在右下角叠一枚极克制角标，局部二维码直达条紧贴图下。
      */
     private fun imagePreviewBlock(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
         val rawBytes = result?.rawBytes
@@ -1076,10 +1011,10 @@ internal class GlobalRecognitionWindow(
             else -> null
         }
 
-        // 同比例计算预览尺寸（不裁切：最大高 200dp，最大宽占屏幕宽减左右 24dp）
+        // 同比例计算预览尺寸（不裁切：最大高 180dp，最大宽占屏幕宽减左右 24dp）
         val screenW = context.resources.displayMetrics.widthPixels
         val maxW = (screenW - (48 * d).toInt()).coerceAtLeast((160 * d).toInt())
-        val maxH = (200 * d).toInt()
+        val maxH = (180 * d).toInt()
         val aspect = crop.width.toFloat() / crop.height.coerceAtLeast(1).toFloat()
         val previewW: Int
         val previewH: Int
@@ -1172,7 +1107,7 @@ internal class GlobalRecognitionWindow(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             val padH = (24 * d).toInt()
-            setPadding(padH, (2 * d).toInt(), padH, (6 * d).toInt())
+            setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
             addView(frame, LinearLayout.LayoutParams(previewW, previewH))
             addView(
                 qrSlot,
@@ -1354,9 +1289,8 @@ internal class GlobalRecognitionWindow(
         val saveId = context.resources.getIdentifier("edit_image", "id", context.packageName)
         fun walk(v: View) {
             if (v.hasOnClickListeners()) {
-                val isCopy = v.tag == COPY_CELL_TAG
                 val isSave = (saveId != 0 && v.id == saveId) || v.tag == SAVE_CELL_TAG
-                if (!isCopy && !(skipSaveTouch && isSave)) {
+                if (!(skipSaveTouch && isSave)) {
                     v.setOnTouchListener { view, e ->
                         if (e.actionMasked == MotionEvent.ACTION_UP && view.isEnabled &&
                             e.x in 0f..view.width.toFloat() && e.y in 0f..view.height.toFloat()
@@ -2639,8 +2573,6 @@ internal class GlobalRecognitionWindow(
         const val SAVE_WATCH_MS = 15_000L
         /** [PortalImageActions] 换上的保存格的 tag（它的 TAG_PREFIX + 「保存」）。 */
         const val SAVE_CELL_TAG = "fp_portal_action_保存"
-        const val ACTION_ROW_TAG = "fp_portal_action_row"
-        const val COPY_CELL_TAG = "fp_portal_action_复制"
         /** 中央结果提示：淡入放大、停留、淡出，共约 1.5s（Flyme「已保存到图库」的节奏）。 */
         const val CONFIRM_IN_MS = 180L
         const val CONFIRM_HOLD_MS = 1100L
