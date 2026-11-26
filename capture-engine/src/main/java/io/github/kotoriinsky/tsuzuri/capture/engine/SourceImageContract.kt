@@ -47,4 +47,12 @@ object SourceImageContract {
 
     /** 列表应答：int 个数 n，IntArray(4n) 屏幕矩形，String 说明（耗时、是否因超时截断）。 */
     const val TX_LIST = 3
+
+    /**
+     * 原文件媒体应答（v2，向后兼容 [TX_RESULT]）：
+     * int 宽、int 高、String mime（如 `image/gif`、`image/webp`、`image/jpeg`）、
+     * int animated（1 = 动图，0 = 静图）、String 来源说明、FileDescriptor 管道读端。
+     * 管道里是未经重压的原始文件字节（GIF / 动态 WebP / AVIF / HEIC / 原画 JPEG・PNG）。
+     */
+    const val TX_MEDIA = 4
 }

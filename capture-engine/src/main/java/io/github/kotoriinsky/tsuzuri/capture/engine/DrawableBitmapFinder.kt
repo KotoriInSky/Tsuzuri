@@ -1,6 +1,7 @@
 package io.github.kotoriinsky.tsuzuri.capture.engine
 
 import android.graphics.Bitmap
+import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.DrawableContainer
@@ -37,6 +38,48 @@ object DrawableBitmapFinder {
         for (d in roots) walk(d, 0, found, seen)
         return found.filter { !it.isRecycled && it.width >= MIN_SIDE && it.height >= MIN_SIDE }
             .maxByOrNull { it.width.toLong() * it.height }
+    }
+
+    /**
+     * 判断 [view] 是否承载了真实图片/动图内容（供列表阶段快速筛选）：
+     * 除静态位图外，覆盖系统 [AnimatedImageDrawable]、Glide `GifDrawable`、Fresco `AnimatedDrawable2`
+     * 以及分块高清大图查看器（如 `SubsamplingScaleImageView`）。
+     */
+    @JvmStatic
+    fun hasVisualContent(view: View): Boolean {
+        if (largest(view) != null) return true
+        val clsName = view.javaClass.name
+        if (clsName.contains("SubsamplingScaleImageView", ignoreCase = true) ||
+            clsName.contains("BigImageView", ignoreCase = true) ||
+            clsName.contains("LargeImageView", ignoreCase = true)
+        ) return true
+        val seen = IdentityHashMap<Any, Boolean>()
+        val roots = listOfNotNull((view as? ImageView)?.drawable, view.background, view.foreground)
+        for (d in roots) {
+            if (hasAnimatedDrawable(d, 0, seen)) return true
+        }
+        return false
+    }
+
+    private fun hasAnimatedDrawable(node: Drawable?, depth: Int, seen: IdentityHashMap<Any, Boolean>): Boolean {
+        if (node == null || depth > MAX_DEPTH || seen.put(node, true) != null) return false
+        if (node is AnimatedImageDrawable) return true
+        val name = node.javaClass.simpleName
+        if (name.contains("GifDrawable", ignoreCase = true) ||
+            name.contains("AnimatedDrawable", ignoreCase = true) ||
+            name.contains("WebpDrawable", ignoreCase = true) ||
+            name.contains("AvifDrawable", ignoreCase = true)
+        ) return true
+        when (node) {
+            is LayerDrawable -> {
+                for (i in 0 until node.numberOfLayers) {
+                    if (hasAnimatedDrawable(node.getDrawable(i), depth + 1, seen)) return true
+                }
+            }
+            is DrawableWrapper -> if (hasAnimatedDrawable(node.drawable, depth + 1, seen)) return true
+            is DrawableContainer -> if (hasAnimatedDrawable(node.current, depth + 1, seen)) return true
+        }
+        return false
     }
 
     private fun walk(node: Any?, depth: Int, out: MutableList<Bitmap>, seen: IdentityHashMap<Any, Boolean>) {
