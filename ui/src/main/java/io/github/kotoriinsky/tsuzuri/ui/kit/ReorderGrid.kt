@@ -161,7 +161,6 @@ fun ReorderGrid(
         LaunchedEffect(activeLiftIndex >= 0) {
             liftAnim.animateTo(if (activeLiftIndex >= 0) 1f else 0f, GridLiftSpec)
         }
-        val lift = liftAnim.value
 
         val totalHeightDp = with(density) { layout.totalHeight.toDp() }
 
@@ -326,25 +325,37 @@ fun ReorderGrid(
                         }
                     }
 
-                    val drawX = if (isDragged) dragX.roundToInt() else (basePos.x + animX.value).roundToInt()
-                    val drawY = if (isDragged) dragY.roundToInt() else (basePos.y + animY.value).roundToInt()
                     val lifted = isDragged || isArmed
 
                     Box(
                         Modifier
                             .zIndex(if (isDragged) 2f else if (isArmed) 1f else 0f)
-                            .offset { IntOffset(drawX, drawY) }
+                            // 在 offset / graphicsLayer 阶段读取 dragX / dragY / animX / animY / liftAnim，
+                            // 避免 120Hz 拖动期间每一帧触发整格重组
+                            .offset {
+                                if (isDragged) {
+                                    IntOffset(dragX.roundToInt(), dragY.roundToInt())
+                                } else {
+                                    IntOffset(
+                                        (basePos.x + animX.value).roundToInt(),
+                                        (basePos.y + animY.value).roundToInt(),
+                                    )
+                                }
+                            }
                             .size(cellWidthDp, cellHeightDp)
                             .padding(3.dp)
                             .then(
                                 if (lifted) {
                                     Modifier
                                         .graphicsLayer {
-                                            val s = 1f + (GridLiftScale - 1f) * lift
+                                            val lv = liftAnim.value
+                                            val s = 1f + (GridLiftScale - 1f) * lv
                                             scaleX = s
                                             scaleY = s
+                                            shadowElevation = GridLiftElevation.toPx() * lv
+                                            shape = RoundedCornerShape(GridCellCorner)
+                                            clip = false
                                         }
-                                        .shadow(GridLiftElevation * lift, RoundedCornerShape(GridCellCorner))
                                         .background(colors.surface, RoundedCornerShape(GridCellCorner))
                                 } else {
                                     Modifier

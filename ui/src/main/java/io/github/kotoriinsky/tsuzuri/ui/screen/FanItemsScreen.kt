@@ -173,9 +173,12 @@ fun FanItemsScreen(
     var removed by remember { mutableStateOf<Pair<String, Int>?>(null) }
     /** 当前弹出长按菜单的项下标；-1 = 无。 */
     var menuIndex by remember { mutableStateOf(-1) }
+    /** 仅在最近一次长按的单个格子挂载浮层组件，避免为每个图标常驻一份 WindowListPopup。 */
+    var popupHostIndex by remember { mutableStateOf(-1) }
 
     LaunchedEffect(items) {
         if (menuIndex !in items.indices) menuIndex = -1
+        if (popupHostIndex !in items.indices) popupHostIndex = -1
     }
 
     val moveUpLabel = fpString("fan_items.up")
@@ -262,11 +265,15 @@ fun FanItemsScreen(
                         if (spec.iconTools != ListIconTools.NONE) {
                             openEditor(ref)
                         } else {
+                            popupHostIndex = idx
                             menuIndex = idx
                         }
                     },
                     onLongPressMenu = { idx ->
-                        if (idx in refs.indices) menuIndex = idx
+                        if (idx in refs.indices) {
+                            popupHostIndex = idx
+                            menuIndex = idx
+                        }
                     },
                     enabled = items.size > 1,
                     modifier = Modifier.fillMaxSize(),
@@ -329,12 +336,14 @@ fun FanItemsScreen(
                             previews = previews,
                         )
 
-                        FpPopupMenu(
-                            expanded = menuIndex == index,
-                            alignEnd = colIdx >= 2,
-                            actions = actions,
-                            onDismiss = { menuIndex = -1 },
-                        )
+                        if (popupHostIndex == index) {
+                            FpPopupMenu(
+                                expanded = menuIndex == index,
+                                alignEnd = colIdx >= 2,
+                                actions = actions,
+                                onDismiss = { menuIndex = -1 },
+                            )
+                        }
                     }
                 }
             }
