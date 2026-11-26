@@ -12,8 +12,11 @@ import io.github.kotoriinsky.tsuzuri.core.GlobalRecognition
 internal object GlobalRecognitionRequest {
     private const val SYSTEM_UI = "com.android.systemui"
 
-    fun send(context: Context) {
+    fun send(context: Context, instant: Boolean = false) {
         val options = BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle()
-        context.sendBroadcast(Intent(GlobalRecognition.ACTION_TILE).setPackage(SYSTEM_UI), null, options)
+        val intent = Intent(GlobalRecognition.ACTION_TILE)
+            .setPackage(SYSTEM_UI)
+            .putExtra(GlobalRecognition.EXTRA_INSTANT, instant)
+        context.sendBroadcast(intent, null, options)
     }
 }

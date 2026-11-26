@@ -951,6 +951,10 @@
     <string name="pref_screen_image_qr_decode_hint">图片含二维码时在卡片上方显示直达与复制条，接入内置平台规则，纯本地不联网</string>
     <string name="pref_global_recognition_qr_decode">自动解码屏幕二维码</string>
     <string name="pref_global_recognition_qr_decode_hint">整屏识别时同步本地扫描画面里的二维码并高亮，一点直达或复制</string>
+    <string name="pref_global_recognition_fx_style">识别过渡动效</string>
+    <string name="pref_global_recognition_fx_style_hint">流光扫描不遮挡屏幕中央且结果揭晓更快，也可切回经典星云粒子</string>
+    <string name="pref_global_recognition_fx_style_aurora">流光扫描</string>
+    <string name="pref_global_recognition_fx_style_particles">星云粒子</string>
     <string name="pref_recognition_look_full_bleed">截图铺满</string>
     <string name="pref_recognition_look_full_bleed_hint">截图占满屏幕宽度</string>
     <string name="pref_recognition_look_horizontal">结果横排</string>

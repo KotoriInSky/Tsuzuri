@@ -12,7 +12,7 @@ import android.os.Bundle
 class GlobalRecognitionShortcutActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        GlobalRecognitionRequest.send(this)
+        GlobalRecognitionRequest.send(this, instant = true)
         finish()
     }
 }
