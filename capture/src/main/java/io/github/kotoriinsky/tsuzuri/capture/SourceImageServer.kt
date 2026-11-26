@@ -113,9 +113,104 @@ object SourceImageServer {
         }
     }
 
+    /** 实况短视频下载预算（仅命中实况配对时启用，含主静图准备）。 */
+    private const val LIVE_FETCH_BUDGET_MS = 1800L
+
     private fun handle(target: Rect, cb: IBinder) {
         val t0 = android.os.SystemClock.uptimeMillis()
+        // 0. 若目标区域同时存在「静图 + 同容器短片播放器」，优先尝试通用实况双轨嗅探
+        val shown = ShownViews.collect().first
+        val livePair = runCatching { LivePhotoSniffer.detect(target, shown, ::iou) }.getOrNull()
+        if (livePair != null) {
+            tryLivePhoto(livePair, target, cb, t0)
+            return
+        }
         tryVideo(videoHits(target), 0, target, cb, t0, ArrayList())
+    }
+
+    private fun tryLivePhoto(pair: LivePhotoSniffer.PairCandidate, target: Rect, cb: IBinder, t0: Long) {
+        val stillFound = MediaSourceFinder.find(pair.stillView)
+        val fallbackBmp = if (stillFound == null) pick(pair.stillView)?.first?.let(::softCopy) else null
+        Thread({
+            try {
+                val deadline = t0 + LIVE_FETCH_BUDGET_MS
+                val videoBytes = LivePhotoSniffer.materializeVideo(pair.videoSource, deadline, io)
+                if (videoBytes == null) {
+                    fallbackBmp?.recycle()
+                    main.post { guarded(cb) { tryVideo(videoHits(target), 0, target, cb, t0, ArrayList()) } }
+                    return@Thread
+                }
+                val stillRaw = when (stillFound) {
+                    is MediaSourceFinder.Found.Raw -> stillFound
+                    is MediaSourceFinder.Found.RemoteUrl -> MediaSourceFinder.downloadRemote(stillFound, deadline, io)
+                    null -> null
+                }
+                val jpeg = LivePhotoSniffer.ensureJpegBytes(stillRaw, fallbackBmp)
+                fallbackBmp?.recycle()
+                if (jpeg == null) {
+                    main.post { guarded(cb) { tryVideo(videoHits(target), 0, target, cb, t0, ArrayList()) } }
+                    return@Thread
+                }
+                val how = when (val vs = pair.videoSource) {
+                    is LivePhotoSniffer.VideoSource.LocalBytes -> vs.how
+                    is LivePhotoSniffer.VideoSource.RemoteUrl -> vs.how
+                }
+                sendLive(cb, jpeg.second, jpeg.third, "image/jpeg", how, jpeg.first, videoBytes, pair.stillView.javaClass.name, t0)
+            } catch (t: Throwable) {
+                fallbackBmp?.recycle()
+                Log.w(TAG, "实况双轨采集失败，回落普通路径", t)
+                main.post { guarded(cb) { tryVideo(videoHits(target), 0, target, cb, t0, ArrayList()) } }
+            }
+        }, "FP-LiveSniffer").start()
+    }
+
+    /** 经 [SourceImageContract.TX_LIVE] 双管道回传实况照片（主静图 JPEG + 短视频 MP4）。 */
+    private fun sendLive(
+        cb: IBinder,
+        w: Int,
+        h: Int,
+        imageMime: String,
+        how: String,
+        imageBytes: ByteArray,
+        videoBytes: ByteArray,
+        what: String,
+        t0: Long,
+    ) {
+        val imgPipe = ParcelFileDescriptor.createPipe()
+        val vidPipe = try {
+            ParcelFileDescriptor.createPipe()
+        } catch (t: Throwable) {
+            runCatching { imgPipe[0].close() }
+            runCatching { imgPipe[1].close() }
+            throw t
+        }
+        val data = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(SourceImageContract.DESCRIPTOR)
+            data.writeInt(w)
+            data.writeInt(h)
+            data.writeString(imageMime)
+            data.writeString(how)
+            data.writeFileDescriptor(imgPipe[0].fileDescriptor)
+            data.writeFileDescriptor(vidPipe[0].fileDescriptor)
+            cb.transact(SourceImageContract.TX_LIVE, data, null, IBinder.FLAG_ONEWAY)
+        } catch (t: Throwable) {
+            runCatching { imgPipe[1].close() }
+            runCatching { vidPipe[1].close() }
+            Log.w(TAG, "实况双轨回传失败", t)
+            return
+        } finally {
+            data.recycle()
+            runCatching { imgPipe[0].close() }
+            runCatching { vidPipe[0].close() }
+        }
+        Log.i(TAG, "区域实况：$what → ${w}x$h img=${imageBytes.size}B vid=${videoBytes.size}B（$how，${android.os.SystemClock.uptimeMillis() - t0}ms）")
+        Thread({
+            runCatching { ParcelFileDescriptor.AutoCloseOutputStream(imgPipe[1]).use { it.write(imageBytes) } }
+        }, "FP-LiveImg").start()
+        Thread({
+            runCatching { ParcelFileDescriptor.AutoCloseOutputStream(vidPipe[1]).use { it.write(videoBytes) } }
+        }, "FP-LiveVid").start()
     }
 
     private class VideoHit(val view: View, val origin: IntArray, val visible: Rect)
