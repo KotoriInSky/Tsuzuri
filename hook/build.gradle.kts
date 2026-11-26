@@ -21,6 +21,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":capture-engine"))
+    implementation(libs.zxing.core)
 
     // Xposed API 永远 compileOnly：LSPosed 会检测并拒绝加载把 API 打进 APK 的模块
     compileOnly(libs.libxposed.api)

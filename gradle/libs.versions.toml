@@ -26,6 +26,8 @@ androidxTestRunner = "1.6.2"
 # 液态玻璃：Kyant Backdrop（Compose 多平台，Maven Central 可直连）。
 # 不要用 QWEA0/Liquid-Glass-Android —— 那是 View 体系，其 README 明确让 Compose 项目改用这个。
 backdrop = "2.0.1"
+# 本地二维码解码（Apache-2.0，纯 Java 零 native，R8 会裁掉未用到的一维码类）。
+zxingCore = "3.5.3"
 
 [libraries]
 libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposed" }
@@ -56,6 +58,7 @@ kyant-backdrop = { module = "io.github.kyant0:backdrop", version.ref = "backdrop
 
 # M3 完整色调盘（纯 HCT 算法，不含 UI）—— 只为 :ui 的自定义取色用
 material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "materialColorUtilities" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxingCore" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestJunit" }

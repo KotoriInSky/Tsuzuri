@@ -15,11 +15,13 @@ import android.view.View
 import android.widget.Toast
 import io.github.kotoriinsky.tsuzuri.core.Catalog
 import io.github.kotoriinsky.tsuzuri.core.GlobalRecognition
+import io.github.kotoriinsky.tsuzuri.core.Keys
 import io.github.kotoriinsky.tsuzuri.core.ScopeTarget
 import io.github.kotoriinsky.tsuzuri.hook.Feature
 import io.github.kotoriinsky.tsuzuri.hook.HookContext
 import io.github.kotoriinsky.tsuzuri.hook.HookRegistry
 import io.github.kotoriinsky.tsuzuri.hook.InstallReport
+import io.github.kotoriinsky.tsuzuri.hook.feature.portal.LocalQrScanner
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalOcrSelect
 import java.lang.reflect.Method
 
@@ -190,6 +192,12 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
                 java.util.concurrent.FutureTask { inAppRegions(context, p) }.also { Thread(it, "fp-gr-list").start() }
             }
             val tree = ScreenUiTree.request(classLoader) { hookCtx?.log(Log.WARN, "[$TAG] $it") }
+            val qrEnabled = HookRegistry.prefs().rawBoolean(Keys.pref(Catalog.GLOBAL_RECOGNITION, "qr_decode"), true)
+            val qrTask = if (qrEnabled) {
+                java.util.concurrent.FutureTask { LocalQrScanner.scanAll(shot) }.also { Thread(it, "fp-gr-qr").start() }
+            } else {
+                null
+            }
             val shared = GlobalRecognitionWindow.Shot(shot)
             shared.retain() // 识别线程自己的一份：窗口先关也不会把它从手里回收掉
             main.post {
@@ -211,13 +219,14 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
                     val late = if (pkg == null) frontPackage?.let { inAppRegions(context, it) } else null
                     late ?: views
                 }).ifEmpty { regions(context, shot, glyphs.orEmpty()) }
-                hookCtx?.log(Log.INFO, "[$TAG] 整屏 ${shot.width}x${shot.height}：文字 ${glyphs?.size ?: -1} 字，图片 ${regions.size} 块，${SystemClock.uptimeMillis() - t0}ms")
+                val qrs = runCatching { qrTask?.get() }.getOrNull().orEmpty()
+                hookCtx?.log(Log.INFO, "[$TAG] 整屏 ${shot.width}x${shot.height}：文字 ${glyphs?.size ?: -1} 字，图片 ${regions.size} 块，二维码 ${qrs.size} 个，${SystemClock.uptimeMillis() - t0}ms")
                 hookCtx?.log(Log.INFO, "[$TAG] 图片区域：" + regions.take(12).joinToString { "[${it.left.toInt()},${it.top.toInt()} ${it.width().toInt()}x${it.height().toInt()}]" })
-                main.post { window?.takeIf { it.shot === shared }?.setResults(glyphs, regions) }
+                main.post { window?.takeIf { it.shot === shared }?.setResults(glyphs, regions, qrs) }
             } catch (t: Throwable) {
                 // 裸线程里逃出去的异常会带走宿主进程
                 hookCtx?.log(Log.WARN, "[$TAG] 识别失败", t)
-                main.post { window?.takeIf { it.shot === shared }?.setResults(null, emptyList()) }
+                main.post { window?.takeIf { it.shot === shared }?.setResults(null, emptyList(), emptyList()) }
             } finally {
                 shared.release()
             }

@@ -113,7 +113,7 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
 
     override fun supportsProcess(processName: String, isSystemServer: Boolean) = !isSystemServer && (processName == io.github.kotoriinsky.tsuzuri.core.ScopeTarget.CONTENT_EXTENSION.packageName)
 
-    override fun wanted(prefs: io.github.kotoriinsky.tsuzuri.core.Prefs) = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, "edit") || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, "share_image") || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, "object_to_xiaoai") || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_TEXT, "ocr")
+    override fun wanted(prefs: io.github.kotoriinsky.tsuzuri.core.Prefs) = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, "edit") || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, "share_image") || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, "object_to_xiaoai") || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_IMAGE, PREF_QR_DECODE) || io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(prefs, Catalog.SCREEN_TEXT, "ocr")
 
     private const val TAG = "FP-PortalImage"
 
@@ -168,6 +168,8 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
 
     private const val PREF_EDIT = "edit"
     private const val PREF_OCR = "ocr"
+    private const val PREF_QR_DECODE = "qr_decode"
+    private const val QR_BAR_TAG = "fp_portal_qr_bar"
 
     /**
      * 「识物」改道超级小爱。宿主的识物是把图交给小米扫一扫的 `miui.intent.action.screenscanner`，
@@ -226,8 +228,15 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
     private val cardsBuilt = java.util.concurrent.atomic.AtomicInteger(0)
 
     /** 哪些按钮要加（保存按钮不在这里 —— 它是宿主原有的，只搬家）。 */
-    private data class Buttons(val edit: Boolean, val share: Boolean, val ocr: Boolean, val objectXiaoai: Boolean) {
-        override fun toString() = "edit=$edit share=$share ocr=$ocr objectXiaoai=$objectXiaoai"
+    private data class Buttons(
+        val edit: Boolean,
+        val share: Boolean,
+        val ocr: Boolean,
+        val objectXiaoai: Boolean,
+        val qrDecode: Boolean,
+    ) {
+        val hasActionRow: Boolean get() = edit || share || ocr || objectXiaoai
+        override fun toString() = "edit=$edit share=$share ocr=$ocr objectXiaoai=$objectXiaoai qr=$qrDecode"
     }
 
     /** 一个新增按钮的声明：标签（也是 tag）、自绘图标、动作。 */
@@ -462,15 +471,16 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
     override fun install(ctx: HookContext): InstallReport {
         PortalOcrSelect.log = { p, m -> ctx.log(p, m) }
         val want = Buttons(
-            // 编辑 / 分享 / 识物改道属于「图片」，提取文字属于「文字」（2026-10-25 重组）
+            // 编辑 / 分享 / 识物改道 / 二维码直达属于「图片」，提取文字属于「文字」（2026-10-25 重组）
             edit = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(ctx.prefs, Catalog.SCREEN_IMAGE, PREF_EDIT),
             share = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(ctx.prefs, Catalog.SCREEN_IMAGE, PREF_SHARE),
             ocr = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(ctx.prefs, Catalog.SCREEN_TEXT, PREF_OCR),
             objectXiaoai = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(ctx.prefs, Catalog.SCREEN_IMAGE, PREF_OBJECT_XIAOAI),
+            qrDecode = io.github.kotoriinsky.tsuzuri.core.ContentCapabilities.on(ctx.prefs, Catalog.SCREEN_IMAGE, PREF_QR_DECODE),
         )
-        if (!want.edit && !want.share && !want.ocr && !want.objectXiaoai) {
+        if (!want.hasActionRow && !want.qrDecode) {
             // 全关 = 这个特性就只剩「把保存按钮搬个位置」这件事，不值得动 View 树
-            return InstallReport(0, notes = listOf("三个开关全关，不装 hook（保存按钮保持原位）"))
+            return InstallReport(0, notes = listOf("全部子项均关，不装 hook（保存按钮保持原位）"))
         }
 
         val cls = try {
@@ -497,7 +507,8 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
                             val card = chain.thisObject as? View
                             if (card != null) {
                                 val n = cardsBuilt.incrementAndGet()
-                                val added = rebuildRow(card, want, ctx)
+                                val added = if (want.hasActionRow) rebuildRow(card, want, ctx) else 0
+                                if (want.qrDecode) scheduleQrScan(card, ctx)
                                 // 头几张卡打全量日志（含每一步的失败原因），之后只报总数
                                 if (n <= DIAG_LIMIT) {
                                     ctx.log(Log.INFO, "卡片#$n 操作区：$want 装好=$added")
@@ -1248,6 +1259,154 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
         } catch (t: Throwable) {
             Log.w(TAG, "写入剪贴板失败", t)
         }
+    }
+
+    // ── 本地二维码扫描直达条（长按传送门图片卡） ─────────────────────────────
+
+    /**
+     * 卡片构造后延迟一小拍取当前图片在后台扫描二维码；有码才在操作区上方插入直达条，无码静默不动。
+     */
+    private fun scheduleQrScan(card: View, ctx: HookContext) {
+        val cardRef = java.lang.ref.WeakReference(card)
+        main.postDelayed({
+            val v = cardRef.get() ?: return@postDelayed
+            val bmp = currentBitmap() ?: return@postDelayed
+            if (bmp.isRecycled) return@postDelayed
+            val copy = runCatching { bmp.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return@postDelayed
+            Thread({
+                val detected = try {
+                    LocalQrScanner.scanFirst(copy)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "卡片二维码扫描异常：$t")
+                    null
+                } finally {
+                    if (!copy.isRecycled) copy.recycle()
+                }
+                if (detected == null) return@Thread
+                main.post {
+                    val targetCard = cardRef.get() ?: return@post
+                    if (!targetCard.isAttachedToWindow) return@post
+                    attachQrBanner(targetCard, detected, ctx)
+                }
+            }, "fp-portal-qr").start()
+        }, 80L)
+    }
+
+    private fun attachQrBanner(card: View, detected: LocalQrScanner.Detection, ctx: HookContext) {
+        val parent = card as? ViewGroup ?: return
+        if (parent.findViewWithTag<View>(QR_BAR_TAG) != null) return
+        val context = card.context ?: return
+        val d = context.resources.displayMetrics.density
+        val anchorId = context.resources.getIdentifier(ANCHOR_ID_NAME, "id", context.packageName)
+        val anchor = if (anchorId != 0) card.findViewById<TextView>(anchorId) else null
+        val ink = anchor?.let { iconTint(it) } ?: Color.BLACK
+        val isDarkText = (Color.red(ink) * 299 + Color.green(ink) * 587 + Color.blue(ink) * 114) / 1000 < 128
+        val cardBgColor = if (isDarkText) 0x12000000 else 0x1EFFFFFF
+        val subColor = if (isDarkText) 0x99000000.toInt() else 0xB3FFFFFF.toInt()
+        val action = detected.action
+        val accent = LocalQrScanner.accentColor(action.accent)
+
+        val banner = LinearLayout(context).apply {
+            tag = QR_BAR_TAG
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val ph = (14 * d).toInt()
+            val pv = (10 * d).toInt()
+            setPadding(ph, pv, ph, pv)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 14 * d
+                setColor(cardBgColor)
+            }
+            addView(
+                View(context).apply {
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(accent)
+                    }
+                },
+                LinearLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt()).apply {
+                    marginEnd = (10 * d).toInt()
+                },
+            )
+            val texts = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(context).apply {
+                    text = action.title
+                    setTextColor(ink)
+                    textSize = 14f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                addView(TextView(context).apply {
+                    text = action.subtitle
+                    setTextColor(subColor)
+                    textSize = 12f
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }
+            addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+            if (action.canLaunch) {
+                addView(
+                    TextView(context).apply {
+                        text = "复制"
+                        setTextColor(ink)
+                        textSize = 12f
+                        setPadding((10 * d).toInt(), (6 * d).toInt(), (10 * d).toInt(), (6 * d).toInt())
+                        setOnClickListener {
+                            if (LocalQrScanner.copy(context, action.copyText)) toast(context, "已复制")
+                        }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginStart = (6 * d).toInt()
+                    },
+                )
+            }
+
+            val primaryBtn = TextView(context).apply {
+                text = action.actionLabel
+                setTextColor(Color.WHITE)
+                textSize = 12.5f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding((14 * d).toInt(), (6 * d).toInt(), (14 * d).toInt(), (6 * d).toInt())
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 16 * d
+                    setColor(accent)
+                }
+                setOnClickListener {
+                    if (action.canLaunch) {
+                        if (!LocalQrScanner.launch(context, action)) {
+                            if (LocalQrScanner.copy(context, action.copyText)) {
+                                toast(context, "未找到应用，已复制链接")
+                            } else {
+                                toast(context, "无法打开此链接")
+                            }
+                        }
+                    } else if (LocalQrScanner.copy(context, action.copyText)) {
+                        toast(context, "已复制")
+                    }
+                }
+            }
+            addView(
+                primaryBtn,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = (6 * d).toInt()
+                },
+            )
+            setOnClickListener { primaryBtn.performClick() }
+        }
+
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            val mh = (16 * d).toInt()
+            setMargins(mh, (8 * d).toInt(), mh, (4 * d).toInt())
+        }
+        parent.addView(banner, 0, lp)
+        ctx.log(Log.INFO, "识图卡片二维码命中：${action.title} (${action.kind})")
     }
 
     // ── 私有临时图：编辑与分享共用，但绝不进入 MediaStore ────────────────

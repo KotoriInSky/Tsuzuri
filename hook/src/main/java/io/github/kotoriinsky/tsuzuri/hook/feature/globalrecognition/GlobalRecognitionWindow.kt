@@ -38,6 +38,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import io.github.kotoriinsky.tsuzuri.hook.feature.portal.LocalQrScanner
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalImageActions
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalOcrSelect
 import java.util.concurrent.atomic.AtomicInteger
@@ -113,10 +114,16 @@ internal class GlobalRecognitionWindow(
     private var collapsed = false
 
     /** 手指还按在整屏画布上时选中的变化先记着，抬手再出面板（选完再动画，拖选途中面板不弹来弹去）。 */
-    private var deferredSelection: Pair<RectF?, Boolean>? = null
+    private var deferredSelection: SelectionState? = null
     private var textBar: View? = null
     private var closing = false
     private var attached = false
+
+    private data class SelectionState(
+        val image: RectF? = null,
+        val hasText: Boolean = false,
+        val qr: LocalQrScanner.Detection? = null,
+    )
 
     /** 第一次把识图位图换成选区之前，宿主原来那张；关窗时还原。 */
     private var savedHostBitmap: Bitmap? = null
@@ -149,11 +156,12 @@ internal class GlobalRecognitionWindow(
             topMargin = statusBarHeight() + (8 * d).toInt()
             marginEnd = (16 * d).toInt()
         })
-        screen.onSelection = { image, hasText ->
-            if (screen.touching) deferredSelection = image to hasText else onSelection(image, hasText)
+        screen.onSelection = { image, hasText, qr ->
+            val state = SelectionState(image, hasText, qr)
+            if (screen.touching) deferredSelection = state else onSelection(state)
         }
         screen.onTouchEnd = {
-            deferredSelection?.let { (image, hasText) -> deferredSelection = null; onSelection(image, hasText) }
+            deferredSelection?.let { state -> deferredSelection = null; onSelection(state) }
             updateAvoid()
         }
         for (type in TYPES) {
@@ -196,11 +204,19 @@ internal class GlobalRecognitionWindow(
         }
     }
 
-    fun setResults(glyphs: List<PortalOcrSelect.Glyph>?, regions: List<RectF>) {
+    fun setResults(
+        glyphs: List<PortalOcrSelect.Glyph>?,
+        regions: List<RectF>,
+        qrs: List<LocalQrScanner.Detection> = emptyList(),
+    ) {
         if (closing) return
-        screen.setResults(glyphs.orEmpty(), regions)
+        screen.setResults(glyphs.orEmpty(), regions, qrs)
         when {
-            glyphs == null && regions.isEmpty() -> toast("本地识别不可用，可以拖动框选图片")
+            glyphs == null && regions.isEmpty() && qrs.isEmpty() -> toast("本地识别不可用，可以拖动框选图片")
+            qrs.isNotEmpty() && !screen.hasSelection() -> {
+                // 画面含二维码时自动亮出第一个二维码的直达卡片，一点即跳
+                screen.selectQr(qrs.first())
+            }
         }
     }
 
@@ -225,17 +241,22 @@ internal class GlobalRecognitionWindow(
     // ── 选择 → 底部 ─────────────────────────────────────────────────────
 
     /** 没选东西时底部什么都不放：底栏会挡住屏幕最下面那几行字。 */
-    private fun onSelection(image: RectF?, hasText: Boolean) {
+    private fun onSelection(state: SelectionState) {
         pendingImage = null
         // 改选了别的：之前那次保存再完成也不该清掉新的选中
         stopSaveWatch()
-        if (image != null || hasText) collapsed = false
+        if (state.image != null || state.hasText || state.qr != null) collapsed = false
         when {
-            image != null -> showCard(image)
-            hasText -> showTextBar()
+            state.qr != null -> showQrBar(state.qr)
+            state.image != null -> showCard(state.image)
+            state.hasText -> showTextBar()
             else -> setSheet(null)
         }
         updateAvoid()
+    }
+
+    private fun showQrBar(detection: LocalQrScanner.Detection) {
+        setSheet(qrBar(detection))
     }
 
     private fun showTextBar() {
@@ -630,6 +651,128 @@ internal class GlobalRecognitionWindow(
     // ── 底栏 ────────────────────────────────────────────────────────────
 
     /**
+     * 二维码直达面板：左栏展示平台/类型标题与清洗后的摘要，右侧提供「直达」与「复制」按钮。
+     */
+    private fun qrBar(detection: LocalQrScanner.Detection): View {
+        val action = detection.action
+        val accent = LocalQrScanner.accentColor(action.accent)
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = (20 * d).toInt()
+            setPadding(padH, (18 * d).toInt(), padH, (14 * d).toInt())
+
+            val header = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            // 品牌色圆点，与超级岛语言统一
+            header.addView(
+                View(context).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(accent)
+                    }
+                },
+                LinearLayout.LayoutParams((10 * d).toInt(), (10 * d).toInt()).apply {
+                    marginEnd = (10 * d).toInt()
+                },
+            )
+            header.addView(
+                TextView(context).apply {
+                    text = action.title
+                    setTextColor(Color.BLACK)
+                    textSize = 16f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+            addView(
+                TextView(context).apply {
+                    text = action.subtitle
+                    setTextColor(0xFF666666.toInt())
+                    textSize = 13f
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = (6 * d).toInt()
+                },
+            )
+
+            val buttons = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            }
+            fun pill(label: String, primary: Boolean, onClick: () -> Unit): TextView = TextView(context).apply {
+                text = label
+                textSize = 14f
+                setTextColor(if (primary) Color.WHITE else Color.BLACK)
+                typeface = if (primary) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+                gravity = Gravity.CENTER
+                val ph = (18 * d).toInt()
+                val pv = (9 * d).toInt()
+                setPadding(ph, pv, ph, pv)
+                background = GradientDrawable().apply {
+                    cornerRadius = 20 * d
+                    setColor(if (primary) accent else 0xFFF0F1F5.toInt())
+                }
+                setOnClickListener { onClick() }
+            }
+
+            if (action.canLaunch) {
+                buttons.addView(
+                    pill("复制", primary = false) {
+                        if (LocalQrScanner.copy(context, action.copyText)) {
+                            confirm("已复制", true)
+                            host.log(Log.INFO, "复制二维码内容 ${action.copyText.length} 字")
+                        } else {
+                            toast("复制失败")
+                        }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginEnd = (10 * d).toInt()
+                    },
+                )
+                buttons.addView(
+                    pill(action.actionLabel, primary = true) {
+                        if (LocalQrScanner.launch(context, action)) {
+                            close()
+                        } else if (LocalQrScanner.copy(context, action.copyText)) {
+                            confirm("未找到应用，已复制链接", true)
+                        } else {
+                            toast("未找到可打开此链接的应用")
+                        }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+                )
+            } else {
+                buttons.addView(
+                    pill(action.actionLabel, primary = true) {
+                        if (LocalQrScanner.copy(context, action.copyText)) {
+                            confirm("已复制", true)
+                            host.log(Log.INFO, "复制二维码内容 ${action.copyText.length} 字")
+                        } else {
+                            toast("复制失败")
+                        }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+                )
+            }
+
+            addView(
+                buttons,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = (14 * d).toInt()
+                },
+            )
+        }
+    }
+
+    /**
      * 文字操作栏。按钮规格照抄传送门识图卡片那排（`card_view_taplus_recognition_image_expanded.xml`）：
      * 字号 13.82sp、纯黑、图标槽 21.82dp、图标与文字间距 5.1dp、行上下内边距 25.1 / 21.82dp，
      * 选字和选图切换时两种面板的按钮看起来是一套。
@@ -792,7 +935,7 @@ internal class GlobalRecognitionWindow(
      */
     @SuppressLint("ViewConstructor")
     private inner class ScreenView(context: Context) : View(context) {
-        var onSelection: ((RectF?, Boolean) -> Unit)? = null
+        var onSelection: ((RectF?, Boolean, LocalQrScanner.Detection?) -> Unit)? = null
 
         /** 抬手（含取消）时回调；手指按着期间 [touching] 为 true。 */
         var onTouchEnd: (() -> Unit)? = null
@@ -815,6 +958,8 @@ internal class GlobalRecognitionWindow(
             addUpdateListener { focus = it.animatedValue as Float; invalidate() }
         }
         private var regions: List<RectF> = emptyList()
+        private var qrDetections: List<LocalQrScanner.Detection> = emptyList()
+        private var selectedQr: LocalQrScanner.Detection? = null
         private var ready = false
         private var selStart = -1
         private var selEnd = -1
@@ -891,7 +1036,11 @@ internal class GlobalRecognitionWindow(
             fx.stop()
         }
 
-        fun setResults(g: List<PortalOcrSelect.Glyph>, r: List<RectF>) {
+        fun setResults(
+            g: List<PortalOcrSelect.Glyph>,
+            r: List<RectF>,
+            qrs: List<LocalQrScanner.Detection> = emptyList(),
+        ) {
             glyphs = g
             val byLine = g.groupBy { it.line }
             lineIds = byLine.keys.toList()
@@ -899,8 +1048,9 @@ internal class GlobalRecognitionWindow(
                 RectF(line.minOf { it.box.left }, line.minOf { it.box.top }, line.maxOf { it.box.right }, line.maxOf { it.box.bottom })
             }
             regions = r
+            qrDetections = qrs
             ready = true
-            if (lines.isEmpty() && regions.isEmpty()) {
+            if (lines.isEmpty() && regions.isEmpty() && qrs.isEmpty()) {
                 // 什么都没识别到：光球塌缩消失，不炸，也不弹文字
                 fx.collapse(width, height)
                 return
@@ -909,6 +1059,16 @@ internal class GlobalRecognitionWindow(
             val wait = (fx.burstReadyAt() - android.os.SystemClock.uptimeMillis()).coerceAtLeast(0L)
             removeCallbacks(startBurst)
             postDelayed(startBurst, wait)
+        }
+
+        fun hasSelection(): Boolean = selStart >= 0 || image != null || selectedQr != null
+
+        fun selectQr(det: LocalQrScanner.Detection) {
+            selStart = -1; selEnd = -1; image = null
+            selectedQr = det
+            focusAnim.start()
+            onSelection?.invoke(null, false, det)
+            invalidate()
         }
 
         /** 可选项 [r]（截图坐标）在扩散圈上的位置：0 = 中心，1 = 它那个方向上的屏幕边缘。 */
@@ -959,7 +1119,7 @@ internal class GlobalRecognitionWindow(
             val hi = maxOf(selStart, selEnd)
             val fade = (focus * SELECT_MS / SELECT_FADE_MS).coerceAtMost(1f)
             // 有选中项时其余可选区域降亮度，主次分明（A5）；选中所在的行保持全亮
-            val others = if (lo >= 0 || image != null) 1f - (1f - OTHERS_DIM) * fade else 1f
+            val others = if (lo >= 0 || image != null || selectedQr != null) 1f - (1f - OTHERS_DIM) * fade else 1f
             val selLines = if (lo >= 0) glyphs[lo].line..glyphs[hi].line else IntRange.EMPTY
             for ((i, r) in lines.withIndex()) {
                 var k = revealAt(lineAt.getOrElse(i) { 0f })
@@ -1000,6 +1160,17 @@ internal class GlobalRecognitionWindow(
                 imageStroke.alpha = (255 * fade).toInt()
                 canvas.drawRoundRect(toView(r), radius, radius, imageStroke)
                 canvas.restore()
+            }
+            for (det in qrDetections) {
+                val r = det.bounds ?: continue
+                val isSelected = selectedQr === det
+                val accent = LocalQrScanner.accentColor(det.action.accent, blue)
+                bmpPaint.alpha = if (isSelected) 255 else (255 * others).toInt()
+                spot(canvas, b, r, 4 * d)
+                imageStroke.color = accent
+                imageStroke.alpha = if (isSelected) (255 * fade).toInt() else (210 * others).toInt()
+                canvas.drawRoundRect(toView(r), radius, radius, imageStroke)
+                imageStroke.color = blue
             }
             if (lo >= 0) {
                 selPaint.alpha = (0x66 * fade).toInt()
@@ -1118,6 +1289,13 @@ internal class GlobalRecognitionWindow(
         private fun regionAt(x: Float, y: Float): RectF? =
             regions.filter { RectF(toView(it)).contains(x, y) }.minByOrNull { it.width() * it.height() }
 
+        /** 包含该点的二维码检测结果（带 8dp 容差，小二维码也能稳稳点中）。 */
+        private fun qrAt(x: Float, y: Float): LocalQrScanner.Detection? =
+            qrDetections.firstOrNull { det ->
+                val r = det.bounds ?: return@firstOrNull false
+                RectF(toView(r)).apply { inset(-8 * d, -8 * d) }.contains(x, y)
+            }
+
         // 0 无，1 起点手柄，2 终点手柄，3 拖选文字，4 画框；待定：5 按在字上，6 按在别处
         private var mode = 0
 
@@ -1154,7 +1332,7 @@ internal class GlobalRecognitionWindow(
                         glyphAt(e.x, e.y) >= 0 -> 5
                         else -> 6
                     }
-                    onTarget = mode == 5 || regionAt(e.x, e.y) != null
+                    onTarget = mode == 5 || regionAt(e.x, e.y) != null || qrAt(e.x, e.y) != null
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val moved = hypot(e.x - downX, e.y - downY) > (if (onTarget) tapSlop else slop)
@@ -1202,12 +1380,14 @@ internal class GlobalRecognitionWindow(
             return true
         }
 
-        /** 点按：图片优先于文字（封面上压的大字不该抢走封面）；封面上的字仍可拖动选中。全屏底图例外，字优先。 */
+        /** 点按：二维码优先，其次图片优先于文字（封面上压的大字不该抢走封面）；全屏底图例外，字优先。 */
         private fun tap(x: Float, y: Float) {
+            val qr = qrAt(x, y)
             val g = glyphAt(x, y)
             val r = regionAt(x, y)?.takeUnless { g >= 0 && isBackdrop(it) }
-            host.log(Log.INFO, "点击 (${x.toInt()},${y.toInt()})：字=${g >= 0} 图=${r?.let { "${it.width().toInt()}x${it.height().toInt()}" }}")
+            host.log(Log.INFO, "点击 (${x.toInt()},${y.toInt()})：码=${qr != null} 字=${g >= 0} 图=${r?.let { "${it.width().toInt()}x${it.height().toInt()}" }}")
             when {
+                qr != null -> selectQr(qr)
                 r != null -> selectImage(RectF(r))
                 g >= 0 -> {
                     val line = glyphs[g].line
@@ -1223,25 +1403,28 @@ internal class GlobalRecognitionWindow(
 
         private fun selectText(a: Int, b: Int) {
             image = null
+            selectedQr = null
             selStart = a; selEnd = b
             if (a >= 0) focusAnim.start()
-            onSelection?.invoke(null, a >= 0)
+            onSelection?.invoke(null, a >= 0, null)
         }
 
         private fun selectImage(r: RectF) {
             selStart = -1; selEnd = -1
+            selectedQr = null
             image = r
             focusAnim.start()
-            onSelection?.invoke(r, false)
+            onSelection?.invoke(r, false, null)
         }
 
         private fun clear() {
-            selStart = -1; selEnd = -1; image = null
-            onSelection?.invoke(null, false)
+            selStart = -1; selEnd = -1; image = null; selectedQr = null
+            onSelection?.invoke(null, false, null)
         }
 
         /** 当前选中项在本视图坐标里（不含平移）的范围，文字选区含两端手柄；没选中返回 null。 */
         fun selectionBounds(): RectF? {
+            selectedQr?.bounds?.let { return RectF(toView(it)) }
             image?.let { return RectF(toView(it)) }
             val lo = minOf(selStart, selEnd)
             val hi = maxOf(selStart, selEnd)
@@ -1255,7 +1438,7 @@ internal class GlobalRecognitionWindow(
 
         /** 清除选中（底部面板随之收起）。@return 原来是否选着东西 */
         fun clearSelection(): Boolean {
-            if (selStart < 0 && image == null) return false
+            if (selStart < 0 && image == null && selectedQr == null) return false
             clear()
             invalidate()
             return true

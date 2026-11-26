@@ -44,6 +44,7 @@ import io.github.kotoriinsky.tsuzuri.hook.feature.batterystyle.BatteryStyleFeatu
 import io.github.kotoriinsky.tsuzuri.hook.feature.sideindex.SideIndex
 import io.github.kotoriinsky.tsuzuri.hook.feature.texttoolbar.TextToolbarAiOff
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.CornerSmallWindow
+import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FreeformEnhanceFeature
 import io.github.kotoriinsky.tsuzuri.hook.feature.smallwindow.FreeformTrampolinePlacement
 import io.github.kotoriinsky.tsuzuri.hook.feature.widgetstyle.WidgetUnifiedStyle
 import io.github.libxposed.api.XposedModule
@@ -92,6 +93,7 @@ object HookRegistry {
         GlobalRecognitionTrigger,
         GlobalRecognitionHost,
         MultiFreeformWhitelist,
+        FreeformEnhanceFeature,
         // 口令上岛是双进程特性（system_server 观察剪贴板 / SystemUI 代发岛通知），
         // 两个实现共用 PASSCODE_ISLAND 一个键 —— HookRegistry 按进程名筛 scope，
         // 每个进程只装属于自己的那一个，互不相见。
