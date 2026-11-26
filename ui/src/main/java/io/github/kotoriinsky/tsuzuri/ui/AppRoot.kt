@@ -76,6 +76,7 @@ import io.github.kotoriinsky.tsuzuri.ui.screen.IconPackDrawableScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.IconPackPickerScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.LinkImportScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.LogViewerScreen
+import io.github.kotoriinsky.tsuzuri.ui.screen.OnnxOcrModelsScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.PasscodeRulesScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.ScopeRequirement
 import io.github.kotoriinsky.tsuzuri.ui.screen.SearchScreen
@@ -191,6 +192,7 @@ fun AppRoot() {
                 entry<Dest.SideIndexOverrides> { DrillPage(it, back, navigate) }
                 entry<Dest.IconPackDrawable> { DrillPage(it, back, navigate) }
                 entry<Dest.PasscodeRules> { DrillPage(it, back, navigate) }
+                entry<Dest.OnnxOcrModels> { DrillPage(it, back, navigate) }
             }
             // 「触发」页的屏幕热区高亮：铺满窗口、不拦触摸，压在所有页面之上
             ScreenHotZoneLayer(activePage = stack.last())
@@ -353,6 +355,7 @@ private fun ScreenContent(top: Dest, padding: PaddingValues, navigate: (Dest) ->
         is Dest.ActivityImport -> top.spec
         is Dest.FanIconOverrides -> top.spec
         is Dest.PasscodeRules -> top.spec
+        is Dest.OnnxOcrModels -> top.spec
         is Dest.AppListPicker -> top.spec
         is Dest.SideIndexOverrides -> top.spec
         is Dest.IconPackDrawable -> top.spec
@@ -424,6 +427,7 @@ private fun PageContent(top: Dest, padding: PaddingValues, navigate: (Dest) -> U
         is Dest.FanIconOverrides -> FanIconOverridesScreen(top.spec, padding, navigate, top.focusKey)
         is Dest.LogViewer -> LogViewerScreen(padding)
         is Dest.PasscodeRules -> PasscodeRulesScreen(top.spec, padding)
+        is Dest.OnnxOcrModels -> OnnxOcrModelsScreen(top.spec, padding)
         is Dest.AppListPicker -> AppListPickerScreen(top.spec, padding,
             notice = if (top.spec.key.endsWith(".index_filter_packages")) {
                 val mode = ConfigStore.observe().rawString(io.github.kotoriinsky.tsuzuri.core.Keys.pref(Catalog.SIDE_INDEX, "index_filter_mode"), "all")
@@ -482,6 +486,7 @@ private fun Dest.title(): String = fpString(
         is Dest.FanIconOverrides -> "icon_override.title"
         is Dest.LogViewer -> "log.title"
         is Dest.PasscodeRules -> spec.labelKey
+        is Dest.OnnxOcrModels -> spec.labelKey
         is Dest.IconPackDrawable -> "icon_override.from_pack"
     }
 )

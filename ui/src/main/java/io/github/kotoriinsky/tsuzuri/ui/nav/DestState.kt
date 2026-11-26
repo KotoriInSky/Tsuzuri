@@ -40,6 +40,7 @@ internal fun Dest.stateKey(): String {
         is Dest.SideIndexOverrides -> listOf("side-overrides", spec.key)
         is Dest.IconPackDrawable -> listOf("drawable", spec.key, targetKey, targetLabel)
         is Dest.PasscodeRules -> listOf("rules", spec.key)
+        is Dest.OnnxOcrModels -> listOf("onnx-ocr", spec.key)
     }
     return fields.joinToString("/") { Uri.encode(it) }
 }
@@ -101,6 +102,7 @@ private fun restoreDest(route: String): Dest? {
         }
         "app-list" -> (pref as? PrefSpec.AppList)?.let(Dest::AppListPicker)
         "rules" -> (pref as? PrefSpec.Screen)?.let(Dest::PasscodeRules)
+        "onnx-ocr" -> (pref as? PrefSpec.Screen)?.let(Dest::OnnxOcrModels)
         else -> null
     }
 }

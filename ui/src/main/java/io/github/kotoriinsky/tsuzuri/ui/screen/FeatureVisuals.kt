@@ -51,6 +51,7 @@ internal fun featureIcon(spec: FeatureSpec): FpIcon = when (spec.key) {
     Catalog.SCREEN_IMAGE -> FpIcon(FpGlyphs.Image, PlateColors.Teal)
     Catalog.RECOGNITION_LOOK -> FpIcon(FpGlyphs.ToggleOn, PlateColors.Green)
     Catalog.GLOBAL_RECOGNITION -> FpIcon(FpGlyphs.CropFree, PlateColors.Blue)
+    Catalog.ONNX_OCR -> FpIcon(FpGlyphs.TextFields, PlateColors.Purple)
     // 主动智能：新应用 / 音乐 / 常亮 / 复制直达，各一图一色
     Catalog.CONTEXT_INSTALL -> FpIcon(FpGlyphs.InstallMobile, PlateColors.Green)
     Catalog.CONTEXT_MUSIC -> FpIcon(FpGlyphs.Headphones, PlateColors.Red)

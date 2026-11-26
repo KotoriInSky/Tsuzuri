@@ -30,8 +30,12 @@
       本应用目前不发任何通知。
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 按需在线拉取独立 OCR 推理组件 APK（平时不联网），拉起系统安装器安装。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
+        <package android:name="io.github.kotoriinsky.tsuzuri.ocr" />
         <package android:name="com.miui.voiceassist" />
         <!-- 完美状态栏预览：现取系统状态栏的信号 / Wi-Fi / 电池图标（不复制素材进仓库） -->
         <package android:name="com.android.systemui" />
@@ -152,6 +156,16 @@
             android:authorities="io.github.kotoriinsky.tsuzuri.portaltemp"
             android:exported="true"
             android:enabled="true"
+            android:grantUriPermissions="true" />
+
+        <!--
+          独立 OCR 推理组件 APK 安装出口：非导出，仅通过安装 Intent 的临时读授权把
+          cacheDir/ocr_plugin/ocr-runtime.apk 交给系统包安装器。
+        -->
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ui.ocr.OcrPluginInstallProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.ocrinstall"
+            android:exported="false"
             android:grantUriPermissions="true" />
 
         <activity

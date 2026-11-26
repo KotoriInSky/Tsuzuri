@@ -86,6 +86,8 @@ dependencies {
     // M3 自定义取色的完整色调盘。只引纯算法库（无 UI 依赖），见 libs.versions.toml 的注释。
     implementation(libs.material.color.utilities)
 
+    // 端侧多语种 OCR 已拆分为独立可选组件 :ocr-runtime（主模块零推理库，保持轻小）。
+
     debugImplementation(libs.compose.ui.tooling)
 
     // ── instrumentation 测试（两套 Kit 的契约测试）──

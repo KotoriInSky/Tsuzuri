@@ -5,9 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import io.github.kotoriinsky.tsuzuri.core.isUserToggleable
 import io.github.kotoriinsky.tsuzuri.core.blockedHintKey
-import io.github.kotoriinsky.tsuzuri.core.FeatureSpec
+import io.github.kotoriinsky.tsuzuri.core.Catalog
 import io.github.kotoriinsky.tsuzuri.core.CopyDirect
+import io.github.kotoriinsky.tsuzuri.core.FeatureSpec
+import io.github.kotoriinsky.tsuzuri.core.Keys
 import io.github.kotoriinsky.tsuzuri.core.Maturity
+import io.github.kotoriinsky.tsuzuri.core.OnnxOcr
 import io.github.kotoriinsky.tsuzuri.core.PrefSpec
 import io.github.kotoriinsky.tsuzuri.core.Prefs
 import io.github.kotoriinsky.tsuzuri.core.ScopeTarget
@@ -289,10 +292,17 @@ private fun PrefRowContent(
             summary = summary,
             trailingText = null,
             onClick = if (enabled) ({
-                if (spec.key == CopyDirect.key(CopyDirect.ICON_PACK)) {
-                    onNavigate(Dest.IconPackPicker(spec.key.substringBeforeLast('.'), spec.labelKey,
-                        previewPackage = "com.taobao.taobao"))
-                } else onNavigate(Dest.PasscodeRules(spec))
+                when (spec.key) {
+                    CopyDirect.key(CopyDirect.ICON_PACK) -> onNavigate(
+                        Dest.IconPackPicker(
+                            spec.key.substringBeforeLast('.'),
+                            spec.labelKey,
+                            previewPackage = "com.taobao.taobao",
+                        ),
+                    )
+                    Keys.pref(Catalog.ONNX_OCR, OnnxOcr.PREF_MODELS) -> onNavigate(Dest.OnnxOcrModels(spec))
+                    else -> onNavigate(Dest.PasscodeRules(spec))
+                }
             }) else null,
             enabled = enabled,
             navigates = true,
