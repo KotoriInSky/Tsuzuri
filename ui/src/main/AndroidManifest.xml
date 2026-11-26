@@ -30,9 +30,10 @@
       本应用目前不发任何通知。
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 按需在线拉取独立 OCR 推理组件 APK（平时不联网），拉起系统安装器安装。 -->
+    <!-- 按需在线拉取/卸载独立 OCR 推理组件 APK（平时不联网）。 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <queries>
         <package android:name="io.github.kotoriinsky.tsuzuri.ocr" />

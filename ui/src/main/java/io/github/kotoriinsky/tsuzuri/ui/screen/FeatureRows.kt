@@ -300,7 +300,6 @@ private fun PrefRowContent(
                             previewPackage = "com.taobao.taobao",
                         ),
                     )
-                    Keys.pref(Catalog.ONNX_OCR, OnnxOcr.PREF_MODELS) -> onNavigate(Dest.OnnxOcrModels(spec))
                     else -> onNavigate(Dest.PasscodeRules(spec))
                 }
             }) else null,

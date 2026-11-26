@@ -167,6 +167,12 @@ fun FeatureDetailScreen(featureKey: String, padding: PaddingValues, onNavigate: 
             kit.Banner(fpString("feature.capability.empty"), FpEmphasis.WARNING)
         }
 
+        // 多语种 OCR：组件管理、下载源、卸载与三档模型整合在当前单页，不再跳冗余第三层
+        if (spec.key == Catalog.ONNX_OCR) {
+            OnnxOcrDetailContent()
+            return
+        }
+
         // 参数一多就必须分组（超过约 8 个）。分组**从 Catalog 现算**，
         // 这一页不认识任何具体的参数名或分组名。
         val groups = spec.prefGroups()

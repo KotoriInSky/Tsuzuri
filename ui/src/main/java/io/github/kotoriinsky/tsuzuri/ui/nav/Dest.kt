@@ -164,9 +164,6 @@ sealed interface Dest : top.yukonga.miuix.kmp.nav.core.NavKey {
      */
     data class PasscodeRules(val spec: PrefSpec.Screen) : Dest
 
-    /** 多语种端侧 OCR（PP-OCRv6）模型管理与一键加速下载页。 */
-    data class OnnxOcrModels(val spec: PrefSpec.Screen) : Dest
-
     /** 下钻页的真值表 —— 决定返回键和底栏是否出现。 */
     val isTopLevel: Boolean
         get() = this is Home || this is Settings
