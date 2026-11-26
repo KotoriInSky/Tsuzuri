@@ -17,8 +17,93 @@ object GlobalRecognition {
      */
     const val EXTRA_PACKAGE = "package"
 
+    /**
+     * [ACTION_TILE] 附带的直达标记：由快捷方式 / 扇形小窗触发时传 true，
+     * SystemUI 跳过 `collapsePanels()` 且只等极短退场帧，免去 450ms 控制中心收起延迟。
+     */
+    const val EXTRA_INSTANT = "instant"
+
     /** 收起控制中心到截图之间的等待：收起动画约 300ms，再留一两帧。 */
     const val COLLAPSE_WAIT_MS = 450L
+
+    /** 快捷方式 / 扇形小窗直达触发时的截图等待：仅等透明跳板 Activity 退场。 */
+    const val INSTANT_WAIT_MS = 80L
+
+    /** 识别过渡动效风格配置键。 */
+    const val PREF_FX_STYLE = "fx_style"
+    /** 流光扫描（AGSL 边缘流体光晕 + 柔光扫屏，不挡画面中央、响应更快）。 */
+    const val FX_AURORA = "aurora"
+    /** 星云粒子（经典三维粒子球炸开）。 */
+    const val FX_PARTICLES = "particles"
+    val FX_STYLES: List<String> = listOf(FX_AURORA, FX_PARTICLES)
+
+    fun normalizeFxStyle(raw: String?): String = when (raw) {
+        FX_PARTICLES -> FX_PARTICLES
+        else -> FX_AURORA
+    }
+
+    /** 浮点矩形（用于选区微调等纯几何计算）。 */
+    data class BoxF(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+        val width get() = right - left
+        val height get() = bottom - top
+    }
+
+    /** 图片选区微调手柄。 */
+    enum class CropHandle {
+        TOP_LEFT,
+        TOP_RIGHT,
+        BOTTOM_LEFT,
+        BOTTOM_RIGHT,
+        LEFT,
+        TOP,
+        RIGHT,
+        BOTTOM,
+        MOVE,
+    }
+
+    /**
+     * 根据拖拽增量 [dx]/[dy] 调整图片选区 [origin]，保证结果落在 `[0, maxW] × [0, maxH]`
+     * 且宽高不小于 [minSide]（永不翻转）。
+     */
+    fun adjustCropBox(
+        origin: BoxF,
+        handle: CropHandle,
+        dx: Float,
+        dy: Float,
+        maxW: Float,
+        maxH: Float,
+        minSide: Float,
+    ): BoxF {
+        if (maxW <= 0f || maxH <= 0f) return origin
+        val minW = minSide.coerceAtMost(maxW).coerceAtLeast(1f)
+        val minH = minSide.coerceAtMost(maxH).coerceAtLeast(1f)
+        if (handle == CropHandle.MOVE) {
+            val w = origin.width.coerceIn(minW, maxW)
+            val h = origin.height.coerceIn(minH, maxH)
+            val l = (origin.left + dx).coerceIn(0f, maxW - w)
+            val t = (origin.top + dy).coerceIn(0f, maxH - h)
+            return BoxF(l, t, l + w, t + h)
+        }
+        var l = origin.left.coerceIn(0f, maxW - minW)
+        var t = origin.top.coerceIn(0f, maxH - minH)
+        var r = origin.right.coerceIn(l + minW, maxW)
+        var b = origin.bottom.coerceIn(t + minH, maxH)
+        when (handle) {
+            CropHandle.LEFT, CropHandle.TOP_LEFT, CropHandle.BOTTOM_LEFT ->
+                l = (origin.left + dx).coerceIn(0f, r - minW)
+            CropHandle.RIGHT, CropHandle.TOP_RIGHT, CropHandle.BOTTOM_RIGHT ->
+                r = (origin.right + dx).coerceIn(l + minW, maxW)
+            else -> Unit
+        }
+        when (handle) {
+            CropHandle.TOP, CropHandle.TOP_LEFT, CropHandle.TOP_RIGHT ->
+                t = (origin.top + dy).coerceIn(0f, b - minH)
+            CropHandle.BOTTOM, CropHandle.BOTTOM_LEFT, CropHandle.BOTTOM_RIGHT ->
+                b = (origin.bottom + dy).coerceIn(t + minH, maxH)
+            else -> Unit
+        }
+        return BoxF(l, t, r, b)
+    }
 
     /** 像素矩形（左上闭、右下开）。 */
     data class Box(val left: Int, val top: Int, val right: Int, val bottom: Int) {

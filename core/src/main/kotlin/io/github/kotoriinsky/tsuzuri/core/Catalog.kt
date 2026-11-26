@@ -1253,6 +1253,16 @@ object Catalog {
                     hintKey = "pref.global_recognition.qr_decode.hint",
                     default = true,
                 ),
+                PrefSpec.Choice(
+                    key = p(GLOBAL_RECOGNITION, GlobalRecognition.PREF_FX_STYLE),
+                    labelKey = "pref.global_recognition.fx_style",
+                    hintKey = "pref.global_recognition.fx_style.hint",
+                    default = GlobalRecognition.FX_AURORA,
+                    options = listOf(
+                        PrefSpec.Choice.Option(GlobalRecognition.FX_AURORA, "pref.global_recognition.fx_style.aurora"),
+                        PrefSpec.Choice.Option(GlobalRecognition.FX_PARTICLES, "pref.global_recognition.fx_style.particles"),
+                    ),
+                ),
             ),
         ),
         FeatureSpec(

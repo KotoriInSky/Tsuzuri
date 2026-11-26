@@ -81,4 +81,60 @@ class GlobalRecognitionTest {
         val r = find(px)
         assertEquals(listOf(Box(16, 160, 224, 320), Box(16, 16, 80, 80)), r)
     }
+
+    @Test
+    fun 动效风格归一化默认回落流光扫描() {
+        assertEquals(GlobalRecognition.FX_AURORA, GlobalRecognition.normalizeFxStyle(null))
+        assertEquals(GlobalRecognition.FX_AURORA, GlobalRecognition.normalizeFxStyle("unknown"))
+        assertEquals(GlobalRecognition.FX_AURORA, GlobalRecognition.normalizeFxStyle(GlobalRecognition.FX_AURORA))
+        assertEquals(GlobalRecognition.FX_PARTICLES, GlobalRecognition.normalizeFxStyle(GlobalRecognition.FX_PARTICLES))
+    }
+
+    @Test
+    fun 选区微调手柄遵守最小边长与屏幕边界() {
+        val origin = GlobalRecognition.BoxF(100f, 100f, 300f, 300f)
+
+        // 左上角往右下拖过头：不能翻转，宽高保持 >= 48
+        val shrunk = GlobalRecognition.adjustCropBox(
+            origin,
+            GlobalRecognition.CropHandle.TOP_LEFT,
+            dx = 260f,
+            dy = 280f,
+            maxW = 1000f,
+            maxH = 2000f,
+            minSide = 48f,
+        )
+        assertEquals(252f, shrunk.left)
+        assertEquals(252f, shrunk.top)
+        assertEquals(300f, shrunk.right)
+        assertEquals(300f, shrunk.bottom)
+
+        // 右下角拉出屏幕外：夹到屏幕边缘
+        val expanded = GlobalRecognition.adjustCropBox(
+            origin,
+            GlobalRecognition.CropHandle.BOTTOM_RIGHT,
+            dx = 900f,
+            dy = 2500f,
+            maxW = 1000f,
+            maxH = 2000f,
+            minSide = 48f,
+        )
+        assertEquals(1000f, expanded.right)
+        assertEquals(2000f, expanded.bottom)
+
+        // 整体平移不改变尺寸并钳位在屏幕内
+        val moved = GlobalRecognition.adjustCropBox(
+            origin,
+            GlobalRecognition.CropHandle.MOVE,
+            dx = -200f,
+            dy = 1900f,
+            maxW = 1000f,
+            maxH = 2000f,
+            minSide = 48f,
+        )
+        assertEquals(0f, moved.left)
+        assertEquals(200f, moved.right)
+        assertEquals(1800f, moved.top)
+        assertEquals(2000f, moved.bottom)
+    }
 }
