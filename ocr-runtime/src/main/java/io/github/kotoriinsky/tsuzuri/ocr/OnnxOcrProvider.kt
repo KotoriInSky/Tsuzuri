@@ -42,6 +42,7 @@ class OnnxOcrProvider : ContentProvider() {
                 }
             }
             OnnxOcr.METHOD_QUERY_STATE -> handleQueryState(ctx, out)
+            OnnxOcr.METHOD_STORE_FILE -> handleStoreFile(ctx, extras, out)
             OnnxOcr.METHOD_START_DOWNLOAD -> {
                 val tier = OnnxOcr.Tier.of(extras?.getString(OnnxOcr.EXTRA_TIER))
                 val mirror = OnnxOcr.Mirror.of(extras?.getString(OnnxOcr.EXTRA_MIRROR))
@@ -94,6 +95,30 @@ class OnnxOcrProvider : ContentProvider() {
             putLong(OnnxOcr.OUT_DL_BYTES, snap.downloadedBytes)
             putLong(OnnxOcr.OUT_DL_TOTAL, snap.totalBytes)
             putString(OnnxOcr.OUT_DL_MESSAGE, snap.message)
+        }
+    }
+
+    private fun handleStoreFile(ctx: Context, extras: Bundle?, out: Bundle): Bundle {
+        val tier = OnnxOcr.Tier.of(extras?.getString(OnnxOcr.EXTRA_TIER))
+        val fileName = extras?.getString(OnnxOcr.EXTRA_FILE_NAME).orEmpty()
+        @Suppress("DEPRECATION")
+        val pfd = extras?.getParcelable<ParcelFileDescriptor>(OnnxOcr.EXTRA_PFD)
+            ?: return out.apply {
+                putBoolean(OnnxOcr.OUT_OK, false)
+                putString(OnnxOcr.OUT_ERROR, "missing file pfd")
+            }
+        return try {
+            val written = ParcelFileDescriptor.AutoCloseInputStream(pfd).use { input ->
+                OnnxOcrModelStore.storeFileFromStream(ctx, tier, fileName, input)
+            }
+            Log.i(TAG, "已接收模型文件 ${tier.id}/$fileName（${written / 1024}KB）")
+            out.apply { putBoolean(OnnxOcr.OUT_OK, true) }
+        } catch (t: Throwable) {
+            Log.w(TAG, "写入模型文件失败 ${tier.id}/$fileName", t)
+            out.apply {
+                putBoolean(OnnxOcr.OUT_OK, false)
+                putString(OnnxOcr.OUT_ERROR, t.message ?: t.javaClass.simpleName)
+            }
         }
     }
 

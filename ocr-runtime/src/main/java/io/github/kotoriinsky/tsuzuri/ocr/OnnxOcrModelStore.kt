@@ -68,6 +68,47 @@ internal object OnnxOcrModelStore {
         }
     }
 
+    /** 接收主模块前台下载完传入的模型文件流，写入组件私有目录并原子重命名。 */
+    fun storeFileFromStream(
+        context: Context,
+        tier: OnnxOcr.Tier,
+        fileName: String,
+        input: java.io.InputStream,
+    ): Long {
+        val allowed = OnnxOcr.modelFiles(tier).any { it.localName == fileName }
+        require(allowed) { "不允许的模型文件名：$fileName" }
+        val dir = tierDir(context, tier).apply { mkdirs() }
+        val part = File(dir, "$fileName.part")
+        val target = File(dir, fileName)
+        var written = 0L
+        try {
+            FileOutputStream(part).use { out ->
+                val buf = ByteArray(64 shl 10)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    written += n
+                }
+                out.flush()
+            }
+            if (written < 512L) {
+                part.delete()
+                throw IllegalStateException("文件体积异常：${written}B")
+            }
+            if (target.exists()) target.delete()
+            if (!part.renameTo(target)) {
+                part.delete()
+                throw IllegalStateException("原子重命名失败：$fileName")
+            }
+            OnnxOcrEngine.releaseIfTier(tier)
+            return written
+        } catch (t: Throwable) {
+            runCatching { part.delete() }
+            throw t
+        }
+    }
+
     fun cancelDownload() {
         cancelFlag?.set(true)
     }
