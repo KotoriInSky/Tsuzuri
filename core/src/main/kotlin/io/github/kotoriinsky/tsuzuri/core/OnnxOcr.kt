@@ -30,6 +30,7 @@ object OnnxOcr {
     const val METHOD_RECOGNIZE = "recognize"
     const val METHOD_STATUS = "status"
     const val METHOD_QUERY_STATE = "query_state"
+    const val METHOD_STORE_FILE = "store_file"
     const val METHOD_START_DOWNLOAD = "start_download"
     const val METHOD_CANCEL_DOWNLOAD = "cancel_download"
     const val METHOD_DELETE_TIER = "delete_tier"
@@ -37,6 +38,7 @@ object OnnxOcr {
 
     const val EXTRA_PFD = "pfd"
     const val EXTRA_TIER = "tier"
+    const val EXTRA_FILE_NAME = "file_name"
     const val EXTRA_MIRROR = "mirror"
     const val EXTRA_CUSTOM_MIRROR = "custom_mirror"
     const val EXTRA_BACKEND = "backend"

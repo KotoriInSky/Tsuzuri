@@ -1276,11 +1276,6 @@ object Catalog {
             restart = RestartPolicy.HOT,
             maturity = Maturity.EXPERIMENTAL,
             prefs = listOf(
-                PrefSpec.Screen(
-                    key = p(ONNX_OCR, OnnxOcr.PREF_MODELS),
-                    labelKey = "pref.onnx_ocr.models",
-                    hintKey = null,
-                ),
                 PrefSpec.Choice(
                     key = p(ONNX_OCR, OnnxOcr.PREF_TIER),
                     labelKey = "pref.onnx_ocr.tier",
