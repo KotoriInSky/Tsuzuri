@@ -22,6 +22,7 @@ import io.github.kotoriinsky.tsuzuri.core.LauncherScope
 import io.github.kotoriinsky.tsuzuri.core.OrderedItems
 import io.github.kotoriinsky.tsuzuri.core.PrefSpec
 import io.github.kotoriinsky.tsuzuri.core.RecentList
+import io.github.kotoriinsky.tsuzuri.core.SideIndexPreviewPass
 import io.github.kotoriinsky.tsuzuri.core.ShortcutEntries
 import io.github.kotoriinsky.tsuzuri.core.geometry.SideIndexHotZone
 import io.github.kotoriinsky.tsuzuri.hook.Feature
@@ -323,6 +324,15 @@ object SideIndex : Feature(Catalog.require(Catalog.SIDE_INDEX)) {
     internal var edgePriority = false
         private set
 
+    /** 设置页临时通行截止时间（epoch ms，0 = 关闭）。由 [watchPrefs] 更新，[applyScopeGate] 消费。 */
+    @Volatile
+    private var previewPassUntilMs: Long = 0L
+
+    /** 当前是否处于本模块设置页的临时通行态。主线程写、输入线程读。 */
+    @Volatile
+    internal var previewPassActive: Boolean = false
+        private set
+
     /** 上一次判过的前台包名。只用来决定「要不要打那条日志」（Appindex 同样如此）。主线程读写。 */
     private var lastForeground: String? = null
 
@@ -564,6 +574,9 @@ object SideIndex : Feature(Catalog.require(Catalog.SIDE_INDEX)) {
         // 生效范围的门控：250ms 一次的主线程轮询，照 Appindex 的
         // startForegroundAppScopeMonitoring（它也是 `mainHandler.postDelayed(this, 250)`）。
         // 判定只读 ForegroundTracker 的 volatile 缓存，没有 IPC。
+        previewPassUntilMs = runCatching {
+            ctx.store?.getLong(SideIndexPreviewPass.SIGNAL_KEY, 0L) ?: 0L
+        }.getOrDefault(0L)
         startScopePolling(ctx)
 
         // 边缘把手：**常驻**显示，装的时候就要有；开关 / 尺寸 / 位置都要能热改（见 applyHandle）。
@@ -749,6 +762,8 @@ object SideIndex : Feature(Catalog.require(Catalog.SIDE_INDEX)) {
         scopePoller?.let { mainHandler.removeCallbacks(it) }
         scopePoller = null
         scopeAllowed = false
+        previewPassUntilMs = 0L
+        previewPassActive = false
         currentScope = SideIndexScope.LAUNCHER_ONLY
 
         // 触发几何收回成「任何位置都不成立」—— 关态在输入分派线程那一侧
@@ -1379,6 +1394,15 @@ object SideIndex : Feature(Catalog.require(Catalog.SIDE_INDEX)) {
         val store = ctx.store ?: return
         val prefix = spec.key + "."
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == SideIndexPreviewPass.SIGNAL_KEY) {
+                val until = runCatching { store.getLong(SideIndexPreviewPass.SIGNAL_KEY, 0L) }.getOrDefault(0L)
+                previewPassUntilMs = until
+                mainHandler.post {
+                    if (myGeneration != generation) return@post
+                    runCatching { applyScopeGate(currentScope, SystemUiEnv.ForegroundTracker.foreground(), ctx) }
+                }
+                return@OnSharedPreferenceChangeListener
+            }
             // 只认自己这一组键：`f.*` 是特性开关，由 HookRegistry 管；
             // 别的特性（corner_small_window.* 等）有它们自己的监听。
             if (key == null || !key.startsWith(prefix)) return@OnSharedPreferenceChangeListener
@@ -1487,10 +1511,15 @@ object SideIndex : Feature(Catalog.require(Catalog.SIDE_INDEX)) {
         // 但划它没反应」（比两个都不给更让人困惑）。
         // 输入线程另有 [SideIndexDrawerGate.blocks] 做零延迟的那一份判定（见那里的注释）。
         val drawer = SideIndexDrawerGate.blocks
+        val previewPass = SideIndexPreviewPass.isActive(
+            foreground = foreground,
+            untilEpochMs = previewPassUntilMs,
+            nowEpochMs = System.currentTimeMillis(),
+        )
         // 本批 1️⃣：`launcherPackages` 是**用户配的那几个包**（空集 = 没配过，
         // 由 SideIndexScope 退回系统解析出来的桌面）。轮询每跑一次读一次这个字段，
         // 所以改配置只要换字段就生效 —— 与 scope 同一条路。
-        val allowed = SideIndexScope.allows(scope, foreground, launcherPackages) && !drawer
+        val allowed = previewPass || (SideIndexScope.allows(scope, foreground, launcherPackages) && !drawer)
         if (foreground == null && !warnedNoForeground) {
             // 「前台追踪器一直没有读数」是**静默失效**的典型来源：它会让生效范围
             // 恒为不放行，表现出来就是「这个特性完全没反应」，而日志里一条都没有。
@@ -1505,16 +1534,19 @@ object SideIndex : Feature(Catalog.require(Catalog.SIDE_INDEX)) {
         val gateChanged = allowed != scopeAllowed
         val packageChanged = foreground != lastForeground
         val drawerChanged = drawer != lastDrawerBlocked
+        val passChanged = previewPass != previewPassActive
         scopeAllowed = allowed
-        // 边缘优先只在桌面态：冲突来自桌面自己的「上滑开抽屉」，见 [edgePriority] 的注释
-        edgePriority = config?.scope == "launcher_only"
+        previewPassActive = previewPass
+        // 边缘优先只在桌面态：临时通行时不抢 DOWN，避免吃掉设置页边缘点击与侧滑返回
+        edgePriority = !previewPass && config?.scope == "launcher_only"
         lastDrawerBlocked = drawer
-        if (!packageChanged && !gateChanged && !drawerChanged) return
+        if (!packageChanged && !gateChanged && !drawerChanged && !passChanged) return
         lastForeground = foreground
         handle?.setScopeAllowed(allowed)
         ctx.log(
             Log.INFO,
             "侧滑索引前台应用范围：fg=$foreground allowed=$allowed scope=$scope" +
+                (if (previewPass) " previewPass=true" else "") +
                 // 打**生效集合**：用户「明明勾了 Niagara 却不生效」时，这一行是唯一
                 // 能看出「他勾的是不是 Niagara」的地方（与 auto 那两档也分得开）。
                 " launchers=" + SideIndexScope.describeLaunchers(launcherPackages) +
@@ -2977,7 +3009,8 @@ internal class SideIndexDetector(
                     // 是这条需求最典型的场景（抽屉自带的 A-Z 索引条就在右边缘）。
                     // [SideIndexDrawerGate.blocks] 同样是纯内存读（一个 volatile + 一次时间比较），
                     // 没有 IPC，符合输入线程的纪律。
-                    if (!SideIndex.scopeAllowed || SideIndexDrawerGate.blocks ||
+                    val drawerBlocked = !SideIndex.previewPassActive && SideIndexDrawerGate.blocks
+                    if (!SideIndex.scopeAllowed || drawerBlocked ||
                         OverlayArbiter.fanShowing || SideIndexShadeGate.blocks
                     ) {
                         SideIndex.skippedOutOfScope++
@@ -2987,8 +3020,8 @@ internal class SideIndexDetector(
                     active = true
                     // 起手成立 → 这次触摸**真的**归我们（抢指针，见 [SwipeEventHub.pilfer]）。
                     // 正常路径上上面那一档已经抢过了；这里兜住「第一帧就直接越过两道闸门」
-                    // 这种一跳就到的情况（pilfer 自己保证每个手势只调一次）。
-                    if (owns && !grabbed) {
+                    // 以及临时通行态（DOWN 不抢，纵滑起手成立后再取消底层列表滚动）。
+                    if ((owns || SideIndex.previewPassActive) && !grabbed) {
                         grabbed = true
                         val ok = SwipeEventHub.pilfer()
                         note(if (ok) "起步即抢指针：成功" else "起步即抢指针：失败 " + SwipeEventHub.pilferFailure)
@@ -3036,7 +3069,7 @@ internal class SideIndexDetector(
                 // （[SideIndexDrawerGate] / [LauncherNativeOverlayTracker]）。它们表示「桌面已被别的东西占了」，
                 // 这时我们画的条就是噪音：条先闪一下、抽屉随后打开，用户看到的就是「误触」。
                 // 收尾**照 ACTION_CANCEL 那一套**（只把 gesture 置空的话浮层会留在屏幕上 —— 这个 bug 出现过）。
-                if (SideIndexDrawerGate.blocks || OverlayArbiter.fanShowing ||
+                if ((!SideIndex.previewPassActive && SideIndexDrawerGate.blocks) || OverlayArbiter.fanShowing ||
                     SideIndexShadeGate.blocks
                 ) {
                     SideIndex.skippedOutOfScope++
