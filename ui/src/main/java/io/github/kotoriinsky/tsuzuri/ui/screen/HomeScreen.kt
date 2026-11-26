@@ -95,43 +95,45 @@ fun HomeScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
         // 枚举顺序即展示顺序；空组（如已下架的负一屏）不占小节标题
         for (group in FeatureGroup.entries) {
             val features = groups[group] ?: continue
+            kit.SectionHeader(title = fpString(group.titleI18n))
             if (group == FeatureGroup.CLIPBOARD) {
-                // 主动智能合并成一个入口，各项收进二级页
-                kit.VSpace(FpSpace.m)
+                // 主动智能独立分区：核心「复制直达」单列一行，其余三项收进「场景建议」二级页
                 kit.Card {
-                    // 走 FeatureRow 而不是 ActionRow：两者行首间距不同，同一页的标题会对不齐
-                    kit.FeatureRow(
-                        title = fpString(group.titleI18n),
-                        summary = fpString("proactive_summary"),
+                    features.firstOrNull { it.key == Catalog.PASSCODE_ISLAND }?.let { copy ->
+                        ScopedFeatureRow(copy, prefs) { navigate(Dest.FeatureDetail(copy.key)) }
+                    }
+                    AggregatedEntryRow(
+                        title = fpString("proactive_scenes_title"),
+                        summary = fpString("proactive_scenes_summary"),
                         icon = groupIcon(group),
-                        checked = false,
-                        onCheckedChange = {},
                         onClick = { navigate(Dest.Proactive) },
                     )
                 }
                 continue
             }
-            kit.SectionHeader(title = fpString(group.titleI18n))
             // HyperOS 设置的卡片内没有分割线，靠行距与色块图标分隔
             kit.Card {
                 for (spec in features) {
-                    if (spec.key == Catalog.PA_WIDGET_ADMISSION) {
-                        kit.FeatureRow(
+                    if (spec.key == WIDGET_FEATURE_KEYS.first()) {
+                        AggregatedEntryRow(
                             title = fpString("widget_settings_title"),
                             summary = fpString("widget_settings_summary"),
                             icon = featureIcon(spec),
-                            checked = false,
-                            onCheckedChange = {},
                             onClick = { navigate(Dest.WidgetSettings) },
                         )
                         continue
                     }
-                    if (spec.key == Catalog.PA_WIDGET_PICKER_INJECT ||
-                        spec.key == Catalog.WIDGET_STYLE ||
-                        spec.key == Catalog.DESKTOP_WIDGET_STYLE ||
-                        spec.key == Catalog.DESKTOP_WIDGET_DRAG_PA ||
-                        spec.key == Catalog.DESKTOP_WIDGET_STACK
-                    ) continue
+                    if (spec.key in WIDGET_FEATURE_KEYS) continue
+                    if (spec.key == Catalog.CLEAN_STATUSBAR) {
+                        AggregatedEntryRow(
+                            title = fpString("statusbar_settings_title"),
+                            summary = fpString("statusbar_settings_summary"),
+                            icon = statusBarGroupIcon(),
+                            onClick = { navigate(Dest.StatusBarSettings) },
+                        )
+                        continue
+                    }
+                    if (spec.key in STATUSBAR_FEATURE_KEYS) continue
                     ScopedFeatureRow(spec, prefs) { navigate(Dest.FeatureDetail(spec.key)) }
                 }
             }
@@ -139,6 +141,38 @@ fun HomeScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
 
         kit.VSpace(FpSpace.huge)
     }
+}
+
+/** 归入「完美小部件」聚合页的特性键（第一位用作首页占位锚点）。 */
+internal val WIDGET_FEATURE_KEYS: List<String> = listOf(
+    Catalog.PA_WIDGET_ADMISSION,
+    Catalog.PA_WIDGET_PICKER_INJECT,
+    Catalog.WIDGET_STYLE,
+    Catalog.DESKTOP_WIDGET_STYLE,
+    Catalog.DESKTOP_WIDGET_DRAG_PA,
+    Catalog.DESKTOP_WIDGET_STACK,
+)
+
+/**
+ * 聚合二级页入口行（场景建议 / 完美小部件 / 状态栏）。
+ * 走 FeatureRow 保持行首图标与标题基线与普通功能行一致，右侧只留箭头不堆额外状态字。
+ */
+@Composable
+private fun AggregatedEntryRow(
+    title: String,
+    summary: String,
+    icon: io.github.kotoriinsky.tsuzuri.ui.kit.FpIcon,
+    onClick: () -> Unit,
+) {
+    LocalFpKit.current.FeatureRow(
+        title = title,
+        summary = summary,
+        icon = icon,
+        checked = false,
+        onCheckedChange = {},
+        onClick = onClick,
+        stateText = null,
+    )
 }
 
 /** 状态卡点了去哪：红卡 / 缺作用域的黄卡去 LSPosed 处理，待重载就地重载，其它去模块状态页。 */

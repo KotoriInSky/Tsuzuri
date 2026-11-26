@@ -41,6 +41,40 @@ object FpCustomGlyphs {
             }
         }.build()
     }
+
+    /** 横向圆角电池（24×24）：壳体 + 右侧电极帽，用于「电池样式」功能图标。 */
+    val Battery: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Fp.Battery",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                // 电池主体：圆角矩形 (2.5, 6.5) - (19.5, 17.5)，r=2.5
+                moveTo(5f, 6.5f)
+                lineTo(17f, 6.5f)
+                arcToRelative(2.5f, 2.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = 2.5f, dy1 = 2.5f)
+                lineTo(19.5f, 15f)
+                arcToRelative(2.5f, 2.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = -2.5f, dy1 = 2.5f)
+                lineTo(5f, 17.5f)
+                arcToRelative(2.5f, 2.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = -2.5f, dy1 = -2.5f)
+                lineTo(2.5f, 9f)
+                arcToRelative(2.5f, 2.5f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = 2.5f, dy1 = -2.5f)
+                close()
+                // 内部电芯条（负空间留白改用外壳空心？改为右极帽 + 主体实心，与同页色块内白色实心风一致）
+                // 右侧正极帽：(20.5, 9.8) - (22.2, 14.2)，圆角
+                moveTo(20.5f, 9.8f)
+                lineTo(21.2f, 9.8f)
+                arcToRelative(1f, 1f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = 1f, dy1 = 1f)
+                lineTo(22.2f, 13.2f)
+                arcToRelative(1f, 1f, 0f, isMoreThanHalf = false, isPositiveArc = true, dx1 = -1f, dy1 = 1f)
+                lineTo(20.5f, 14.2f)
+                close()
+            }
+        }.build()
+    }
 }
 
 private fun PathBuilder.circle(x: Float, y: Float, r: Float) {

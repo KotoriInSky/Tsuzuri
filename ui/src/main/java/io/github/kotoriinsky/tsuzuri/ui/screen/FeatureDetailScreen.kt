@@ -210,7 +210,11 @@ fun FeatureDetailScreen(featureKey: String, padding: PaddingValues, onNavigate: 
                 }
             }
         } else if (totalPrefs <= INLINE_GROUPED_LIMIT && groups.none { it.id == io.github.kotoriinsky.tsuzuri.core.PREF_GROUP_OTHER }) {
-            groups.forEach { group ->
+            // 紧跟在普通分组后面的 drill 分组（例如「传送门」后的「传送门胶囊」）合进同一张卡片底部，
+            // 避免出现没有小节标题的孤儿卡片
+            var idx = 0
+            while (idx < groups.size) {
+                val group = groups[idx]
                 if (group.id in drill) {
                     kit.VSpace(FpSpace.m)
                     kit.Card {
@@ -223,7 +227,14 @@ fun FeatureDetailScreen(featureKey: String, padding: PaddingValues, onNavigate: 
                             enabled = prefs.isEnabled(spec),
                         )
                     }
-                    return@forEach
+                    idx++
+                    continue
+                }
+                val attachedDrills = mutableListOf<io.github.kotoriinsky.tsuzuri.core.PrefGroup>()
+                var lookahead = idx + 1
+                while (lookahead < groups.size && groups[lookahead].id in drill) {
+                    attachedDrills.add(groups[lookahead])
+                    lookahead++
                 }
                 kit.VSpace(FpSpace.m)
                 kit.SectionHeader(fpString(group.labelKey))
@@ -240,28 +251,49 @@ fun FeatureDetailScreen(featureKey: String, padding: PaddingValues, onNavigate: 
                             }
                         }
                     }
+                    attachedDrills.forEach { dGroup ->
+                        if (visible.isNotEmpty() || dGroup !== attachedDrills.first()) kit.Divider()
+                        kit.ActionRow(
+                            title = fpString(dGroup.labelKey),
+                            summary = contentsSummary(listOf(dGroup)),
+                            trailingText = null,
+                            navigates = true,
+                            onClick = if (prefs.isEnabled(spec)) ({ onNavigate(Dest.FeatureSection(spec.key, dGroup.id)) }) else null,
+                            enabled = prefs.isEnabled(spec),
+                        )
+                    }
                 }
+                idx = lookahead
             }
         } else {
             // 详情页入口按**类别**列：类别是用户意图维度
             // （触发 / 内容 / 外观 / 反馈 / 高级），扇形的外观不再被劈成四行。
-            // 首屏因此能看全所有入口；到任一参数仍是 2 次点击（类别 → 参数）。
+            // 若某个类别仅包含单个有序清单入口（如扇形「内容 → 快捷清单」），直接一步直达编辑页，省去空壳中间页。
             val categories = spec.prefCategories()
             kit.VSpace(FpSpace.m)
             kit.Card {
                 categories.forEachIndexed { i, category ->
                     if (i > 0) kit.Divider()
-                    // 只留箭头，不再写「8 项」：HyperOS 设置的入口行右侧只放当前值或什么都不放，
-                    // 计数是噪音（用户 2026-10-21：小字越少越好）。
-                    // 但一个说明都没有又看不出「触发」「内容」里调什么（用户 2026-10-27），
-                    // 所以副标题列出里面有什么 —— 现取分组 / 参数名，不另写文案，参数增减自动跟着变
-                    kit.ActionRow(
-                        title = fpString(category.labelKey),
-                        summary = contentsSummary(category.groups),
-                        trailingText = null,
-                        navigates = true,
-                        onClick = { onNavigate(Dest.FeatureCategory(spec.key, category.category.id)) },
-                    )
+                    val singleList = category.prefs.singleOrNull() as? PrefSpec.OrderedList
+                    if (singleList != null) {
+                        val items = io.github.kotoriinsky.tsuzuri.ui.state.FanItems.read(prefs, singleList)
+                        kit.ActionRow(
+                            title = fpString(singleList.labelKey),
+                            summary = singleList.hintKey?.let { fpString(it) },
+                            trailingText = if (items.isEmpty()) fpString(singleList.emptyLabelKey) else null,
+                            navigates = true,
+                            enabled = prefs.isEnabled(spec),
+                            onClick = if (prefs.isEnabled(spec)) ({ onNavigate(Dest.FanItems(singleList)) }) else null,
+                        )
+                    } else {
+                        kit.ActionRow(
+                            title = fpString(category.labelKey),
+                            summary = contentsSummary(category.groups),
+                            trailingText = null,
+                            navigates = true,
+                            onClick = { onNavigate(Dest.FeatureCategory(spec.key, category.category.id)) },
+                        )
+                    }
                 }
             }
         }
@@ -283,7 +315,14 @@ fun FeatureDetailScreen(featureKey: String, padding: PaddingValues, onNavigate: 
             kit.VSpace(12.dp)
             CopyDirectTryIt(prefs, enabled = prefs.isEnabled(spec) && scopeReady)
         }
-        kit.VSpace(12.dp)
+        // 只在本特性确实有改动时（已开启、任意参数偏离默认值或存在该特性下的自定义键）才显示「恢复默认」，
+        // 与类别页 / 分组页一致，避免未改动或零参数页底部常驻红色警告卡。
+        val hasFeatureChanges = prefs.isEnabled(spec) ||
+            groups.any { it.changedCount(prefs) > 0 } ||
+            ConfigStore.snapshot().keys.any { it.startsWith(spec.key + ".") }
+        if (resetUndo != null || hasFeatureChanges) {
+            kit.VSpace(12.dp)
+        }
         // 原来点完确认对话框就消失，没有任何「已恢复」的反馈，也回不去（交互审查 I-03）
         resetUndo?.let { cp ->
             kit.Banner(
@@ -297,20 +336,22 @@ fun FeatureDetailScreen(featureKey: String, padding: PaddingValues, onNavigate: 
             )
             kit.VSpace(4.dp)
         }
-        kit.Card {
-            kit.ActionRow(
-                title = fpString("common.reset"),
-                summary = null,
-                trailingText = null,
-                destructive = true,
-                // 不再弹确认框：做完原位给「撤销」
-                onClick = {
-                    val cp = ConfigStore.checkpoint(featureKeyScope(spec))
-                    resetFeature(spec)
-                    resetUndo = cp
-                },
-                enabled = scopeReady,
-            )
+        if (hasFeatureChanges) {
+            kit.Card {
+                kit.ActionRow(
+                    title = fpString("common.reset"),
+                    summary = null,
+                    trailingText = null,
+                    destructive = true,
+                    // 不再弹确认框：做完原位给「撤销」
+                    onClick = {
+                        val cp = ConfigStore.checkpoint(featureKeyScope(spec))
+                        resetFeature(spec)
+                        resetUndo = cp
+                    },
+                    enabled = scopeReady,
+                )
+            }
         }
 
         kit.VSpace(24.dp)

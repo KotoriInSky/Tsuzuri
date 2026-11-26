@@ -104,42 +104,47 @@ fun FeatureCategoryScreen(
             ShowScreenHotZones(zones)
         }
 
-        for (group in category.groups) {
-            val visible = group.prefs.filter { it.isVisible(prefs, spec.key) || it.key == focusPrefKey }
-            // 整组都被条件收起时，连小节标题一起不出现（HyperOS：父项关着，子项就不在页面上）
-            if (visible.isEmpty()) continue
-            // 小节标题不再带「6 项」计数（用户 2026-10-21：小字越少越好）
-            kit.SectionHeader(title = fpString(group.labelKey))
-            run {
-                val hasPreview = previewKindOf(spec, category.groups) != null
-                kit.Card {
-                    val firstVisible = group.prefs.indexOfFirst { it in visible }
-                    group.prefs.forEachIndexed { index, pref ->
-                        CollapsiblePref(pref in visible) {
+        val visibleGroups = category.groups.mapNotNull { g ->
+            val vis = g.prefs.filter { it.isVisible(prefs, spec.key) || it.key == focusPrefKey }
+            if (vis.isEmpty()) null else g to vis
+        }
+        for ((group, visible) in visibleGroups) {
+            // 只有一个可见分组时省略小节标题（页面大标题已经说明了这一页是什么，免得「触发」下紧跟「触发与范围」）
+            if (visibleGroups.size > 1) {
+                kit.SectionHeader(title = fpString(group.labelKey))
+            } else {
+                kit.VSpace(FpSpace.s)
+            }
+            kit.Card {
+                val firstVisible = group.prefs.indexOfFirst { it in visible }
+                group.prefs.forEachIndexed { index, pref ->
+                    CollapsiblePref(pref in visible) {
                         Column {
-                        if (index > firstVisible) kit.Divider()
-                        // 「此项不影响预览」不再拼进说明（用户 2026-10-27：不需要）——
-                        // 预览不动用户自己看得出来，拼上去只会把说明拉长、折行
-                        SearchTarget(pref.key == focusPrefKey) {
-                            PrefRow(
-                                spec = pref,
-                                prefs = prefs,
-                                enabled = prefs.isEnabled(spec),
-                                onNavigate = onNavigate,
-                                onDraftFloat = { key, value -> draft = draft + (key to value) },
-                                onCommitFloat = { key -> commitDraft(key) },
-                            )
-                        }
-                        }
+                            if (index > firstVisible) kit.Divider()
+                            SearchTarget(pref.key == focusPrefKey) {
+                                PrefRow(
+                                    spec = pref,
+                                    prefs = prefs,
+                                    enabled = prefs.isEnabled(spec),
+                                    onNavigate = onNavigate,
+                                    onDraftFloat = { key, value -> draft = draft + (key to value) },
+                                    onCommitFloat = { key -> commitDraft(key) },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // 恢复默认合成页底一个（原来每组一个红色「恢复本组默认」，一页最多四五个，像一排警告）。
-        // 只在本页真的有改动时出现；范围是本页（这个类别）的全部参数。
-        // 与详情页同一种反馈：横幅 + 撤销（原来是一闪而过的 Toast，回不去）
+        // 图标工具区放在常规配置末尾、「恢复默认」之前，避免危险操作插在普通设置中间
+        val iconToolsGroup = spec.presentation.iconToolsGroup
+        if (iconToolsGroup != null && category.groups.any { it.id == iconToolsGroup }) {
+            SideIndexIconPackSection(spec, prefs, onNavigate)
+            SideIndexNameIconSection(spec, onNavigate)
+        }
+
+        // 恢复默认永远垫底：只在本页真的有改动时出现；范围是本页（这个类别）的全部参数。
         resetUndo?.let { cp ->
             kit.VSpace(FpSpace.m)
             kit.Banner(
@@ -174,15 +179,6 @@ fun FeatureCategoryScreen(
                 )
             }
         }
-
-        // 图标工具区：判据从「分组页」迁到「类别页」——
-        // 这一组现在属于哪个类别由映射表决定，页面不再硬编码「某一组在详情页」。
-        val iconToolsGroup = spec.presentation.iconToolsGroup
-        if (iconToolsGroup != null && category.groups.any { it.id == iconToolsGroup }) {
-            SideIndexIconPackSection(spec, prefs, onNavigate)
-            SideIndexNameIconSection(spec, onNavigate)
-        }
-
 
         kit.VSpace(24.dp)
     }

@@ -69,6 +69,7 @@ import io.github.kotoriinsky.tsuzuri.ui.screen.FeatureCategoryScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.FeatureDetailScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.FeatureSectionScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.HomeScreen
+import io.github.kotoriinsky.tsuzuri.ui.screen.StatusBarSettingsScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.WidgetSettingsScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.ProactiveScreen
 import io.github.kotoriinsky.tsuzuri.ui.screen.IconPackDrawableScreen
@@ -172,6 +173,7 @@ fun AppRoot() {
                 entry<Dest.Search> { DrillPage(it, back, navigate) }
                 entry<Dest.Setup> { DrillPage(it, back, navigate) }
                 entry<Dest.WidgetSettings> { DrillPage(it, back, navigate) }
+                entry<Dest.StatusBarSettings> { DrillPage(it, back, navigate) }
                 entry<Dest.Proactive> { DrillPage(it, back, navigate) }
                 entry<Dest.LogViewer> { DrillPage(it, back, navigate) }
                 entry<Dest.FeatureDetail> { DrillPage(it, back, navigate) }
@@ -355,6 +357,7 @@ private fun PageContent(top: Dest, padding: PaddingValues, navigate: (Dest) -> U
         Dest.Search -> SearchScreen(padding, navigate)
         Dest.Setup -> SetupScreen(padding, navigate)
         Dest.WidgetSettings -> WidgetSettingsScreen(padding, navigate)
+        Dest.StatusBarSettings -> StatusBarSettingsScreen(padding, navigate)
         Dest.Proactive -> ProactiveScreen(padding, navigate)
         is Dest.FeatureDetail -> FeatureDetailScreen(top.featureKey, padding, navigate, top.focusPrefKey)
         is Dest.FeatureCategory -> FeatureCategoryScreen(
@@ -416,7 +419,8 @@ private fun Dest.title(): String = fpString(
         Dest.Search -> "search.title"
         Dest.Setup -> "onb.title"
         Dest.WidgetSettings -> "widget_settings_title"
-        Dest.Proactive -> "group_CLIPBOARD"
+        Dest.StatusBarSettings -> "statusbar_settings_title"
+        Dest.Proactive -> "proactive_scenes_title"
         is Dest.FeatureDetail -> Catalog.find(featureKey)?.titleI18n ?: featureKey
         // 类别页的大标题就是类别名（「外观」），不再是「特性名 + 小字类别」：
         // HyperOS 的二级页只有一个标题，即这一页本身叫什么

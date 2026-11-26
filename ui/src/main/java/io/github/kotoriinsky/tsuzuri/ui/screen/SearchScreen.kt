@@ -150,11 +150,21 @@ private fun ResultRow(entry: SearchEntry, navigate: (Dest) -> Unit) {
     )
 }
 
-/** 结果行图标：能解析到特性就用特性图标，否则用放大镜（不画空白底板）。 */
+/** 结果行图标：能解析到特性或聚合页就用对应图标，否则用放大镜（不画空白底板）。 */
 private fun entryIcon(entry: SearchEntry): io.github.kotoriinsky.tsuzuri.ui.kit.FpIcon {
+    when (val dest = entry.dest) {
+        Dest.WidgetSettings -> return io.github.kotoriinsky.tsuzuri.ui.kit.FpIcon(
+            io.github.kotoriinsky.tsuzuri.ui.icon.FpGlyphs.Widgets,
+            io.github.kotoriinsky.tsuzuri.ui.icon.PlateColors.Teal,
+        )
+        Dest.StatusBarSettings -> return statusBarGroupIcon()
+        Dest.Proactive -> return groupIcon(io.github.kotoriinsky.tsuzuri.core.FeatureGroup.CLIPBOARD)
+        else -> Unit
+    }
     val featureKey = when (val dest = entry.dest) {
         is Dest.FeatureDetail -> dest.featureKey
         is Dest.FeatureSection -> dest.featureKey
+        is Dest.FeatureCategory -> dest.featureKey
         else -> null
     }
     val spec = featureKey?.let { io.github.kotoriinsky.tsuzuri.core.Catalog.find(it) }

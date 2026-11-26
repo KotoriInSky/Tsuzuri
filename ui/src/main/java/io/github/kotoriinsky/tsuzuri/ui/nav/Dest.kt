@@ -19,13 +19,14 @@ sealed interface Dest : top.yukonga.miuix.kmp.nav.core.NavKey {
     data object About : Dest
     data object Credits : Dest
 
-    /** 设置的二级页（外观 / 预览底图 / 数据与备份 / 诊断与日志），[section] 是 `SettingsSection.id`。 */
+    /** 设置的二级页（外观 / 数据与备份 / 诊断与日志），[section] 是 `SettingsSection.id`。 */
     data class SettingsPage(val section: String) : Dest
 
     /** 下钻页。 */
     data object Search : Dest
     data object Setup : Dest
     data object WidgetSettings : Dest
+    data object StatusBarSettings : Dest
     data object Proactive : Dest
     data class FeatureDetail(val featureKey: String, val focusPrefKey: String? = null) : Dest
 

@@ -20,6 +20,7 @@ internal fun Dest.stateKey(): String {
         Dest.Search -> listOf("search")
         Dest.Setup -> listOf("setup")
         Dest.WidgetSettings -> listOf("widget-settings")
+        Dest.StatusBarSettings -> listOf("statusbar-settings")
         Dest.Proactive -> listOf("proactive")
         Dest.LogViewer -> listOf("logs")
         is Dest.FeatureDetail -> listOf("feature", featureKey, focusPrefKey.orEmpty())
@@ -54,11 +55,14 @@ private fun restoreDest(route: String): Dest? {
         "settings" -> Dest.Settings
         "about" -> Dest.About
         "credits" -> Dest.Credits
-        // 分区被改名或下架就丢弃该页，不恢复一个指向空页面的栈
-        "settings-page" -> io.github.kotoriinsky.tsuzuri.ui.screen.SettingsSection.of(arg)?.let { Dest.SettingsPage(it.id) }
+        // 预览底图已并入「外观」，旧返回栈里的 preview 优雅落回 appearance；其余未知分区丢弃
+        "settings-page" -> (if (arg == "preview") "appearance" else arg).let { id ->
+            io.github.kotoriinsky.tsuzuri.ui.screen.SettingsSection.of(id)?.let { Dest.SettingsPage(it.id) }
+        }
         "search" -> Dest.Search
         "setup" -> Dest.Setup
         "widget-settings" -> Dest.WidgetSettings
+        "statusbar-settings" -> Dest.StatusBarSettings
         "proactive" -> Dest.Proactive
         "logs" -> Dest.LogViewer
         "feature" -> Catalog.find(arg)?.let { Dest.FeatureDetail(arg, fields.getOrNull(2)?.takeIf(String::isNotEmpty)) }

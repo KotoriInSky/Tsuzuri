@@ -37,6 +37,9 @@ internal fun groupIcon(group: FeatureGroup): FpIcon = when (group) {
     FeatureGroup.APPS -> FpIcon(FpGlyphs.Payment, PlateColors.Orange)
 }
 
+/** 首页「状态栏」聚合入口图标。 */
+internal fun statusBarGroupIcon(): FpIcon = FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Indigo)
+
 /** 特性的图标。首页列出的每个功能都在这里有一项；未列出的隐藏特性退回分组图标。 */
 internal fun featureIcon(spec: FeatureSpec): FpIcon = when (spec.key) {
     // 手势与小窗：蓝 / 橙 / 紫
@@ -53,12 +56,11 @@ internal fun featureIcon(spec: FeatureSpec): FpIcon = when (spec.key) {
     Catalog.CONTEXT_MUSIC -> FpIcon(FpGlyphs.Headphones, PlateColors.Red)
     Catalog.CONTEXT_SCREEN_ON -> FpIcon(FpGlyphs.LightMode, PlateColors.Orange)
     Catalog.PASSCODE_ISLAND -> FpIcon(FpGlyphs.ContentCopy, PlateColors.Blue)
-    // 杂项：支付 / 状态栏 / 选字菜单 / 分享排序
+    // 状态栏（聚合页内三行三色，互不撞色）与杂项
     Catalog.AGG_PAYMENT -> FpIcon(FpGlyphs.Payment, PlateColors.Orange)
     Catalog.CLEAN_STATUSBAR -> FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Indigo)
-    Catalog.STATUSBAR_ICONS -> FpIcon(Icons.Rounded.Notifications, PlateColors.Indigo)
-    // 图标待用户设计，先借信号图形
-    Catalog.BATTERY_STYLE -> FpIcon(FpGlyphs.SignalCellularAlt, PlateColors.Green)
+    Catalog.STATUSBAR_ICONS -> FpIcon(Icons.Rounded.Notifications, PlateColors.Blue)
+    Catalog.BATTERY_STYLE -> FpIcon(io.github.kotoriinsky.tsuzuri.ui.icon.FpCustomGlyphs.Battery, PlateColors.Green)
     Catalog.TEXT_TOOLBAR -> FpIcon(FpGlyphs.TextFields, PlateColors.Gray)
     Catalog.SHARE_ORDER -> FpIcon(Icons.Rounded.Share, PlateColors.Green)
     // 负一屏与桌面小部件归入杂项后统一使用小部件图标。

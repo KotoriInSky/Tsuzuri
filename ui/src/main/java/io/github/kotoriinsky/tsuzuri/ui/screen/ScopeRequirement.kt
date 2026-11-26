@@ -86,7 +86,7 @@ internal fun ScopedFeatureRow(spec: FeatureSpec, prefs: io.github.kotoriinsky.ts
         checked = prefs.isEnabled(spec),
         onCheckedChange = { ConfigStore.putBoolean(io.github.kotoriinsky.tsuzuri.core.Keys.enabled(spec.key), it) },
         onClick = onOpen.takeIf { spec.prefs.isNotEmpty() },
-        stateText = fpString(if (prefs.isEnabled(spec)) "feature.state.on" else "feature.state.off"),
+        stateText = null,
         chip = featureStatusChip(spec, prefs),
         switchEnabled = ready,
         onBlockedSwitch = { asking = true },

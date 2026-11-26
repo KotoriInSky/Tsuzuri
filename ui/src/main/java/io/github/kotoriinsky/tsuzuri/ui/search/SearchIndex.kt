@@ -10,6 +10,7 @@ import io.github.kotoriinsky.tsuzuri.core.PREF_GROUP_OTHER
 import io.github.kotoriinsky.tsuzuri.core.prefGroups
 import io.github.kotoriinsky.tsuzuri.ui.fpStringRes
 import io.github.kotoriinsky.tsuzuri.ui.nav.Dest
+import io.github.kotoriinsky.tsuzuri.ui.screen.WIDGET_FEATURE_KEYS
 
 /**
  * 一条可被搜索到的条目。
@@ -60,25 +61,47 @@ private fun resolver(context: Context): (String) -> String = { key ->
 }
 
 private fun buildIndex(tr: (String) -> String): List<SearchEntry> = buildList {
+    // 聚合二级页入口：用户在首页看到的名字，搜了要能直接进对应聚合页
+    fun groupEntry(titleKey: String, summaryKey: String, dest: Dest, extra: String) {
+        val title = tr(titleKey)
+        val summary = tr(summaryKey)
+        add(
+            SearchEntry(
+                title = title,
+                summary = summary,
+                haystack = (title + " " + summary + " " + extra).lowercase(),
+                group = SearchGroup.FEATURE,
+                dest = dest,
+            )
+        )
+    }
+    groupEntry("widget_settings_title", "widget_settings_summary", Dest.WidgetSettings, "widget 小部件 桌面 负一屏 堆叠")
+    groupEntry("statusbar_settings_title", "statusbar_settings_summary", Dest.StatusBarSettings, "statusbar 状态栏 电池 通知图标 演示模式")
+    groupEntry("proactive_scenes_title", "proactive_scenes_summary", Dest.Proactive, "proactive 主动智能 场景建议 新应用 音乐 常亮")
+
     for (spec in Catalog.settingsFeatures) {
         val title = tr(spec.titleI18n)
         val summary = tr(spec.summaryI18n)
+        val isWidgetAggregated = spec.key in WIDGET_FEATURE_KEYS
         add(
             SearchEntry(
                 title = title,
                 summary = summary,
                 haystack = (title + " " + summary + " " + spec.key).lowercase(),
                 group = SearchGroup.FEATURE,
-                dest = Dest.FeatureDetail(spec.key),
+                dest = if (isWidgetAggregated) Dest.WidgetSettings else Dest.FeatureDetail(spec.key),
                 badge = spec.key,
             )
         )
         // ⚠️ 参数必须能被搜到。参数一旦收进二级页，
         // 不索引它就等于**把参数藏起来** —— 用户记得「有个触发区宽度」，却哪都找不到。
         val groups = spec.prefGroups()
-        // 只有一组时参数是**内联展开在详情页**的（`FeatureDetailScreen` 的判断），
-        // 所以搜索也要跳到详情页而不是一个用户从没见过的二级页
-        val inlined = groups.size <= 1 && spec.prefs.size <= 8
+        val drill = spec.presentation.drillGroups
+        val totalPrefs = groups.sumOf { if (it.id in drill) 1 else it.prefs.size }
+        // 与 FeatureDetailScreen 同一套内联判据：单组 ≤ 8 或多分组总数 ≤ 12（且非 drillGroups、无兜底组）
+        // 都在详情页内联展示，搜索直达详情页而不是用户没见过的孤立分组页
+        val detailInlinedAll = groups.size <= 1 && totalPrefs <= 8
+        val detailInlinedGrouped = !detailInlinedAll && totalPrefs <= 12 && groups.none { it.id == PREF_GROUP_OTHER }
         val groupLabels = groups.associate { it.id to tr(it.labelKey) }
         for (pref in spec.prefs) {
             // 隐藏分组（side_handle / corner_internal / side_internal）不进索引：
@@ -87,6 +110,7 @@ private fun buildIndex(tr: (String) -> String): List<SearchEntry> = buildList {
             val label = tr(pref.labelKey)
             val hint = pref.hintKey?.let(tr).orEmpty()
             val groupId = pref.group ?: PREF_GROUP_OTHER
+            val inlinedHere = detailInlinedAll || (detailInlinedGrouped && groupId !in drill)
             add(
                 SearchEntry(
                     title = label,
@@ -95,10 +119,10 @@ private fun buildIndex(tr: (String) -> String): List<SearchEntry> = buildList {
                     haystack = (label + " " + hint + " " + pref.key + " " +
                         (groupLabels[groupId] ?: "")).lowercase(),
                     group = SearchGroup.FEATURE,
-                    dest = if (inlined) {
-                        Dest.FeatureDetail(spec.key, pref.key)
-                    } else {
-                        Dest.FeatureSection(spec.key, groupId, pref.key)
+                    dest = when {
+                        isWidgetAggregated -> Dest.WidgetSettings
+                        inlinedHere -> Dest.FeatureDetail(spec.key, pref.key)
+                        else -> Dest.FeatureSection(spec.key, groupId, pref.key)
                     },
                     badge = pref.key.removePrefix(spec.key + "."),
                 )
@@ -122,17 +146,25 @@ private fun settingEntries(tr: (String) -> String): List<SearchEntry> {
         )
     }
     return listOf(
-        entry("settings.setup", "settings.setup.hint", Dest.Setup, "onboarding lsposed scope"),
-        entry("settings.copy.config", null, Dest.SettingsPage("data"), "export dump"),
-        entry("settings.reset.all", "settings.reset.all.hint", Dest.SettingsPage("data"), "reset default clear"),
+        entry("settings.setup", "settings.setup.hint", Dest.Setup, "onboarding lsposed scope 模块状态 作用域"),
+        entry("log.title", "log.export.hint", Dest.LogViewer, "log 日志 诊断"),
+        entry("settings.export.config", "settings.backup.scope", Dest.SettingsPage("data"), "export backup 备份 导出"),
+        entry("settings.restore.config", "settings.restore.scope", Dest.SettingsPage("data"), "restore import 恢复 导入"),
+        entry("settings.copy.config", null, Dest.SettingsPage("data"), "export dump 复制配置"),
+        entry("settings.reset.all", "settings.reset.all.hint", Dest.SettingsPage("data"), "reset default clear 重置"),
         entry("settings.reset.appearance", "settings.reset.appearance.hint", Dest.SettingsPage("data"), "reset appearance default"),
-        entry("settings.haptic", "settings.haptic.hint", Dest.SettingsPage("appearance"), "haptic vibrate feedback"),
-        entry("settings.auto.reload", "settings.auto.reload.hint", Dest.SettingsPage("appearance"), "auto reload hot reload"),
-        entry("appearance.style.title", "appearance.style.hint", Dest.SettingsPage("appearance"), "miuix material theme"),
-        entry("appearance.dark.title", null, Dest.SettingsPage("appearance"), "dark light mode"),
-        entry("appearance.accent.title", null, Dest.SettingsPage("appearance"), "accent monet color"),
-        entry("about.changelog.title", null, Dest.About, "changelog release notes version"),
-        entry("about.version", null, Dest.About, "version build"),
+        entry("appearance.style.title", "appearance.style.hint", Dest.SettingsPage("appearance"), "miuix material theme 风格"),
+        entry("appearance.dark.title", null, Dest.SettingsPage("appearance"), "dark light mode 深色 浅色"),
+        entry("appearance.accent.title", null, Dest.SettingsPage("appearance"), "accent monet color 主题色"),
+        entry("appearance.blur.title", "appearance.blur.hint", Dest.SettingsPage("appearance"), "blur 模糊 顶栏 底栏"),
+        entry("appearance.floating.bar.title", "appearance.floating.bar.hint", Dest.SettingsPage("appearance"), "floating bar 悬浮底栏"),
+        entry("appearance.glass.bar.title", "appearance.glass.bar.hint", Dest.SettingsPage("appearance"), "glass 液态玻璃"),
+        entry("preview.title", null, Dest.SettingsPage("appearance"), "preview wallpaper 预览 底图 壁纸"),
+        entry("settings.haptic", "settings.haptic.hint", Dest.SettingsPage("appearance"), "haptic vibrate feedback 振动"),
+        entry("settings.auto.reload", "settings.auto.reload.hint", Dest.SettingsPage("appearance"), "auto reload hot reload 热重载"),
+        entry("about.title", "settings.about.hint", Dest.About, "about 关于"),
+        entry("about.changelog.title", null, Dest.About, "changelog release notes version 更新日志"),
+        entry("about.version", null, Dest.About, "version build 版本"),
     )
 }
 

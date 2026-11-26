@@ -153,14 +153,14 @@ fun FeatureSectionScreen(
                     }
                 }
 
-                // 分组级「恢复默认」。只在真的改过时出现 —— 没改过就没有可恢复的东西，
-                // 一个永远存在的按钮只会招来「按了没反应」的疑问。
-                //
-                // 为什么要有它（而不是让用户自己去拖回去）：这一组的出厂值恰好是**实测**出来的
-                // 小数（80 / 63.5 / 50 / 47），没人记得住；而滑杆现在是无极的，
-                // 拖回"差不多"的位置在几何上并不等于默认值。恢复 = 删掉这些键，
-                // 于是回到「没设过」的状态 —— 与从未打开过这一页的用户完全一致。
+                if (group == spec.presentation.iconToolsGroup) {
+                    SideIndexIconPackSection(spec, prefs, onNavigate)
+                    SideIndexNameIconSection(spec, onNavigate)
+                }
+
+                // 分组级「恢复默认」永远垫底，只在真的改过时出现
                 resetUndo?.let { cp ->
+                    kit.VSpace(12.dp)
                     kit.Banner(
                         text = fpString("settings.reset.done"),
                         emphasis = io.github.kotoriinsky.tsuzuri.ui.kit.FpEmphasis.MUTED,
@@ -173,11 +173,13 @@ fun FeatureSectionScreen(
                     )
                 }
                 if (section.changedCount(prefs) > 0) {
+                    kit.VSpace(12.dp)
                     kit.Card {
                         kit.ActionRow(
                             title = fpString("section.reset.group"),
                             summary = null,
                             trailingText = null,
+                            destructive = true,
                             // 不再弹确认框：做完原位给「撤销」
                             onClick = {
                                 val cp = ConfigStore.checkpoint(featureKeyScope(spec))
@@ -189,11 +191,6 @@ fun FeatureSectionScreen(
                         )
                     }
                 }
-            }
-
-            if (group == spec.presentation.iconToolsGroup) {
-                SideIndexIconPackSection(spec, prefs, onNavigate)
-                SideIndexNameIconSection(spec, onNavigate)
             }
 
             kit.VSpace(24.dp)

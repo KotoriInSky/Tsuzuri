@@ -77,9 +77,8 @@ enum class SettingsSection(
     val glyph: ImageVector,
     val color: Color,
 ) {
-    /** 外观 + 界面密度/字号 + 行为开关（振动、搜索历史、自动重载）—— 都是「这个应用怎么呈现与响应」。 */
+    /** 外观 + 底栏 + 预览底图 + 行为开关（振动、搜索历史、自动重载）—— 都是「这个应用怎么呈现与响应」。 */
     APPEARANCE("appearance", "appearance.title", "settings.section.appearance.hint", FpGlyphs.Palette, PlateColors.Blue),
-    PREVIEW("preview", "preview.title", "settings.section.preview.hint", FpGlyphs.Wallpaper, PlateColors.Teal),
     DATA("data", "settings.data.title", "settings.section.data.hint", FpGlyphs.Backup, PlateColors.Green),
     DIAGNOSTICS("advanced", "settings.advanced.title", "settings.section.advanced.hint", FpGlyphs.BugReport, PlateColors.Orange);
 
@@ -139,7 +138,6 @@ fun SettingsSectionScreen(section: SettingsSection, padding: PaddingValues, navi
     ) {
         when (section) {
             SettingsSection.APPEARANCE -> AppearanceSection()
-            SettingsSection.PREVIEW -> PreviewSection()
             SettingsSection.DATA -> DataSection()
             SettingsSection.DIAGNOSTICS -> DiagnosticsSection(navigate)
         }
@@ -241,14 +239,16 @@ private fun AppearanceSection() {
             onCheckedChange = { AppSettings.autoReload = it },
         )
     }
+
+    // 预览底图并入外观（原二级页只有这一项控件）
+    kit.SectionHeader(fpString("preview.title"))
+    PreviewWallpaperCard()
 }
 
 @Composable
-private fun PreviewSection() {
+private fun PreviewWallpaperCard() {
     val kit = LocalFpKit.current
     val context = LocalContext.current
-    // 从「启用与权限」移到设置：它是一项界面偏好，不是权限，也不参与功能可用性判定。
-    kit.VSpace(FpSpace.s)
     kit.Card {
         val wallpaper by androidx.compose.runtime.produceState(
             initialValue = io.github.kotoriinsky.tsuzuri.ui.state.PreviewWallpaper.Result.NONE,

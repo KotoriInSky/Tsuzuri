@@ -60,20 +60,25 @@ fun WidgetSettingsScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
         kit.SectionHeader(title = fpString("widget.section.desktop"))
         ScopeRequirement(desktopStyle) { navigate(Dest.Setup) }
+        val desktopStyleOn = prefs.isEnabled(desktopStyle)
         kit.Card {
             FeatureToggleRow(desktopStyle, prefs)
-            desktopStyle.prefs.filter { it.isVisible(prefs, desktopStyle.key) }.forEach { pref ->
+            desktopStyle.prefs.forEach { pref ->
+                val show = desktopStyleOn && pref.isVisible(prefs, desktopStyle.key)
+                CollapsiblePref(show) {
+                    Column {
+                        kit.Divider()
+                        PrefRow(pref, prefs, enabled = desktopStyleOn, onNavigate = navigate)
+                    }
+                }
+            }
+            desktopExtras.forEach { spec ->
                 kit.Divider()
-                PrefRow(pref, prefs, enabled = prefs.isEnabled(desktopStyle), onNavigate = navigate)
+                FeatureToggleRow(spec, prefs)
             }
         }
         kit.VSpace(FpSpace.m)
         kit.Card {
-            desktopExtras.forEachIndexed { idx, spec ->
-                if (idx > 0) kit.Divider()
-                FeatureToggleRow(spec, prefs)
-            }
-            kit.Divider()
             kit.ActionRow(
                 title = fpString("widget.desktop.restart.action"),
                 summary = fpString("widget.desktop.restart.summary"),
@@ -97,17 +102,21 @@ fun WidgetSettingsScreen(padding: PaddingValues, navigate: (Dest) -> Unit) {
 
         kit.SectionHeader(title = fpString("widget.section.pa"))
         ScopeRequirement(paFeatures.first()) { navigate(Dest.Setup) }
+        val paStyleOn = prefs.isEnabled(style)
         kit.Card {
             FeatureToggleRow(paFeatures[0], prefs)
             kit.Divider()
             FeatureToggleRow(paFeatures[1], prefs)
-        }
-        kit.VSpace(FpSpace.m)
-        kit.Card {
+            kit.Divider()
             FeatureToggleRow(style, prefs)
-            style.prefs.filter { it.isVisible(prefs, style.key) }.forEach { pref ->
-                kit.Divider()
-                PrefRow(pref, prefs, enabled = prefs.isEnabled(style), onNavigate = navigate)
+            style.prefs.forEach { pref ->
+                val show = paStyleOn && pref.isVisible(prefs, style.key)
+                CollapsiblePref(show) {
+                    Column {
+                        kit.Divider()
+                        PrefRow(pref, prefs, enabled = paStyleOn, onNavigate = navigate)
+                    }
+                }
             }
         }
         if (!AppSettings.autoReload && paValues != appliedPaValues) {
