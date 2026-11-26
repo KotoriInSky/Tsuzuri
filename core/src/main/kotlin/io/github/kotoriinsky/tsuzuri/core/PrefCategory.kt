@@ -57,7 +57,7 @@ object PrefCategories {
         // 内容：显示什么
         "corner_list" to CategoryDecl(PrefCategory.CONTENT),
         "freeform_close" to CategoryDecl(PrefCategory.CONTENT),
-        "freeform_menu" to CategoryDecl(PrefCategory.CONTENT),
+        "freeform_mini" to CategoryDecl(PrefCategory.TRIGGER),
         "side_content" to CategoryDecl(PrefCategory.CONTENT),
         "copy_direct_content" to CategoryDecl(PrefCategory.CONTENT),
         // 图片卡的按钮开关：决定卡片上**显示哪些操作**（edit/share/save），属于内容层

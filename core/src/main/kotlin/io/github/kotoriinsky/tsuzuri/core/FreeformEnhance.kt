@@ -1,25 +1,24 @@
 package io.github.kotoriinsky.tsuzuri.core
 
-import kotlin.math.roundToInt
-
 /**
  * 小窗增强套件的纯逻辑契约（`:core` / `:hook` / `:ui` 共享）。
  *
- * 涵盖四项小窗交互增强，全部归在 [Catalog.FREEFORM_ENHANCE] 总开关下，关态 0 hook：
+ * 全部归在 [Catalog.FREEFORM_ENHANCE] 总开关下，关态 0 hook，围绕两个高频痛点设计：
  *  1. **即用即走（关闭不留后台卡片）**：默认仅清除本次以小窗临时拉起、原本不在最近任务里的任务；
  *     也可切换为「全部关闭的小窗」均移除最近任务卡片；
- *  2. **主副窗一键互换**：在小窗顶部「…」原生菜单追加按钮，当前小窗升全屏、底层全屏应用降小窗；
- *  3. **单窗静音**：仅静音该小窗所属应用的播放流，关窗或转全屏自动还原；
- *  4. **单窗半透明**：切换该小窗 Surface 透明度，关窗或转全屏自动还原为 1.0。
+ *  2. **迷你小窗手势（Flyme 风格浮层 + 主副互换）**：
+ *     - 单击迷你小窗保持 HyperOS 原生行为（立刻展开回普通小窗）；
+ *     - 长按迷你小窗弹出贴合窗体的半透明圆角浮层，提供「静音/恢复」与「与主屏互换」；
+ *     - 双击迷你小窗直接与底层全屏应用互换（迷你窗升全屏、原全屏自动缩回迷你小窗或普通小窗）；
+ *     - 静音仅临时压低该应用的播放流音量，关窗或切回全屏时自动恢复。
  */
 object FreeformEnhance {
 
     const val PREF_EPHEMERAL = "ephemeral_recents"
     const val PREF_EPHEMERAL_SCOPE = "ephemeral_scope"
-    const val PREF_SWAP_FULLSCREEN = "swap_fullscreen"
-    const val PREF_WINDOW_MUTE = "window_mute"
-    const val PREF_WINDOW_OPACITY = "window_opacity"
-    const val PREF_OPACITY_PERCENT = "opacity_percent"
+    const val PREF_MINI_LONG_PRESS_MENU = "mini_long_press_menu"
+    const val PREF_MINI_DOUBLE_TAP_SWAP = "mini_double_tap_swap"
+    const val PREF_SWAP_TO_MINI = "swap_to_mini"
 
     /** 仅清除临时拉起的小窗（打开小窗前原本已在最近任务里运行的保留）。 */
     const val SCOPE_TEMP_ONLY = "temp_only"
@@ -29,13 +28,9 @@ object FreeformEnhance {
 
     const val DEFAULT_EPHEMERAL = true
     const val DEFAULT_EPHEMERAL_SCOPE = SCOPE_TEMP_ONLY
-    const val DEFAULT_SWAP_FULLSCREEN = true
-    const val DEFAULT_WINDOW_MUTE = true
-    const val DEFAULT_WINDOW_OPACITY = true
-
-    const val MIN_OPACITY_PERCENT = 25f
-    const val MAX_OPACITY_PERCENT = 85f
-    const val DEFAULT_OPACITY_PERCENT = 55f
+    const val DEFAULT_MINI_LONG_PRESS_MENU = true
+    const val DEFAULT_MINI_DOUBLE_TAP_SWAP = true
+    const val DEFAULT_SWAP_TO_MINI = true
 
     /** 永不应因「即用即走」被移除的系统核心包。 */
     val PROTECTED_PACKAGES: Set<String> = setOf(
@@ -47,18 +42,13 @@ object FreeformEnhance {
     data class Config(
         val ephemeralRecents: Boolean,
         val ephemeralScope: String,
-        val swapFullscreen: Boolean,
-        val windowMute: Boolean,
-        val windowOpacity: Boolean,
-        val opacityPercent: Int,
+        val miniLongPressMenu: Boolean,
+        val miniDoubleTapSwap: Boolean,
+        val swapToMini: Boolean,
     ) {
-        /** 顶部「…」菜单是否需要注入扩展按钮行。 */
-        val needsCaptionRow: Boolean
-            get() = swapFullscreen || windowMute || windowOpacity
-
-        /** 半透明态对应的 SurfaceControl alpha（0.25f..0.85f）。 */
-        val dimAlpha: Float
-            get() = alphaFromPercent(opacityPercent.toFloat())
+        /** 是否启用任一迷你小窗增强手势。 */
+        val needsMiniHooks: Boolean
+            get() = miniLongPressMenu || miniDoubleTapSwap
     }
 
     fun from(prefs: Prefs): Config {
@@ -66,25 +56,23 @@ object FreeformEnhance {
         val scope = prefs.rawString(Keys.pref(f, PREF_EPHEMERAL_SCOPE), DEFAULT_EPHEMERAL_SCOPE)
             .takeIf { it == SCOPE_TEMP_ONLY || it == SCOPE_ALL }
             ?: DEFAULT_EPHEMERAL_SCOPE
-        val pct = clampOpacityPercent(
-            prefs.rawFloatOrNull(Keys.pref(f, PREF_OPACITY_PERCENT)) ?: DEFAULT_OPACITY_PERCENT,
-        )
         return Config(
             ephemeralRecents = prefs.rawBoolean(Keys.pref(f, PREF_EPHEMERAL), DEFAULT_EPHEMERAL),
             ephemeralScope = scope,
-            swapFullscreen = prefs.rawBoolean(Keys.pref(f, PREF_SWAP_FULLSCREEN), DEFAULT_SWAP_FULLSCREEN),
-            windowMute = prefs.rawBoolean(Keys.pref(f, PREF_WINDOW_MUTE), DEFAULT_WINDOW_MUTE),
-            windowOpacity = prefs.rawBoolean(Keys.pref(f, PREF_WINDOW_OPACITY), DEFAULT_WINDOW_OPACITY),
-            opacityPercent = pct,
+            miniLongPressMenu = prefs.rawBoolean(
+                Keys.pref(f, PREF_MINI_LONG_PRESS_MENU),
+                DEFAULT_MINI_LONG_PRESS_MENU,
+            ),
+            miniDoubleTapSwap = prefs.rawBoolean(
+                Keys.pref(f, PREF_MINI_DOUBLE_TAP_SWAP),
+                DEFAULT_MINI_DOUBLE_TAP_SWAP,
+            ),
+            swapToMini = prefs.rawBoolean(
+                Keys.pref(f, PREF_SWAP_TO_MINI),
+                DEFAULT_SWAP_TO_MINI,
+            ),
         )
     }
-
-    fun clampOpacityPercent(percent: Float): Int {
-        val safe = if (percent.isFinite()) percent else DEFAULT_OPACITY_PERCENT
-        return safe.coerceIn(MIN_OPACITY_PERCENT, MAX_OPACITY_PERCENT).roundToInt()
-    }
-
-    fun alphaFromPercent(percent: Float): Float = clampOpacityPercent(percent) / 100f
 
     /**
      * 判定一个刚刚通过「关闭」退出的小窗是否应当从最近任务移除。

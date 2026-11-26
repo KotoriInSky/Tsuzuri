@@ -7,16 +7,14 @@ import kotlin.test.assertTrue
 
 class FreeformEnhanceTest {
 
-    @Test fun defaultsMatchTempOnlyAndFullMenu() {
+    @Test fun defaultsMatchTempOnlyAndMiniGestures() {
         val cfg = FreeformEnhance.from(Prefs(null))
         assertTrue(cfg.ephemeralRecents)
         assertEquals(FreeformEnhance.SCOPE_TEMP_ONLY, cfg.ephemeralScope)
-        assertTrue(cfg.swapFullscreen)
-        assertTrue(cfg.windowMute)
-        assertTrue(cfg.windowOpacity)
-        assertEquals(55, cfg.opacityPercent)
-        assertEquals(0.55f, cfg.dimAlpha)
-        assertTrue(cfg.needsCaptionRow)
+        assertTrue(cfg.miniLongPressMenu)
+        assertTrue(cfg.miniDoubleTapSwap)
+        assertTrue(cfg.swapToMini)
+        assertTrue(cfg.needsMiniHooks)
     }
 
     @Test fun tempOnlyScopeKeepsPreExistingTasksAndRemovesTemporaryOnes() {
@@ -37,22 +35,13 @@ class FreeformEnhanceTest {
         assertFalse(FreeformEnhance.shouldRemoveOnClose(cfg, "com.example.calc", wasInRecentsBefore = false))
     }
 
-    @Test fun opacityPercentIsClampedSafely() {
-        assertEquals(25, FreeformEnhance.clampOpacityPercent(5f))
-        assertEquals(85, FreeformEnhance.clampOpacityPercent(120f))
-        assertEquals(55, FreeformEnhance.clampOpacityPercent(Float.NaN))
-        assertEquals(0.4f, FreeformEnhance.alphaFromPercent(40f))
-    }
-
-    @Test fun needsCaptionRowReflectsThreeMenuSwitches() {
+    @Test fun needsMiniHooksReflectsBothMiniSwitches() {
         val off = FreeformEnhance.from(Prefs(null)).copy(
-            swapFullscreen = false,
-            windowMute = false,
-            windowOpacity = false,
+            miniLongPressMenu = false,
+            miniDoubleTapSwap = false,
         )
-        assertFalse(off.needsCaptionRow)
-        assertTrue(off.copy(swapFullscreen = true).needsCaptionRow)
-        assertTrue(off.copy(windowMute = true).needsCaptionRow)
-        assertTrue(off.copy(windowOpacity = true).needsCaptionRow)
+        assertFalse(off.needsMiniHooks)
+        assertTrue(off.copy(miniLongPressMenu = true).needsMiniHooks)
+        assertTrue(off.copy(miniDoubleTapSwap = true).needsMiniHooks)
     }
 }

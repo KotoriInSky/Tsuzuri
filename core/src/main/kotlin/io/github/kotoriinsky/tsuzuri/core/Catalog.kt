@@ -66,7 +66,7 @@ object Catalog {
      */
     const val MULTI_FREEFORM = "multi_freeform"
 
-    /** 小窗增强：关闭小窗即用即走（不留后台卡片）、顶部菜单主副互换 / 单窗静音 / 半透明。契约见 [FreeformEnhance]。 */
+    /** 小窗增强：关闭小窗即用即走（不留后台卡片）、迷你小窗长按浮层（静音/互换）与双击主副互换。契约见 [FreeformEnhance]。 */
     const val FREEFORM_ENHANCE = "freeform_enhance"
 
     /** 分享面板应用行按用户清单置顶（C14）。实现见 hook 侧 `ShareOrder`。 */
@@ -1126,7 +1126,7 @@ object Catalog {
             key = FREEFORM_ENHANCE,
             group = FeatureGroup.GESTURE,
             scope = listOf(ScopeTarget.SYSTEM_UI),
-            // 子项在 SystemUI 侧实时读取，总开关支持热装卸；卸载时自动还原静音与半透明状态
+            // 子项在 SystemUI 侧实时读取，总开关支持热装卸；卸载时自动还原静音状态并收起浮层
             restart = RestartPolicy.HOT,
             maturity = Maturity.EXPERIMENTAL,
             prefs = listOf(
@@ -1160,42 +1160,25 @@ object Catalog {
                     ),
                 ),
                 PrefSpec.Toggle(
-                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_SWAP_FULLSCREEN),
-                    labelKey = "pref.freeform_enhance.swap_fullscreen",
-                    hintKey = "pref.freeform_enhance.swap_fullscreen.hint",
-                    default = FreeformEnhance.DEFAULT_SWAP_FULLSCREEN,
-                    group = "freeform_menu",
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_MINI_LONG_PRESS_MENU),
+                    labelKey = "pref.freeform_enhance.mini_long_press_menu",
+                    hintKey = "pref.freeform_enhance.mini_long_press_menu.hint",
+                    default = FreeformEnhance.DEFAULT_MINI_LONG_PRESS_MENU,
+                    group = "freeform_mini",
                 ),
                 PrefSpec.Toggle(
-                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_WINDOW_MUTE),
-                    labelKey = "pref.freeform_enhance.window_mute",
-                    hintKey = "pref.freeform_enhance.window_mute.hint",
-                    default = FreeformEnhance.DEFAULT_WINDOW_MUTE,
-                    group = "freeform_menu",
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_MINI_DOUBLE_TAP_SWAP),
+                    labelKey = "pref.freeform_enhance.mini_double_tap_swap",
+                    hintKey = "pref.freeform_enhance.mini_double_tap_swap.hint",
+                    default = FreeformEnhance.DEFAULT_MINI_DOUBLE_TAP_SWAP,
+                    group = "freeform_mini",
                 ),
                 PrefSpec.Toggle(
-                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_WINDOW_OPACITY),
-                    labelKey = "pref.freeform_enhance.window_opacity",
-                    hintKey = "pref.freeform_enhance.window_opacity.hint",
-                    default = FreeformEnhance.DEFAULT_WINDOW_OPACITY,
-                    group = "freeform_menu",
-                ),
-                PrefSpec.Slider(
-                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_OPACITY_PERCENT),
-                    labelKey = "pref.freeform_enhance.opacity_percent",
-                    hintKey = "pref.freeform_enhance.opacity_percent.hint",
-                    default = FreeformEnhance.DEFAULT_OPACITY_PERCENT,
-                    min = FreeformEnhance.MIN_OPACITY_PERCENT,
-                    max = FreeformEnhance.MAX_OPACITY_PERCENT,
-                    steps = 11,
-                    unit = "%",
-                    group = "freeform_menu",
-                    dependsOn = PrefDependency(
-                        toggleName = FreeformEnhance.PREF_WINDOW_OPACITY,
-                        offHintKey = "pref.freeform_enhance.window_opacity.required",
-                        hideWhenOff = true,
-                    ),
-                    recommended = 40f..70f,
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_SWAP_TO_MINI),
+                    labelKey = "pref.freeform_enhance.swap_to_mini",
+                    hintKey = "pref.freeform_enhance.swap_to_mini.hint",
+                    default = FreeformEnhance.DEFAULT_SWAP_TO_MINI,
+                    group = "freeform_mini",
                 ),
             ),
         ),
