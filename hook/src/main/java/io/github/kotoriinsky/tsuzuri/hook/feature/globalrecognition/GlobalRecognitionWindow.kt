@@ -25,6 +25,9 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -40,12 +43,15 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import io.github.kotoriinsky.tsuzuri.core.GlobalRecognition
 import io.github.kotoriinsky.tsuzuri.core.PortalMediaContract
+import io.github.kotoriinsky.tsuzuri.core.PortalMotionPhoto
 import io.github.kotoriinsky.tsuzuri.core.QrJumpResolver
 import io.github.kotoriinsky.tsuzuri.core.ScreenEntityResolver
+import io.github.kotoriinsky.tsuzuri.core.ScreenTranslation
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.LocalQrScanner
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalImageActions
 import io.github.kotoriinsky.tsuzuri.hook.feature.portal.PortalOcrSelect
@@ -175,6 +181,9 @@ internal class GlobalRecognitionWindow(
     private var deferredSelection: SelectionState? = null
     private var textBar: View? = null
     private var textEntitySlot: FrameLayout? = null
+    private var textTranslateSlot: FrameLayout? = null
+    private var translateSeq = 0
+    private var translateOverlayEnabled = true
     private var activeAnimatedPreview: AnimatedImageDrawable? = null
     private var closing = false
     private var attached = false
@@ -312,6 +321,7 @@ internal class GlobalRecognitionWindow(
     private fun onSelection(state: SelectionState) {
         pendingImage = null
         stopAnimatedPreview()
+        clearTranslationCard()
         // 改选了别的：之前那次保存再完成也不该清掉新的选中
         stopSaveWatch()
         if (state.image != null || state.hasText || state.qr != null) collapsed = false
@@ -322,6 +332,249 @@ internal class GlobalRecognitionWindow(
             else -> setSheet(null)
         }
         updateAvoid()
+    }
+
+    private fun clearTranslationCard() {
+        translateSeq++
+        screen.clearTranslationOverlay()
+        textTranslateSlot?.apply {
+            removeAllViews()
+            visibility = View.GONE
+        }
+    }
+
+    /** 发起一次窗内静默翻译（不关闭当前识屏窗口），并在成功后默认原位覆盖显示译文。 */
+    private fun startInWindowTranslate(rawText: String, overrideDest: String? = null) {
+        val text = ScreenTranslation.prepareText(rawText)
+        if (text.isEmpty()) {
+            toast("请选择文字")
+            return
+        }
+        val slot = textTranslateSlot ?: return
+        val seq = ++translateSeq
+        val pair = ScreenTranslation.guessLangPair(text, overrideDest)
+        val selBounds = screen.selectedTextBounds()
+        slot.removeAllViews()
+        slot.visibility = View.VISIBLE
+        slot.addView(translationLoadingCard(pair.label))
+        updateAvoid()
+
+        SilentTranslateClient.translateAsync(
+            context = context,
+            rawText = text,
+            overrideDest = overrideDest,
+            log = host::log,
+        ) { outcome ->
+            if (closing || seq != translateSeq) return@translateAsync
+            slot.removeAllViews()
+            when (outcome) {
+                is SilentTranslateClient.Outcome.Success -> {
+                    val actualPair = ScreenTranslation.LangPair(outcome.srcLang, outcome.destLang)
+                    if (translateOverlayEnabled && selBounds != null) {
+                        screen.setTranslationOverlay(selBounds, outcome.translated)
+                    } else {
+                        screen.clearTranslationOverlay()
+                    }
+                    slot.addView(
+                        translationResultCard(
+                            rawText = text,
+                            translated = outcome.translated,
+                            pair = actualPair,
+                            selBounds = selBounds,
+                        ),
+                    )
+                    host.log(Log.INFO, "窗内翻译完成 ${actualPair.label}（${outcome.translated.length} 字）")
+                }
+                is SilentTranslateClient.Outcome.NeedCta -> {
+                    screen.clearTranslationOverlay()
+                    slot.addView(translationErrorCard(rawText, "需先在系统翻译里同意服务协议，或改用系统词典"))
+                }
+                is SilentTranslateClient.Outcome.Failure -> {
+                    screen.clearTranslationOverlay()
+                    slot.addView(translationErrorCard(rawText, outcome.reason))
+                }
+            }
+            updateAvoid()
+        }
+    }
+
+    private fun translationLoadingCard(langLabel: String): View = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        val pad = (14 * d).toInt()
+        setPadding(pad, (12 * d).toInt(), pad, (12 * d).toInt())
+        background = GradientDrawable().apply {
+            cornerRadius = 16 * d
+            setColor(palette.pillBg)
+        }
+        addView(
+            ProgressBar(context).apply {
+                isIndeterminate = true
+                indeterminateTintList = ColorStateList.valueOf(0xFF3482FF.toInt())
+            },
+            LinearLayout.LayoutParams((18 * d).toInt(), (18 * d).toInt()).apply { marginEnd = (10 * d).toInt() },
+        )
+        addView(
+            TextView(context).apply {
+                text = "正在翻译（$langLabel）…"
+                setTextColor(palette.inkSecondary)
+                textSize = 13f
+                isSingleLine = true
+            },
+        )
+    }
+
+    private fun translationErrorCard(rawText: String, reason: String): View = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        val pad = (14 * d).toInt()
+        setPadding(pad, (10 * d).toInt(), pad, (10 * d).toInt())
+        background = GradientDrawable().apply {
+            cornerRadius = 16 * d
+            setColor(palette.pillBg)
+        }
+        addView(
+            TextView(context).apply {
+                text = reason
+                setTextColor(palette.inkSecondary)
+                textSize = 12.5f
+                maxLines = 2
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        addView(
+            TextView(context).apply {
+                text = "系统词典"
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = 14 * d
+                    setColor(0xFF3482FF.toInt())
+                }
+                setOnClickListener {
+                    if (host.translate(context, rawText)) close() else toast("系统词典不可用")
+                }
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = (10 * d).toInt()
+            },
+        )
+    }
+
+    private fun translationResultCard(
+        rawText: String,
+        translated: String,
+        pair: ScreenTranslation.LangPair,
+        selBounds: RectF?,
+    ): View = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        val padH = (14 * d).toInt()
+        setPadding(padH, (10 * d).toInt(), padH, (12 * d).toInt())
+        background = GradientDrawable().apply {
+            cornerRadius = 16 * d
+            setColor(palette.pillBg)
+        }
+
+        // 顶部工具行：点击语种循环切换目标语言；右侧提供原位覆盖开关、复制、关闭
+        val top = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun chip(label: String, active: Boolean = false, onClick: () -> Unit): TextView = TextView(context).apply {
+            text = label
+            textSize = 11.5f
+            setTextColor(if (active) Color.WHITE else palette.ink)
+            typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+            setPadding((10 * d).toInt(), (4 * d).toInt(), (10 * d).toInt(), (4 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 12 * d
+                setColor(if (active) 0xFF3482FF.toInt() else palette.sheetBg)
+            }
+            setOnClickListener { onClick() }
+        }
+
+        top.addView(
+            TextView(context).apply {
+                text = "${pair.label} ▾"
+                setTextColor(0xFF3482FF.toInt())
+                textSize = 12f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding(0, (4 * d).toInt(), (8 * d).toInt(), (4 * d).toInt())
+                setOnClickListener {
+                    val idx = ScreenTranslation.TARGET_LANGS.indexOf(pair.dest.lowercase())
+                    val nextDest = ScreenTranslation.TARGET_LANGS[(idx + 1) % ScreenTranslation.TARGET_LANGS.size]
+                    startInWindowTranslate(rawText, overrideDest = nextDest)
+                }
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        if (selBounds != null) {
+            top.addView(
+                chip("原位", active = translateOverlayEnabled) {
+                    translateOverlayEnabled = !translateOverlayEnabled
+                    if (translateOverlayEnabled) screen.setTranslationOverlay(selBounds, translated)
+                    else screen.clearTranslationOverlay()
+                    // 刷新卡片高亮状态
+                    textTranslateSlot?.let { s ->
+                        s.removeAllViews()
+                        s.addView(translationResultCard(rawText, translated, pair, selBounds))
+                    }
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = (6 * d).toInt()
+                },
+            )
+        }
+        top.addView(
+            chip("复制") {
+                try {
+                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("translation", translated))
+                    confirm("已复制译文", true)
+                } catch (_: Throwable) {
+                    toast("复制失败")
+                }
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (6 * d).toInt()
+            },
+        )
+        top.addView(
+            TextView(context).apply {
+                text = "✕"
+                setTextColor(palette.inkSecondary)
+                textSize = 13f
+                setPadding((6 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
+                setOnClickListener { clearTranslationCard() }
+            },
+        )
+        addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // 译文正文（限高可滚动）
+        val body = TextView(context).apply {
+            text = translated
+            setTextColor(palette.ink)
+            textSize = 14.5f
+            setLineSpacing(2 * d, 1.15f)
+            setTextIsSelectable(false)
+        }
+        val scroll = ScrollView(context).apply {
+            addView(body, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        addView(
+            scroll,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = (6 * d).toInt()
+            },
+        )
+        scroll.post {
+            val maxH = (132 * d).toInt()
+            if (scroll.height > maxH) {
+                scroll.layoutParams = (scroll.layoutParams as LinearLayout.LayoutParams).apply { height = maxH }
+            }
+        }
     }
 
     private fun showQrBar(detection: LocalQrScanner.Detection) {
@@ -644,9 +897,11 @@ internal class GlobalRecognitionWindow(
         scanCroppedQrAsync(crop, qrSlot)
     }
 
-    /** 图片面板顶部的轻量信息与动作条：显示原图/动图格式与尺寸、原文件无损保存、一键复制图片与局部二维码直达。 */
+    /** 图片面板顶部的轻量信息与动作条：显示实况/原图/动图格式与尺寸、原文件无损保存、一键复制图片与局部二维码直达。 */
     private fun imageHeaderBar(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
         val rawBytes = result?.rawBytes
+        val liveVideo = result?.liveVideoBytes
+        val isLive = rawBytes != null && liveVideo != null
         val mime = result?.mime
         val animated = result?.animated == true && rawBytes != null
         val fmtTag = when (mime) {
@@ -660,6 +915,7 @@ internal class GlobalRecognitionWindow(
             else -> null
         }
         val label = when {
+            isLive -> "实况照片 ${crop.width}×${crop.height}"
             animated -> "${fmtTag ?: "动图"} 动图 ${crop.width}×${crop.height}"
             rawBytes != null -> "原图${fmtTag?.let { " $it" }.orEmpty()} ${crop.width}×${crop.height}"
             result?.bitmap != null -> "原图 ${crop.width}×${crop.height}"
@@ -671,7 +927,21 @@ internal class GlobalRecognitionWindow(
             val padH = (20 * d).toInt()
             setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
 
-            if (animated && rawBytes != null) {
+            if (isLive) {
+                // 实况照片双环徽标点
+                addView(
+                    View(context).apply {
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(0x33FF9F0A)
+                            setStroke((1.8f * d).toInt().coerceAtLeast(2), 0xFFFF9F0A.toInt())
+                        }
+                    },
+                    LinearLayout.LayoutParams((12 * d).toInt(), (12 * d).toInt()).apply {
+                        marginEnd = (8 * d).toInt()
+                    },
+                )
+            } else if (animated && rawBytes != null) {
                 runCatching {
                     val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(java.nio.ByteBuffer.wrap(rawBytes)))
                     if (drawable is AnimatedImageDrawable) {
@@ -713,7 +983,27 @@ internal class GlobalRecognitionWindow(
                     marginEnd = (8 * d).toInt()
                 },
             )
-            if (rawBytes != null) {
+            if (isLive && rawBytes != null && liveVideo != null) {
+                addView(
+                    TextView(context).apply {
+                        text = "存实况照片"
+                        setTextColor(Color.WHITE)
+                        textSize = 12.5f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
+                        background = GradientDrawable().apply {
+                            cornerRadius = 16 * d
+                            setColor(0xFFFF9F0A.toInt())
+                        }
+                        setOnClickListener {
+                            saveMotionPhotoToGallery(rawBytes, liveVideo)
+                        }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        marginEnd = (8 * d).toInt()
+                    },
+                )
+            } else if (rawBytes != null) {
                 val saveLabel = if (animated) "存原动图" else "存原图"
                 addView(
                     TextView(context).apply {
@@ -761,6 +1051,49 @@ internal class GlobalRecognitionWindow(
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
             )
         }
+    }
+
+    /** 把主静图 JPEG 与短视频 MP4 拼成标准 Google/MIUI Motion Photo 实况照片写入系统图库。 */
+    private fun saveMotionPhotoToGallery(jpegBytes: ByteArray, videoBytes: ByteArray) {
+        val name = PortalMediaContract.savedName(System.currentTimeMillis(), PortalMediaContract.Format.JPEG)
+        Thread({
+            val saved = try {
+                val prefix = PortalMotionPhoto.jpegPrefix(jpegBytes, videoBytes.size.toLong(), 0L)
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Tsuzuri")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("insert MediaStore 返回 null")
+                try {
+                    resolver.openOutputStream(uri)?.use { os ->
+                        os.write(prefix)
+                        os.write(videoBytes)
+                    } ?: throw IllegalStateException("openOutputStream 返回 null")
+                    resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+                    true
+                } catch (t: Throwable) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    throw t
+                }
+            } catch (t: Throwable) {
+                host.log(Log.WARN, "保存实况照片失败：$t")
+                false
+            }
+            main.post {
+                if (closing) return@post
+                if (saved) {
+                    screen.clearSelection()
+                    confirm("实况照片已保存", true)
+                    host.log(Log.INFO, "已合成保存实况照片 $name (img=${jpegBytes.size}B + vid=${videoBytes.size}B)")
+                } else {
+                    toast("保存实况照片失败")
+                }
+            }
+        }, "fp-gr-save-live").start()
     }
 
     /** 把原文件字节（GIF / 动态 WebP / HEIF・AVIF / 无损原图）原样写入系统图库，不经过重压拍扁。 */
@@ -1236,7 +1569,7 @@ internal class GlobalRecognitionWindow(
             }, lp())
             addView(btn("翻译", PortalImageActions.PortalIcon.TRANSLATE) {
                 withText { text ->
-                    if (host.translate(context, text)) close() else toast("翻译不可用")
+                    startInWindowTranslate(text)
                 }
             }, lp())
         }
@@ -1245,9 +1578,16 @@ internal class GlobalRecognitionWindow(
             setPadding(padH, (12 * d).toInt(), padH, 0)
             visibility = View.GONE
         }
+        val translateSlot = FrameLayout(context).apply {
+            val padH = (16 * d).toInt()
+            setPadding(padH, (10 * d).toInt(), padH, 0)
+            visibility = View.GONE
+        }
         textEntitySlot = entitySlot
+        textTranslateSlot = translateSlot
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            addView(translateSlot, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(entitySlot, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
@@ -1376,6 +1716,22 @@ internal class GlobalRecognitionWindow(
         private var selEnd = -1
         private var image: RectF? = null
         private var dragRect: RectF? = null
+        private var transOverlayBounds: RectF? = null
+        private var transOverlayText: String? = null
+        private val transBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = if (palette.dark) 0xF01E2025.toInt() else 0xF2FFFFFF.toInt()
+            setShadowLayer(8 * d, 0f, 2 * d, 0x55000000)
+        }
+        private val transStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1.2f * d
+            color = if (palette.dark) 0x33FFFFFF else 0x22000000
+        }
+        private val transTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = palette.ink
+            textSize = 14f * d
+        }
 
         private var ox = 0f
         private var oy = 0f
@@ -1597,8 +1953,60 @@ internal class GlobalRecognitionWindow(
                 drawHandle(canvas, RectF(toView(glyphs[lo].box)), true)
                 drawHandle(canvas, RectF(toView(glyphs[hi].box)), false)
             }
+            drawTranslationOverlay(canvas)
             fx.draw(canvas, width, height)
             if (scaled) canvas.restore()
+        }
+
+        /** 原位译文覆盖气泡：把译文直接按原文字选区位置贴回画面，自动适应宽度与深浅色。 */
+        private fun drawTranslationOverlay(canvas: Canvas) {
+            val box = transOverlayBounds ?: return
+            val text = transOverlayText?.takeIf { it.isNotBlank() } ?: return
+            val v = RectF(toView(box))
+            val padH = 10 * d
+            val padV = 7 * d
+            val minW = minOf(width - 32 * d, maxOf(v.width(), 160 * d))
+            val maxW = (width - 32 * d).coerceAtLeast(120 * d)
+            val contentW = (minW - padH * 2).coerceIn(80 * d, maxW - padH * 2).toInt()
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, transTextPaint, contentW)
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(2 * d, 1.12f)
+                .setIncludePad(false)
+                .build()
+            val cardW = minOf(maxW, maxOf(v.width() + padH * 2, (0 until layout.lineCount).maxOfOrNull { layout.getLineWidth(it) }?.plus(padH * 2) ?: minW))
+            val cardH = maxOf(v.height() + padV * 2, layout.height + padV * 2)
+            val left = v.left.coerceIn(16 * d, (width - 16 * d - cardW).coerceAtLeast(16 * d))
+            val top = v.top.coerceIn(statusBarHeight() + 8 * d, (height - 160 * d - cardH).coerceAtLeast(statusBarHeight() + 8 * d))
+            val rect = RectF(left, top, left + cardW, top + cardH)
+            canvas.drawRoundRect(rect, 12 * d, 12 * d, transBgPaint)
+            canvas.drawRoundRect(rect, 12 * d, 12 * d, transStrokePaint)
+            canvas.save()
+            canvas.translate(rect.left + padH, rect.top + padV)
+            layout.draw(canvas)
+            canvas.restore()
+        }
+
+        fun setTranslationOverlay(bounds: RectF, text: String) {
+            transOverlayBounds = RectF(bounds)
+            transOverlayText = text
+            invalidate()
+        }
+
+        fun clearTranslationOverlay() {
+            if (transOverlayBounds == null && transOverlayText == null) return
+            transOverlayBounds = null
+            transOverlayText = null
+            invalidate()
+        }
+
+        /** 当前文字选区在截图坐标中的外包矩形（不含两端手柄扩展），供原位译文贴图定位。 */
+        fun selectedTextBounds(): RectF? {
+            val lo = minOf(selStart, selEnd)
+            val hi = maxOf(selStart, selEnd)
+            if (lo < 0 || hi >= glyphs.size) return null
+            val out = RectF(glyphs[lo].box)
+            for (i in lo + 1..hi) out.union(glyphs[i].box)
+            return out
         }
 
         /** 绘制图片选区四角的 L 形拖拽手柄与四边中点微妙短条。 */

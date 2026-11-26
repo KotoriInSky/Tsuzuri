@@ -77,8 +77,8 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
     @Volatile
     private var frontPackage: String? = null
 
-    /** 向来源应用要源位图的总时限：超时就用截图裁图。 */
-    private const val SOURCE_WAIT_MS = 800L
+    /** 向来源应用要源位图/实况双轨的总时限：超时就用截图裁图。 */
+    private const val SOURCE_WAIT_MS = 2000L
 
     /** 让来源应用自己列图片的等待上限（对方主线程上最多跑 40ms，其余是跨进程）。 */
     private const val LIST_WAIT_MS = 500L
@@ -341,6 +341,7 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
                     rawBytes = r.rawBytes,
                     mime = r.mime,
                     animated = r.animated,
+                    liveVideoBytes = r.liveVideoBytes,
                 ),
             )
         }

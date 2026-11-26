@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit
 internal object SourceImageClient {
 
     private const val MAX_MEDIA_BYTES = 24 shl 20
+    private const val MAX_VIDEO_BYTES = 16 shl 20
 
     class Result(
         val bitmap: Bitmap?,
@@ -33,6 +34,8 @@ internal object SourceImageClient {
         val rawBytes: ByteArray? = null,
         val mime: String? = null,
         val animated: Boolean = false,
+        /** 实况照片伴随的短视频 MP4 字节（与 [rawBytes] 主静图配对合成 Motion Photo）。 */
+        val liveVideoBytes: ByteArray? = null,
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -91,15 +94,18 @@ internal object SourceImageClient {
         val t0 = SystemClock.uptimeMillis()
         val latch = CountDownLatch(1)
         var pipe: ParcelFileDescriptor? = null
+        var videoPipe: ParcelFileDescriptor? = null
         var info = ""
         var failure: String? = null
         var isMedia = false
+        var isLive = false
         var mediaMime: String? = null
         var mediaAnimated = false
         val callback = object : Binder() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
                 if (code != SourceImageContract.TX_RESULT &&
                     code != SourceImageContract.TX_MEDIA &&
+                    code != SourceImageContract.TX_LIVE &&
                     code != SourceImageContract.TX_FAIL
                 ) {
                     return super.onTransact(code, data, reply, flags)
@@ -121,6 +127,15 @@ internal object SourceImageClient {
                             mediaAnimated = data.readInt() != 0
                             info = "${w}x$h ${mediaMime.orEmpty()} ${data.readString()}"
                             pipe = data.readFileDescriptor()
+                        }
+                        SourceImageContract.TX_LIVE -> {
+                            isLive = true
+                            val w = data.readInt()
+                            val h = data.readInt()
+                            mediaMime = data.readString()
+                            info = "${w}x$h live ${data.readString()}"
+                            pipe = data.readFileDescriptor()
+                            videoPipe = data.readFileDescriptor()
                         }
                         else -> failure = data.readString()
                     }
@@ -146,43 +161,71 @@ internal object SourceImageClient {
         }
         failure?.let { return Result(null, it) }
         val fd = pipe ?: return Result(null, "应答里没有数据")
+        val vfd = videoPipe
         // 读管道也计入总时限：到点就关掉读端，解码随之结束
-        val remaining = (timeoutMs - (SystemClock.uptimeMillis() - t0)).coerceAtLeast(200)
-        val guard = Runnable { runCatching { fd.close() } }
+        val remaining = (timeoutMs - (SystemClock.uptimeMillis() - t0)).coerceAtLeast(300)
+        val guard = Runnable {
+            runCatching { fd.close() }
+            runCatching { vfd?.close() }
+        }
         main.postDelayed(guard, remaining)
         return try {
-            if (isMedia) {
-                val bytes = ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
-                    val out = java.io.ByteArrayOutputStream()
-                    val buf = ByteArray(32 shl 10)
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        if (out.size() > MAX_MEDIA_BYTES) throw IllegalStateException("原文件超过 24MB")
-                    }
-                    out.toByteArray()
+            when {
+                isLive && vfd != null -> {
+                    // 双管道并行读取，避免单线程按序读导致另一端写满管道缓冲阻塞
+                    val videoFuture = java.util.concurrent.FutureTask { readPipeBytes(vfd, MAX_VIDEO_BYTES) }
+                    Thread(videoFuture, "fp-gr-live-read").start()
+                    val imgBytes = readPipeBytes(fd, MAX_MEDIA_BYTES)
+                    val vidBytes = runCatching { videoFuture.get(remaining + 200, TimeUnit.MILLISECONDS) }.getOrNull()
+                    val bmp = decodePreviewBitmap(imgBytes)
+                    if (bmp == null) Result(null, "实况主图解码失败（$info）")
+                    else Result(
+                        bitmap = bmp,
+                        detail = "实况照片 $info (图 ${imgBytes.size / 1024}KB + 视频 ${(vidBytes?.size ?: 0) / 1024}KB)，${SystemClock.uptimeMillis() - t0}ms",
+                        rawBytes = imgBytes,
+                        mime = mediaMime ?: "image/jpeg",
+                        animated = false,
+                        liveVideoBytes = vidBytes?.takeIf { it.isNotEmpty() },
+                    )
                 }
-                val bmp = decodePreviewBitmap(bytes)
-                if (bmp == null) Result(null, "原媒体解码失败（$info）")
-                else Result(
-                    bitmap = bmp,
-                    detail = "原文件 $info (${bytes.size / 1024}KB)，${SystemClock.uptimeMillis() - t0}ms",
-                    rawBytes = bytes,
-                    mime = mediaMime,
-                    animated = mediaAnimated,
-                )
-            } else {
-                val bmp = ParcelFileDescriptor.AutoCloseInputStream(fd).use { BitmapFactory.decodeStream(it) }
-                if (bmp == null) Result(null, "解码失败（$info）")
-                else Result(bmp, "源位图 $info，${SystemClock.uptimeMillis() - t0}ms")
+                isMedia -> {
+                    val bytes = readPipeBytes(fd, MAX_MEDIA_BYTES)
+                    val bmp = decodePreviewBitmap(bytes)
+                    if (bmp == null) Result(null, "原媒体解码失败（$info）")
+                    else Result(
+                        bitmap = bmp,
+                        detail = "原文件 $info (${bytes.size / 1024}KB)，${SystemClock.uptimeMillis() - t0}ms",
+                        rawBytes = bytes,
+                        mime = mediaMime,
+                        animated = mediaAnimated,
+                    )
+                }
+                else -> {
+                    val bmp = ParcelFileDescriptor.AutoCloseInputStream(fd).use { BitmapFactory.decodeStream(it) }
+                    if (bmp == null) Result(null, "解码失败（$info）")
+                    else Result(bmp, "源位图 $info，${SystemClock.uptimeMillis() - t0}ms")
+                }
             }
         } catch (t: Throwable) {
             Result(null, "读取失败（$info）：$t")
         } finally {
             main.removeCallbacks(guard)
+            runCatching { vfd?.close() }
         }
     }
+
+    private fun readPipeBytes(fd: ParcelFileDescriptor, limit: Int): ByteArray =
+        ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(32 shl 10)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                if (out.size() > limit) throw IllegalStateException("原文件超过上限 ${limit / (1 shl 20)}MB")
+            }
+            out.toByteArray()
+        }
 
     /** 把原文件字节解成用于卡片/扫码/编辑的首帧位图；超大图自动降采样防 OOM，原文件字节完整保留在 rawBytes 中。 */
     private fun decodePreviewBitmap(bytes: ByteArray): Bitmap? {
