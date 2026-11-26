@@ -1292,8 +1292,9 @@ object Catalog {
                     key = p(ONNX_OCR, OnnxOcr.PREF_MIRROR),
                     labelKey = "pref.onnx_ocr.mirror",
                     hintKey = null,
-                    default = OnnxOcr.Mirror.MODELSCOPE.id,
+                    default = OnnxOcr.Mirror.BCEBOS.id,
                     options = listOf(
+                        PrefSpec.Choice.Option(OnnxOcr.Mirror.BCEBOS.id, "pref.onnx_ocr.mirror.bcebos"),
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.MODELSCOPE.id, "pref.onnx_ocr.mirror.modelscope"),
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.HF_MIRROR.id, "pref.onnx_ocr.mirror.hf_mirror"),
                         PrefSpec.Choice.Option(OnnxOcr.Mirror.HUGGINGFACE.id, "pref.onnx_ocr.mirror.huggingface"),

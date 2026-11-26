@@ -111,15 +111,16 @@ object OnnxOcr {
         }
     }
 
-    /** 模型下载源：国内加速源（魔搭 ModelScope / HF Mirror）+ Hugging Face 官方源 + 自定义加速源。 */
+    /** 模型下载源：百度飞桨官方 BOS 直连 / 魔搭 / HF 镜像 / Hugging Face / 自定义。 */
     enum class Mirror(val id: String) {
+        BCEBOS("bcebos"),
         MODELSCOPE("modelscope"),
         HF_MIRROR("hf_mirror"),
         HUGGINGFACE("huggingface"),
         CUSTOM("custom");
 
         fun fileUrl(repo: String, filePath: String, customTemplate: String? = null): String = when (this) {
-            MODELSCOPE -> "https://modelscope.cn/api/v1/models/$repo/repo?Revision=master&FilePath=$filePath"
+            BCEBOS, MODELSCOPE -> "https://modelscope.cn/api/v1/models/$repo/repo?Revision=master&FilePath=$filePath"
             HF_MIRROR -> "https://hf-mirror.com/$repo/resolve/main/$filePath"
             HUGGINGFACE -> "https://huggingface.co/$repo/resolve/main/$filePath"
             CUSTOM -> resolveCustomMirrorUrl(customTemplate, repo, filePath)
@@ -127,7 +128,122 @@ object OnnxOcr {
         }
 
         companion object {
-            fun of(raw: String?): Mirror = entries.firstOrNull { it.id == raw } ?: MODELSCOPE
+            fun of(raw: String?): Mirror = entries.firstOrNull { it.id == raw } ?: BCEBOS
+        }
+    }
+
+    /** 百度飞桨官方北京 BOS 归档包直链（实测 Tiny/Small 为 200 OK + Range 零跳转；Medium 自动回落魔搭）。 */
+    data class TarBundle(
+        val url: String,
+        val expectedBytes: Long,
+        /** 归档内文件名后缀 → 落盘目标文件名（如 `inference.onnx` → `det.onnx`）。 */
+        val targets: Map<String, String>,
+    )
+
+    fun bcebosTarBundles(tier: Tier): List<TarBundle>? = when (tier) {
+        Tier.TINY -> listOf(
+            TarBundle(
+                url = "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_tiny_det_onnx.tar",
+                expectedBytes = 1_699_840L,
+                targets = mapOf("inference.onnx" to "det.onnx"),
+            ),
+            TarBundle(
+                url = "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_tiny_rec_onnx.tar",
+                expectedBytes = 4_474_880L,
+                targets = mapOf(
+                    "inference.onnx" to "rec.onnx",
+                    "inference.yml" to "rec_inference.yml",
+                ),
+            ),
+        )
+        Tier.SMALL -> listOf(
+            TarBundle(
+                url = "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_small_det_onnx.tar",
+                expectedBytes = 9_943_040L,
+                targets = mapOf("inference.onnx" to "det.onnx"),
+            ),
+            TarBundle(
+                url = "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv6_small_rec_onnx.tar",
+                expectedBytes = 21_258_240L,
+                targets = mapOf(
+                    "inference.onnx" to "rec.onnx",
+                    "inference.yml" to "rec_inference.yml",
+                ),
+            ),
+        )
+        Tier.MEDIUM -> null
+    }
+
+    /**
+     * 轻量 POSIX/USTAR `.tar` 归档解析器（零第三方依赖），仅读取常规文件条目。
+     * [onEntry] 回调接收条目名与限定长度的输入流（必须读完或由本函数跳过剩余字节）。
+     */
+    fun parseTarEntries(
+        input: java.io.InputStream,
+        onEntry: (entryName: String, size: Long, content: java.io.InputStream) -> Unit,
+    ) {
+        val header = ByteArray(512)
+        while (true) {
+            val read = readFully(input, header, 512)
+            if (read < 512) break
+            if (header.all { it == 0.toByte() }) break
+            val nameEnd = header.indexOf(0.toByte()).let { if (it in 0..100) it else 100 }
+            val name = String(header, 0, nameEnd, Charsets.UTF_8).trim()
+            val prefixEnd = (345 until 500).firstOrNull { header[it] == 0.toByte() } ?: 500
+            val prefix = String(header, 345, prefixEnd - 345, Charsets.UTF_8).trim()
+            val fullName = if (prefix.isNotEmpty()) "$prefix/$name" else name
+            val sizeStr = String(header, 124, 12, Charsets.US_ASCII).trim('\u0000', ' ')
+            val size = sizeStr.toLongOrNull(8) ?: 0L
+            val typeFlag = header[156].toInt().toChar()
+            val isRegular = typeFlag == '0' || typeFlag == '\u0000'
+            var consumed = 0L
+            if (isRegular && size > 0L) {
+                val limited = object : java.io.InputStream() {
+                    override fun read(): Int {
+                        if (consumed >= size) return -1
+                        val b = input.read()
+                        if (b >= 0) consumed++
+                        return b
+                    }
+
+                    override fun read(b: ByteArray, off: Int, len: Int): Int {
+                        val rem = size - consumed
+                        if (rem <= 0L) return -1
+                        val n = input.read(b, off, minOf(len.toLong(), rem).toInt())
+                        if (n > 0) consumed += n
+                        return n
+                    }
+                }
+                onEntry(fullName, size, limited)
+            }
+            val remainingInFile = size - consumed
+            val pad = (512L - (size % 512L)) % 512L
+            skipFully(input, remainingInFile + pad)
+        }
+    }
+
+    private fun readFully(input: java.io.InputStream, buf: ByteArray, len: Int): Int {
+        var total = 0
+        while (total < len) {
+            val n = input.read(buf, total, len - total)
+            if (n < 0) break
+            total += n
+        }
+        return total
+    }
+
+    private fun skipFully(input: java.io.InputStream, bytes: Long) {
+        var rem = bytes
+        val sink = ByteArray(4096)
+        while (rem > 0L) {
+            val skipped = input.skip(rem)
+            if (skipped > 0L) {
+                rem -= skipped
+            } else {
+                val n = input.read(sink, 0, minOf(sink.size.toLong(), rem).toInt())
+                if (n < 0) break
+                rem -= n
+            }
         }
     }
 

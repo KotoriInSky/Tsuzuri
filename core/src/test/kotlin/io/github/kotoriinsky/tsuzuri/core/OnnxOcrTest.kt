@@ -102,9 +102,41 @@ class OnnxOcrTest {
 
     @Test
     fun 检测输入尺寸对齐32倍数() {
-        val (w, h) = OnnxOcr.detInputSize(1220, 2656, maxSide = 960)
+        val (w, h) = OnnxOcr.detInputSize(1220, 2656, maxSide = 736)
         assertEquals(0, w % 32)
         assertEquals(0, h % 32)
-        assertTrue(w <= 960 && h <= 960)
+        assertTrue(w <= 736 && h <= 736)
+    }
+
+    @Test
+    fun 百度BOS直链与Tar解包解析正确() {
+        val smallBundles = OnnxOcr.bcebosTarBundles(OnnxOcr.Tier.SMALL)
+        assertTrue(smallBundles != null && smallBundles.size == 2)
+        assertEquals(null, OnnxOcr.bcebosTarBundles(OnnxOcr.Tier.MEDIUM))
+
+        // 构造最小 POSIX tar 归档（含一个目录条目与两个常规文件）
+        val out = java.io.ByteArrayOutputStream()
+        fun writeEntry(name: String, body: ByteArray) {
+            val hdr = ByteArray(512)
+            name.toByteArray(Charsets.UTF_8).copyInto(hdr, 0)
+            val oct = body.size.toString(8).padStart(11, '0').toByteArray(Charsets.US_ASCII)
+            oct.copyInto(hdr, 124)
+            hdr[156] = '0'.code.toByte()
+            out.write(hdr)
+            out.write(body)
+            val pad = (512 - (body.size % 512)) % 512
+            if (pad > 0) out.write(ByteArray(pad))
+        }
+        writeEntry("PP-OCRv6_small_rec_onnx/inference.yml", "character_dict:\n- A\n".toByteArray())
+        writeEntry("PP-OCRv6_small_rec_onnx/inference.onnx", byteArrayOf(1, 2, 3, 4, 5))
+        out.write(ByteArray(1024))
+
+        val extracted = mutableMapOf<String, ByteArray>()
+        OnnxOcr.parseTarEntries(java.io.ByteArrayInputStream(out.toByteArray())) { name, _, stream ->
+            extracted[name.substringAfterLast('/')] = stream.readBytes()
+        }
+        assertEquals(setOf("inference.yml", "inference.onnx"), extracted.keys)
+        assertEquals(5, extracted["inference.onnx"]?.size)
+        assertTrue(extracted["inference.yml"]!!.decodeToString().contains("character_dict"))
     }
 }
