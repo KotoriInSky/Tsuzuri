@@ -292,12 +292,35 @@ private fun MainScreen(pager: PagerState, navigate: (Dest) -> Unit, onBottomInse
     }
 }
 
+/**
+ * 下钻页顶栏右侧动作槽：让有本地状态的页面（如规则页的新建/导入、日志页的导出/清空）
+ * 声明式注册自己的顶栏图标，离页自动清理，无需在 AppRoot 里硬连回调。
+ */
+internal val LocalDrillTopBarActions = androidx.compose.runtime.staticCompositionLocalOf<
+    androidx.compose.runtime.MutableState<(@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)?>?
+> { null }
+
+@Composable
+internal fun DrillTopBarActions(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val slot = LocalDrillTopBarActions.current ?: return
+    androidx.compose.runtime.SideEffect { slot.value = content }
+    androidx.compose.runtime.DisposableEffect(slot) {
+        onDispose { slot.value = null }
+    }
+}
+
 /** 下钻页：自带「小标题栏 + 返回」，栏随页面一起被 NavDisplay 推入 / 移出。 */
 @Composable
 private fun DrillPage(dest: Dest, back: () -> Unit, navigate: (Dest) -> Unit) {
     val kit = LocalFpKit.current
+    val topBarActions = remember(dest) {
+        mutableStateOf<(@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)?>(null)
+    }
     // 页面身份：屏幕热区高亮只在「登记它的页面 == 栈顶」时画（见 ScreenHotZones）
-    CompositionLocalProvider(LocalPageKey provides dest) {
+    CompositionLocalProvider(
+        LocalPageKey provides dest,
+        LocalDrillTopBarActions provides topBarActions,
+    ) {
         kit.Scaffold(
             title = dest.title(),
             subtitle = dest.subtitle(),
@@ -306,6 +329,7 @@ private fun DrillPage(dest: Dest, back: () -> Unit, navigate: (Dest) -> Unit) {
                 if (dest is Dest.FanItems) {
                     io.github.kotoriinsky.tsuzuri.ui.screen.FanItemsAddAction(dest.spec, navigate)
                 }
+                topBarActions.value?.invoke(this)
             },
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {

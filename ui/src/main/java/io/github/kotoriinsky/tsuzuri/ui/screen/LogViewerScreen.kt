@@ -2,28 +2,49 @@ package io.github.kotoriinsky.tsuzuri.ui.screen
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.github.kotoriinsky.tsuzuri.ui.DrillTopBarActions
 import io.github.kotoriinsky.tsuzuri.ui.fpString
 import io.github.kotoriinsky.tsuzuri.ui.kit.FpEmphasis
 import io.github.kotoriinsky.tsuzuri.ui.kit.FpEmptyState
-import io.github.kotoriinsky.tsuzuri.ui.kit.FpTextStyle
-import io.github.kotoriinsky.tsuzuri.ui.kit.Paragraph
+import io.github.kotoriinsky.tsuzuri.ui.kit.FpPopupAction
+import io.github.kotoriinsky.tsuzuri.ui.kit.FpPopupMenu
+import io.github.kotoriinsky.tsuzuri.ui.kit.FpSpace
 import io.github.kotoriinsky.tsuzuri.ui.kit.LocalFpKit
+import io.github.kotoriinsky.tsuzuri.ui.kit.fpRowFeedback
 import io.github.kotoriinsky.tsuzuri.ui.state.UiActionLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -34,30 +55,25 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 应用内日志查看器：诊断页下架后，App 侧动作的窗口。
+ * 应用内日志查看器（最近 200 条动作与结果）。
  *
- * 数据来自 [UiActionLog]（进程内环形缓冲，最近 200 条）：写盘、迁移、草稿同步、
- * 备份导出/恢复、失败降级 —— 都是「动作与结局」，不装界面状态。hook 侧的事
- * 归 LSPosed 模块日志（设置 → 高级那条入口），两边各管各的进程。
- *
- * ## 刷新是轻量轮询
- *
- * 日志没有可观察的句柄（它故意不接 Compose 状态：写入方大多在 IO 线程与
- * 非组合上下文里）。查看器开着的时候每 1.5s 取一次快照 —— 排障场景里
- * 「页面开着、另一只手在调开关」是真实用法，轮询让新动作自己冒出来；
- * 不开页面就零开销。
+ * 导出 / 清空收进顶栏右上角 `⋯` 原生浮层，正文卡片全屏呈现日志条目。
  */
 @Composable
 fun LogViewerScreen(padding: PaddingValues) {
     val kit = LocalFpKit.current
+    val colors = kit.colors()
     val context = LocalContext.current
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
+    val feedback = fpRowFeedback()
 
     var entries by remember { mutableStateOf(UiActionLog.snapshot()) }
     var result by remember { mutableStateOf<String?>(null) }
     var confirmingClear by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
 
-    // 文案在组合里取好：导出回调在协程里，fpString 那时已不在组合中
+    val exportLabel = fpString("log.export")
+    val clearLabel = fpString("log.clear")
     val exportDoneText = fpString("log.export.done")
     val exportFailedText = fpString("log.export.failed")
     val clearedText = fpString("log.cleared")
@@ -86,31 +102,46 @@ fun LogViewerScreen(padding: PaddingValues) {
         }
     }
 
+    DrillTopBarActions {
+        Box {
+            Icon(
+                imageVector = Icons.Rounded.MoreVert,
+                contentDescription = exportLabel,
+                tint = colors.onSurface,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable {
+                        feedback()
+                        menuOpen = true
+                    }
+                    .padding(12.dp),
+            )
+            FpPopupMenu(
+                expanded = menuOpen,
+                alignEnd = true,
+                actions = buildList {
+                    add(FpPopupAction(exportLabel) {
+                        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date())
+                        exportLog.launch("tsuzuri-log-$stamp.txt")
+                    })
+                    if (entries.isNotEmpty()) {
+                        add(FpPopupAction(clearLabel, destructive = true) { confirmingClear = true })
+                    }
+                },
+                onDismiss = { menuOpen = false },
+            )
+        }
+    }
+
+    val locale = LocalConfiguration.current.locales[0]
+    val timeFormat = remember(locale) { SimpleDateFormat("HH:mm:ss", locale) }
+
     Column(Modifier.fillMaxSize().padding(padding)) {
-        kit.VSpace(8.dp)
+        kit.VSpace(FpSpace.s)
 
         result?.let {
             kit.Banner(it, if (it == exportFailedText) FpEmphasis.NEGATIVE else FpEmphasis.POSITIVE)
             kit.VSpace(4.dp)
-        }
-
-        kit.Card {
-            kit.ActionRow(
-                title = fpString("log.export"),
-                summary = fpString("log.export.hint"),
-                trailingText = null,
-                onClick = {
-                    val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date())
-                    exportLog.launch("tsuzuri-log-$stamp.txt")
-                },
-            )
-            kit.Divider()
-            kit.ActionRow(
-                title = fpString("log.clear"),
-                summary = null,
-                trailingText = null,
-                onClick = { confirmingClear = true },
-            )
         }
 
         if (entries.isEmpty()) {
@@ -121,21 +152,48 @@ fun LogViewerScreen(padding: PaddingValues) {
             )
         } else {
             kit.Card(Modifier.weight(1f)) {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries) { entry ->
-                        kit.Paragraph(
-                            SimpleDateFormat("HH:mm:ss", LocalConfiguration.current.locales[0]).format(Date(entry.time)),
-                            FpEmphasis.MUTED,
-                            FpTextStyle.CAPTION,
-                        )
-                        kit.Paragraph(entry.message, FpEmphasis.NORMAL, FpTextStyle.CAPTION)
-                        kit.Divider()
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                ) {
+                    itemsIndexed(entries) { idx, entry ->
+                        if (idx > 0) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(0.5.dp)
+                                    .background(colors.outline.copy(alpha = 0.25f)),
+                            )
+                        }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Text(
+                                text = timeFormat.format(Date(entry.time)),
+                                color = colors.muted,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(top = 1.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = entry.message,
+                                color = colors.onSurface,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
         }
 
-        kit.VSpace(16.dp)
+        kit.VSpace(FpSpace.l)
     }
 
     kit.ConfirmDialog(
