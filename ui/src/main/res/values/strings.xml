@@ -636,6 +636,27 @@
     <!-- 小窗多开（multi_freeform）：机制与安全论证见 MultiFreeformWhitelist -->
     <string name="feature_multi_freeform_title">小窗多开</string>
     <string name="feature_multi_freeform_summary">所有应用可同时开多个小窗</string>
+    <!-- 小窗增强（freeform_enhance）：即用即走 + 顶部原生菜单扩展 -->
+    <string name="feature_freeform_enhance_title">小窗增强</string>
+    <string name="feature_freeform_enhance_summary">关闭不留后台卡片，顶栏支持主副互换、静音与半透明</string>
+    <string name="pref_group_freeform_close">关闭行为</string>
+    <string name="pref_group_freeform_menu">顶栏菜单扩展</string>
+    <string name="pref_freeform_enhance_ephemeral">即用即走（关闭不留后台卡片）</string>
+    <string name="pref_freeform_enhance_ephemeral_hint">上滑或点关闭按钮退出小窗后，自动移出最近任务列表</string>
+    <string name="pref_freeform_enhance_ephemeral_required">需先打开「即用即走」</string>
+    <string name="pref_freeform_enhance_ephemeral_scope">清理范围</string>
+    <string name="pref_freeform_enhance_ephemeral_scope_hint">决定哪些小窗在关闭时移出最近任务</string>
+    <string name="pref_freeform_enhance_ephemeral_scope_temp_only">仅临时拉起的小窗（推荐）</string>
+    <string name="pref_freeform_enhance_ephemeral_scope_all">全部关闭的小窗</string>
+    <string name="pref_freeform_enhance_swap_fullscreen">主副窗一键互换</string>
+    <string name="pref_freeform_enhance_swap_fullscreen_hint">在小窗顶部「…」菜单增加「互换」，与底层全屏应用一步对调</string>
+    <string name="pref_freeform_enhance_window_mute">单窗静音</string>
+    <string name="pref_freeform_enhance_window_mute_hint">在小窗顶部「…」菜单增加「静音」，仅静音当前小窗，关窗或切全屏自动恢复</string>
+    <string name="pref_freeform_enhance_window_opacity">单窗半透明</string>
+    <string name="pref_freeform_enhance_window_opacity_hint">在小窗顶部「…」菜单增加「半透明」，关窗或切全屏自动恢复不透明</string>
+    <string name="pref_freeform_enhance_window_opacity_required">需先打开「单窗半透明」</string>
+    <string name="pref_freeform_enhance_opacity_percent">半透明不透明度</string>
+    <string name="pref_freeform_enhance_opacity_percent_hint">开启半透明时小窗保留的画面不透明度，数值越小越透</string>
     <!-- 分享排序（share_order，C14） -->
     <string name="feature_share_order_title">分享面板排序</string>
     <string name="feature_share_order_summary">常用应用固定在分享面板最前</string>
@@ -929,6 +950,10 @@
     <string name="pref_screen_image_animated_format_off_hint">需先打开「播放动图和视频」</string>
     <string name="pref_screen_image_object_to_xiaoai">识物交给超级小爱</string>
     <string name="pref_screen_image_object_to_xiaoai_hint">点「识物」时改由超级小爱识别</string>
+    <string name="pref_screen_image_qr_decode">本地解码二维码直达</string>
+    <string name="pref_screen_image_qr_decode_hint">图片含二维码时在卡片上方显示直达与复制条，接入内置平台规则，纯本地不联网</string>
+    <string name="pref_global_recognition_qr_decode">自动解码屏幕二维码</string>
+    <string name="pref_global_recognition_qr_decode_hint">整屏识别时同步本地扫描画面里的二维码并高亮，一点直达或复制</string>
     <string name="pref_recognition_look_full_bleed">截图铺满</string>
     <string name="pref_recognition_look_full_bleed_hint">截图占满屏幕宽度</string>
     <string name="pref_recognition_look_horizontal">结果横排</string>
