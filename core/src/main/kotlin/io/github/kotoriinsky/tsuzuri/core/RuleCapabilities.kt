@@ -44,6 +44,9 @@ object RuleCapabilities {
     val CORE_BUILDERS: Map<String, (text: String, arg: String) -> String?> = mapOf(
         // 分享文案的标题行（淘口令：token 本身是乱码，核心内容取标题）
         "title" to { text, _ -> PasscodeRules.extractTitle(text) },
+        // 磁力链 / 电驴链：解码文件名与体积，无文件名时退回特征码
+        "magnet_core" to { _, arg -> MagnetEd2kMeta.magnetCore(arg) },
+        "ed2k_core" to { _, arg -> MagnetEd2kMeta.ed2kCore(arg) },
     )
 
     /**

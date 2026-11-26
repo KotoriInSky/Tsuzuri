@@ -121,6 +121,7 @@ class BuiltinRulesTest {
         val addedCloudPlatforms = listOf(
             "115网盘|com.ylmf.androidclient|#2378F4|image_text",
             "123云盘|com.mfcloudcalculate.networkdisk|#3B7BFF|image_text",
+            "Bangumi|com.czy0729.bangumi|#F09199|image_text",
             "Google Drive|com.google.android.apps.docs|#0F9D58|image_text",
             "MEGA|mega.privacy.android.app|#D9272E|image_text",
             "OneDrive|com.microsoft.skydrive|#0078D4|image_text",

@@ -405,6 +405,7 @@ object PasscodeRules {
     val P_YOUKU = builtin("youku")
     val P_IQIYI = builtin("iqiyi")
     val P_PIXIV = builtin("pixiv")
+    val P_BANGUMI = builtin("bangumi")
     // niconico / AcFun 都是视频站：以前没写类别，落到默认的图文模板（2026-10-22 探针发现）
     val P_NICO = builtin("nico")
     val P_ACFUN = builtin("acfun")

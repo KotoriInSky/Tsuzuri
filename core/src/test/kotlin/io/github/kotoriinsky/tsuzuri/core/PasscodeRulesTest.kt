@@ -870,7 +870,10 @@ class PasscodeRulesTest {
         assertNotNull(magnet)
         assertEquals("magnet_link", magnet.ruleId)
         assertEquals(PasscodeRules.P_XUNLEI, magnet.platform)
-        assertEquals("0123456789ABCDEF0123456789ABCDEF01234567", magnet.core)
+        assertEquals("demo", magnet.core)
+
+        val magnetNoDn = match("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567")
+        assertEquals("0123456789ABCDEF0123456789ABCDEF01234567", magnetNoDn?.core)
 
         val thunder = match("thunder://QUFodHRwOi8vZXhhbXBsZS5jb20vWlo=")
         assertNotNull(thunder)
@@ -881,5 +884,8 @@ class PasscodeRulesTest {
         assertNotNull(ed2k)
         assertEquals("ed2k_link", ed2k.ruleId)
         assertEquals(PasscodeRules.P_XUNLEI, ed2k.platform)
+        assertEquals("test.zip · 1 KB", ed2k.core)
+
+        assertEquals(PasscodeRules.P_BANGUMI, match("https://bgm.tv/subject/1")?.platform)
     }
 }
