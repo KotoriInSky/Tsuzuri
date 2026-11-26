@@ -55,4 +55,11 @@ object SourceImageContract {
      * 管道里是未经重压的原始文件字节（GIF / 动态 WebP / AVIF / HEIC / 原画 JPEG・PNG）。
      */
     const val TX_MEDIA = 4
+
+    /**
+     * 实况照片（Live Photo）双轨应答（v3）：
+     * int 宽、int 高、String imageMime、String 来源说明、
+     * FileDescriptor imagePipe（主静图字节）、FileDescriptor videoPipe（伴随短视频 MP4 字节）。
+     */
+    const val TX_LIVE = 5
 }
