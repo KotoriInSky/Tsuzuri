@@ -907,7 +907,7 @@
     <string name="feature_global_recognition_title">全局识别</string>
     <string name="feature_global_recognition_summary">控制中心磁贴一键识别整屏文字和图片</string>
     <string name="feature_onnx_ocr_title">多语种 OCR</string>
-    <string name="feature_onnx_ocr_summary">PP-OCRv6 替代系统识字，支持中英日欧 50 语种</string>
+    <string name="feature_onnx_ocr_summary">离线识别中英日欧 50 语种</string>
     <string name="global_recognition_tile">全局识别</string>
     <string name="global_recognition_shortcut">全局识别</string>
     <string name="agg_payment_shortcut">聚合支付</string>
