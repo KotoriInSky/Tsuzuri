@@ -26,9 +26,15 @@ import io.github.kotoriinsky.tsuzuri.core.Catalog
 import io.github.kotoriinsky.tsuzuri.core.HtmlCharset
 import io.github.kotoriinsky.tsuzuri.core.AcfunShare
 import io.github.kotoriinsky.tsuzuri.core.AlipayMiniProgram
+import io.github.kotoriinsky.tsuzuri.core.BangumiShare
 import io.github.kotoriinsky.tsuzuri.core.BiliDynamicShare
+import io.github.kotoriinsky.tsuzuri.core.BiliLiveShare
+import io.github.kotoriinsky.tsuzuri.core.CloudShareMeta
 import io.github.kotoriinsky.tsuzuri.core.DouyinShare
 import io.github.kotoriinsky.tsuzuri.core.EcomShare
+import io.github.kotoriinsky.tsuzuri.core.MagnetEd2kMeta
+import io.github.kotoriinsky.tsuzuri.core.NeteaseMusicShare
+import io.github.kotoriinsky.tsuzuri.core.SteamStoreShare
 import io.github.kotoriinsky.tsuzuri.core.TiebaShare
 import io.github.kotoriinsky.tsuzuri.core.Keys
 import io.github.kotoriinsky.tsuzuri.core.KuaishouShare
@@ -383,12 +389,14 @@ internal object PasscodeIslandPresenter {
         // 候选链供快递和 QQ 音乐歌曲使用，见 EXTRA_TARGET_ALTS。
         val alts = intent.getStringArrayListExtra(PasscodeIsland.EXTRA_TARGET_ALTS).orEmpty()
         // 本机 / 内网地址不抓：不可达时只会白等连接超时（直接按「打开」显示，用户 2026-10-22）
-        if (category != PasscodeIsland.ContentCategory.EXPRESS && target.startsWith("http", ignoreCase = true) &&
-            !PublicSuffix.isLocalHost(Uri.parse(target).host.orEmpty())
+        val pan123FetchUrl = if (target == "pan://") alts.firstOrNull { CloudShareMeta.pan123ShareKey(it) != null } else null
+        if (category != PasscodeIsland.ContentCategory.EXPRESS &&
+            ((target.startsWith("http", ignoreCase = true) && !PublicSuffix.isLocalHost(Uri.parse(target).host.orEmpty())) ||
+                pan123FetchUrl != null)
         ) {
             scheduleMetaFetch(
                 context, rule, label, target, snippet, core, accent, platformName, platformPkg,
-                category, alts,
+                category, alts, fetchUrl = pan123FetchUrl ?: target,
             )
         } else {
             postIsland(
@@ -656,7 +664,9 @@ internal object PasscodeIslandPresenter {
             PasscodeIsland.ContentCategory.MUSIC -> pageSubtitle ?: musicArtist
             PasscodeIsland.ContentCategory.LONG_VIDEO -> pageSubtitle ?: idLine
             // 社区类（Reddit 的 r/版块）优先于帖主：先说在哪，再说是谁（用户 2026-10-22）
-            PasscodeIsland.ContentCategory.IMAGE_TEXT -> PasscodeIslandTemplate.communityLine(target) ?: pageSubtitle
+            PasscodeIsland.ContentCategory.IMAGE_TEXT -> PasscodeIslandTemplate.communityLine(target) ?: mergeCloudPassword(
+                pageSubtitle, primaryTarget, alts, snippet, platformName, iconPkg,
+            )
             // 商品标题抓不到（大字行是「打开小红书」）时，次行说清这是商品，比再显示一遍域名有用
             PasscodeIsland.ContentCategory.ECOMMERCE -> idLine?.takeIf { titleText == null }
                 ?: PasscodeIslandTemplate.categoryLabel(category).takeIf {
@@ -919,9 +929,10 @@ internal object PasscodeIslandPresenter {
         platformPkg: String?,
         category: PasscodeIsland.ContentCategory,
         alts: List<String>,
+        fetchUrl: String = target,
     ) {
         fun publish(resolvedUrl: String?, title: String?, subtitle: String?, cover: android.graphics.Bitmap?) {
-            val selected = metaTarget(context, rule, target, resolvedUrl, platformPkg)
+            val selected = if (fetchUrl != target) MetaTarget(target, null) else metaTarget(context, rule, target, resolvedUrl, platformPkg)
             val redirect = selected.redirected
             // 短链展开前后是**两个不同的内容身份**（`xhs-short:xhslink.cn/…` vs
             // `xhs-note:<24hex>`），而身份是按「用哪个地址发布」算的。所以这里把
@@ -985,10 +996,11 @@ internal object PasscodeIslandPresenter {
         }
         mainHandler.postDelayed(timeout, timeoutMs)
         Thread {
-            val meta = fetchPageMeta(target, category) { finalUrl ->
-                synchronized(finalUrlCache) { finalUrlCache[target] = finalUrl }
+            val sourceText = sourceTextFor(target, alts) ?: snippet
+            val meta = fetchPageMeta(fetchUrl, category, sourceText = sourceText) { finalUrl ->
+                if (fetchUrl == target) synchronized(finalUrlCache) { finalUrlCache[target] = finalUrl }
             }
-            val finalTarget = metaTarget(context, rule, target, meta.finalUrl, platformPkg).url
+            val finalTarget = if (fetchUrl != target) target else metaTarget(context, rule, target, meta.finalUrl, platformPkg).url
             meta.title?.let { synchronized(pageTitleCache) { pageTitleCache[target] = it } }
             meta.subtitle?.let { synchronized(pageSubtitleCache) { pageSubtitleCache[target] = it } }
             meta.cover?.let { synchronized(coverCache) { coverCache[target] = it } }
@@ -1021,6 +1033,7 @@ internal object PasscodeIslandPresenter {
     private fun fetchPageMeta(
         url: String,
         category: PasscodeIsland.ContentCategory,
+        sourceText: String = "",
         onFinalUrl: (String) -> Unit = {},
     ): PageMeta {
         // 「试一下」的随包样例：内容提前存好，不联网（见 CopyDirectSamples）
@@ -1029,7 +1042,7 @@ internal object PasscodeIslandPresenter {
             s.finalUrl?.let(onFinalUrl)
             return PageMeta(s.title, cover, s.finalUrl ?: url, s.subtitle)
         }
-        fetchPlatformMeta(url, category, strict = true)?.let { return it }
+        fetchPlatformMeta(url, category, strict = true, sourceText = sourceText)?.let { return it }
         var page = fetchHtml(url) ?: run {
             // 页面本身取不到（超时 / 被墙 / 反爬）时，提供方清单里的 oEmbed 接口有时还通
             val o = fetchOEmbed(OEmbed.endpointFor(url)) ?: return PageMeta(null, null, null)
@@ -1069,13 +1082,14 @@ internal object PasscodeIslandPresenter {
             ?.takeIf { it.platform != PasscodeRules.P_GENERIC }
         val effectiveCategory = resolved?.category ?: category
         if (page.finalUrl != url && resolved != null) {
-            fetchPlatformMeta(page.finalUrl, effectiveCategory)?.let { return it }
+            fetchPlatformMeta(page.finalUrl, effectiveCategory, sourceText = sourceText)?.let { return it }
         }
         fetchXiaohongshuMeta(page)?.let { return it }
         fetchKuaishouMeta(page, effectiveCategory)?.let { return it }
         fetchAcfunMeta(page, effectiveCategory)?.let { return it }
         fetchPipixMeta(page, effectiveCategory)?.let { return it }
         fetchEcomMeta(page, effectiveCategory)?.let { return it }
+        fetchLanzouMeta(page)?.let { return it }
         val htmlTitle = TITLE_TAG.find(page.text)?.groupValues?.get(1)
         val ogTitle = metaValue(page.text, "og:title")
         // 通用字段（2026-10-22）：OG → Twitter → <title> → JSON-LD，顺序参考 metascraper，见 PageMetaExtract。
@@ -1151,6 +1165,7 @@ internal object PasscodeIslandPresenter {
         url: String,
         category: PasscodeIsland.ContentCategory,
         strict: Boolean = false,
+        sourceText: String = "",
     ): PageMeta? {
         if (metaSocialIdentity(url) != null) {
             return fetchMetaSocialPostMeta(url, category) ?: PageMeta(null, null, url)
@@ -1166,11 +1181,21 @@ internal object PasscodeIslandPresenter {
         BiliVideoShare.apiUrl(url)?.let { api ->
             fetchBiliVideoMeta(api, url, category)?.let { return it }
         }
+        BiliLiveShare.roomId(url)?.let { room ->
+            fetchBiliLiveMeta(room, url, category)?.let { return it }
+        }
         // 最右：走它自己的 share API（做法借 ParseHub，MIT）。酷安**不做 C 层** ——
         // 实测它的分享页只剩 6361 字节的壳（桌面 UA 也一样），用户 2026-10-06 拍板保持现状。
         if (ZuiyouShare.pid(url) != null) {
             fetchZuiyouMeta(url, category)?.let { return it }
         }
+        SteamStoreShare.appId(url)?.let { appId ->
+            fetchSteamMeta(appId, url, category)?.let { return it }
+        }
+        BangumiShare.subjectId(url)?.let { id ->
+            fetchBangumiMeta(id, url, category)?.let { return it }
+        }
+        fetchCloudShareMeta(url, sourceText)?.let { return it }
         if (category == PasscodeIsland.ContentCategory.IMAGE_TEXT) {
             val uri = Uri.parse(url)
             ZhihuShare.kind(url)?.let { kind ->
@@ -1198,6 +1223,9 @@ internal object PasscodeIslandPresenter {
         }
         if (category == PasscodeIsland.ContentCategory.MUSIC) {
             fetchQqSongMeta(url)?.let { return it }
+            NeteaseMusicShare.songId(url)?.let { songId ->
+                fetchNeteaseMeta(songId, url)?.let { return it }
+            }
             if (Uri.parse(url).host == "music.apple.com") {
                 return fetchAppleMusicMeta(url) ?: if (strict) PageMeta(null, null, null) else null
             }
@@ -1909,6 +1937,148 @@ internal object PasscodeIslandPresenter {
             BiliVideoShare.coverUrl(data.optString("pic"))?.let { fetchCover(it, url) }
         } else null
         return PageMeta(title, cover, url, author)
+    }
+
+    private fun fetchNeteaseMeta(songId: String, url: String): PageMeta? {
+        val raw = fetchText(NeteaseMusicShare.apiUrl(songId), requestHeaders = mapOf("User-Agent" to UA)) ?: return null
+        val fields = NeteaseMusicShare.parse(raw, songId) ?: return null
+        val cover = fields.cover?.let { fetchCover(it, url) }
+        Log.i(TAG, "口令岛网易云：解析成功 id=$songId author=${fields.author != null} cover=${cover != null}")
+        return PageMeta(fields.title, cover, url, fields.author)
+    }
+
+    private fun fetchBiliLiveMeta(
+        roomId: String,
+        url: String,
+        category: PasscodeIsland.ContentCategory,
+    ): PageMeta? {
+        val raw = fetchText(BiliLiveShare.apiUrl(roomId), requestHeaders = mapOf("User-Agent" to UA)) ?: return null
+        val fields = BiliLiveShare.parse(raw, roomId) ?: return null
+        val cover = if (category.supportsCover()) fields.cover?.let { fetchCover(it, url) } else null
+        Log.i(TAG, "口令岛 B 站直播：解析成功 room=$roomId subtitle=${fields.subtitle} cover=${cover != null}")
+        return PageMeta(cleanPageTitle(fields.title), cover, url, fields.subtitle)
+    }
+
+    private fun fetchSteamMeta(
+        appId: String,
+        url: String,
+        category: PasscodeIsland.ContentCategory,
+    ): PageMeta? {
+        val raw = fetchText(SteamStoreShare.apiUrl(appId), maxBytes = 64 * 1024, requestHeaders = mapOf("User-Agent" to UA)) ?: return null
+        val fields = SteamStoreShare.parse(raw, appId) ?: return null
+        val cover = if (category.supportsCover()) fields.cover?.let { fetchCover(it, url) } else null
+        Log.i(TAG, "口令岛 Steam：解析成功 app=$appId price=${fields.subtitle} cover=${cover != null}")
+        return PageMeta(fields.title, cover, url, fields.subtitle)
+    }
+
+    private fun fetchBangumiMeta(
+        subjectId: String,
+        url: String,
+        category: PasscodeIsland.ContentCategory,
+    ): PageMeta? {
+        val raw = fetchText(
+            BangumiShare.apiUrl(subjectId),
+            maxBytes = 64 * 1024,
+            requestHeaders = mapOf("User-Agent" to "Tsuzuri/1.0 (https://github.com/KotoriInSky/tsuzuri)"),
+        ) ?: return null
+        val fields = BangumiShare.parse(raw, subjectId) ?: return null
+        val cover = if (category.supportsCover()) fields.cover?.let { fetchCover(it, url) } else null
+        Log.i(TAG, "口令岛 Bangumi：解析成功 id=$subjectId subtitle=${fields.subtitle} cover=${cover != null}")
+        return PageMeta(fields.title, cover, url, fields.subtitle)
+    }
+
+    private fun fetchCloudShareMeta(url: String, sourceText: String): PageMeta? {
+        val pwd = MagnetEd2kMeta.extractCloudPassword(sourceText, url)
+        CloudShareMeta.quarkPwdId(url)?.let { pwdId ->
+            val body = JSONObject().put("pwd_id", pwdId).put("passcode", pwd.orEmpty()).toString()
+            val raw = postText(CloudShareMeta.quarkTokenUrl(), body, "application/json", "https://pan.quark.cn/") ?: return null
+            val fields = CloudShareMeta.parseQuarkToken(raw) ?: return null
+            Log.i(TAG, "口令岛夸克网盘：解析成功 pwdId=$pwdId")
+            return PageMeta(fields.title, null, url, fields.subtitle)
+        }
+        CloudShareMeta.cloud189Code(url)?.let { code ->
+            val raw = fetchText(
+                CloudShareMeta.cloud189ApiUrl(code),
+                requestHeaders = mapOf("User-Agent" to UA, "Accept" to "application/json;charset=UTF-8"),
+            ) ?: return null
+            val fields = CloudShareMeta.parseCloud189(raw) ?: return null
+            Log.i(TAG, "口令岛天翼云盘：解析成功 code=$code size=${fields.subtitle}")
+            return PageMeta(fields.title, null, url, fields.subtitle)
+        }
+        CloudShareMeta.pan123ShareKey(url)?.let { key ->
+            val raw = fetchText(
+                CloudShareMeta.pan123ApiUrl(key, pwd),
+                requestHeaders = mapOf("User-Agent" to UA, "Referer" to "https://www.123865.com/s/$key"),
+            ) ?: return null
+            val fields = CloudShareMeta.parsePan123(raw) ?: return null
+            Log.i(TAG, "口令岛 123云盘：解析成功 key=$key subtitle=${fields.subtitle}")
+            return PageMeta(fields.title, null, url, fields.subtitle)
+        }
+        return null
+    }
+
+    private fun fetchLanzouMeta(page: PageHtml): PageMeta? {
+        if (!CloudShareMeta.isLanzouUrl(page.finalUrl)) return null
+        val fields = CloudShareMeta.parseLanzouHtml(page.text) ?: return null
+        Log.i(TAG, "口令岛蓝奏云：解析成功 size=${fields.subtitle}")
+        return PageMeta(fields.title, null, page.finalUrl, fields.subtitle)
+    }
+
+    private fun mergeCloudPassword(
+        pageSubtitle: String?,
+        primaryTarget: String,
+        alts: List<String>,
+        snippet: String,
+        platformName: String?,
+        iconPkg: String,
+    ): String? {
+        val isCloud = platformName?.let {
+            it.contains("网盘") || it.contains("云盘") || it in setOf("蓝奏云", "微云", "PikPak", "迅雷")
+        } == true || iconPkg in setOf(
+            "com.baidu.netdisk", "com.quark.browser", "com.quark.clouddrive", "com.alicloud.databox",
+            "com.xunlei.downloadprovider", "com.mfcloudcalculate.networkdisk", "com.chinamobile.mcloud",
+            "com.UCMobile", "com.cn21.ecloud", "com.ylmf.androidclient", "com.pikcloud.pikpak", "com.qq.qcloud",
+        )
+        if (!isCloud) return pageSubtitle
+        val source = sourceTextFor(primaryTarget, alts) ?: snippet
+        val urlCandidate = (listOf(primaryTarget) + alts).firstOrNull { it.startsWith("http", ignoreCase = true) }
+        val pwd = MagnetEd2kMeta.extractCloudPassword(source, urlCandidate) ?: return pageSubtitle
+        val pwdTag = "提取码 $pwd"
+        if (pageSubtitle.isNullOrBlank()) return pwdTag
+        if (pageSubtitle.contains(pwd, ignoreCase = true)) return pageSubtitle
+        return "$pageSubtitle · $pwdTag"
+    }
+
+    private fun fetchText(
+        url: String,
+        maxBytes: Int = 32 * 1024,
+        requestHeaders: Map<String, String> = emptyMap(),
+    ): String? {
+        var conn: java.net.HttpURLConnection? = null
+        return try {
+            conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 1500
+            conn.readTimeout = 1500
+            requestHeaders.forEach { (name, value) -> conn.setRequestProperty(name, value) }
+            if (conn.responseCode != 200) return null
+            val buf = ByteArray(maxBytes)
+            var size = 0
+            conn.inputStream.use { stream ->
+                while (size < buf.size) {
+                    val read = stream.read(buf, size, buf.size - size)
+                    if (read <= 0) break
+                    size += read
+                }
+            }
+            if (size <= 0) null else String(buf, 0, size, Charsets.UTF_8)
+        } catch (_: Throwable) {
+            null
+        } finally {
+            try {
+                conn?.disconnect()
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     // ── 电商详情（京东 / 抖音商城）────────────────────────────────────────
