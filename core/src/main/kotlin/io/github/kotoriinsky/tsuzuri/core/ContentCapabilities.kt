@@ -25,7 +25,7 @@ object ContentCapabilities {
         Catalog.SCREEN_TEXT to listOf("app_compat", "ocr", "translate", "copy_text", "share_text", "external_trigger"),
         Catalog.SCREEN_IMAGE to listOf(
             "expand_region", "screenshot_crop", "candidate_check", "press_snapshot", "source_bitmap",
-            "edit", "share_image", "original_media", "object_to_xiaoai",
+            "edit", "share_image", "original_media", "object_to_xiaoai", "qr_decode",
         ),
         Catalog.RECOGNITION_LOOK to listOf("full_bleed", "horizontal", "compact", "capsule"),
     )
@@ -35,7 +35,7 @@ object ContentCapabilities {
         // 翻译依赖系统翻译、外部调用给自动化用、提取文字用户说先不要 —— 不替用户打开
         Catalog.SCREEN_TEXT to setOf("app_compat", "copy_text", "share_text"),
         // 原图要另装采集组件、按下截图每次触摸都截屏、识物改道是换一个识别服务 —— 不默认
-        Catalog.SCREEN_IMAGE to setOf("expand_region", "screenshot_crop", "candidate_check", "edit", "share_image", "original_media"),
+        Catalog.SCREEN_IMAGE to setOf("expand_region", "screenshot_crop", "candidate_check", "edit", "share_image", "original_media", "qr_decode"),
         Catalog.RECOGNITION_LOOK to setOf("full_bleed", "horizontal", "capsule"),
     )
 

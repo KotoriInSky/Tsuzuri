@@ -70,7 +70,7 @@ class SettingsPresentationTest {
             FeatureGroup.entries.filter { it in grouped },
         )
         assertEquals(
-            setOf(Catalog.CORNER_SMALL_WINDOW, Catalog.SIDE_INDEX, Catalog.MULTI_FREEFORM),
+            setOf(Catalog.CORNER_SMALL_WINDOW, Catalog.SIDE_INDEX, Catalog.MULTI_FREEFORM, Catalog.FREEFORM_ENHANCE),
             grouped.getValue(FeatureGroup.GESTURE).map { it.key }.toSet(),
         )
         assertEquals(

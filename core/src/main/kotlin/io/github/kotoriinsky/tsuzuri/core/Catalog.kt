@@ -66,6 +66,9 @@ object Catalog {
      */
     const val MULTI_FREEFORM = "multi_freeform"
 
+    /** 小窗增强：关闭小窗即用即走（不留后台卡片）、顶部菜单主副互换 / 单窗静音 / 半透明。契约见 [FreeformEnhance]。 */
+    const val FREEFORM_ENHANCE = "freeform_enhance"
+
     /** 分享面板应用行按用户清单置顶（C14）。实现见 hook 侧 `ShareOrder`。 */
     const val SHARE_ORDER = "share_order"
 
@@ -1119,6 +1122,84 @@ object Catalog {
             // 个别应用多开下表现异常的风险由 EXPERIMENTAL 标注兜住。
         ),
 
+        FeatureSpec(
+            key = FREEFORM_ENHANCE,
+            group = FeatureGroup.GESTURE,
+            scope = listOf(ScopeTarget.SYSTEM_UI),
+            // 子项在 SystemUI 侧实时读取，总开关支持热装卸；卸载时自动还原静音与半透明状态
+            restart = RestartPolicy.HOT,
+            maturity = Maturity.EXPERIMENTAL,
+            prefs = listOf(
+                PrefSpec.Toggle(
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_EPHEMERAL),
+                    labelKey = "pref.freeform_enhance.ephemeral",
+                    hintKey = "pref.freeform_enhance.ephemeral.hint",
+                    default = FreeformEnhance.DEFAULT_EPHEMERAL,
+                    group = "freeform_close",
+                ),
+                PrefSpec.Choice(
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_EPHEMERAL_SCOPE),
+                    labelKey = "pref.freeform_enhance.ephemeral_scope",
+                    hintKey = "pref.freeform_enhance.ephemeral_scope.hint",
+                    default = FreeformEnhance.DEFAULT_EPHEMERAL_SCOPE,
+                    options = listOf(
+                        PrefSpec.Choice.Option(
+                            FreeformEnhance.SCOPE_TEMP_ONLY,
+                            "pref.freeform_enhance.ephemeral_scope.temp_only",
+                        ),
+                        PrefSpec.Choice.Option(
+                            FreeformEnhance.SCOPE_ALL,
+                            "pref.freeform_enhance.ephemeral_scope.all",
+                        ),
+                    ),
+                    group = "freeform_close",
+                    dependsOn = PrefDependency(
+                        toggleName = FreeformEnhance.PREF_EPHEMERAL,
+                        offHintKey = "pref.freeform_enhance.ephemeral.required",
+                        hideWhenOff = true,
+                    ),
+                ),
+                PrefSpec.Toggle(
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_SWAP_FULLSCREEN),
+                    labelKey = "pref.freeform_enhance.swap_fullscreen",
+                    hintKey = "pref.freeform_enhance.swap_fullscreen.hint",
+                    default = FreeformEnhance.DEFAULT_SWAP_FULLSCREEN,
+                    group = "freeform_menu",
+                ),
+                PrefSpec.Toggle(
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_WINDOW_MUTE),
+                    labelKey = "pref.freeform_enhance.window_mute",
+                    hintKey = "pref.freeform_enhance.window_mute.hint",
+                    default = FreeformEnhance.DEFAULT_WINDOW_MUTE,
+                    group = "freeform_menu",
+                ),
+                PrefSpec.Toggle(
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_WINDOW_OPACITY),
+                    labelKey = "pref.freeform_enhance.window_opacity",
+                    hintKey = "pref.freeform_enhance.window_opacity.hint",
+                    default = FreeformEnhance.DEFAULT_WINDOW_OPACITY,
+                    group = "freeform_menu",
+                ),
+                PrefSpec.Slider(
+                    key = p(FREEFORM_ENHANCE, FreeformEnhance.PREF_OPACITY_PERCENT),
+                    labelKey = "pref.freeform_enhance.opacity_percent",
+                    hintKey = "pref.freeform_enhance.opacity_percent.hint",
+                    default = FreeformEnhance.DEFAULT_OPACITY_PERCENT,
+                    min = FreeformEnhance.MIN_OPACITY_PERCENT,
+                    max = FreeformEnhance.MAX_OPACITY_PERCENT,
+                    steps = 11,
+                    unit = "%",
+                    group = "freeform_menu",
+                    dependsOn = PrefDependency(
+                        toggleName = FreeformEnhance.PREF_WINDOW_OPACITY,
+                        offHintKey = "pref.freeform_enhance.window_opacity.required",
+                        hideWhenOff = true,
+                    ),
+                    recommended = 40f..70f,
+                ),
+            ),
+        ),
+
         // ── 识屏（传送门 + 超级小爱，按用户任务分三类） ─────────────────────────
         // 各类的子项由多个实现分担（见 HookRegistry 里的注释）；restart 取最常见的档位，
         // 需要更重重启的子项（用原图在 system_server）在自己的说明里写明。
@@ -1172,6 +1253,7 @@ object Catalog {
                     dropdown = true,
                 ),
                 PrefSpec.Toggle(key = p(SCREEN_IMAGE, "object_to_xiaoai"), labelKey = "pref.screen_image.object_to_xiaoai", hintKey = "pref.screen_image.object_to_xiaoai.hint", default = false, group = "portal_card"),
+                PrefSpec.Toggle(key = p(SCREEN_IMAGE, "qr_decode"), labelKey = "pref.screen_image.qr_decode", hintKey = "pref.screen_image.qr_decode.hint", default = false, group = "portal_card"),
             ),
         ),
         FeatureSpec(
@@ -1181,6 +1263,14 @@ object Catalog {
             scope = listOf(ScopeTarget.SYSTEM_UI, ScopeTarget.CONTENT_EXTENSION),
             restart = RestartPolicy.HOT,
             maturity = Maturity.EXPERIMENTAL,
+            prefs = listOf(
+                PrefSpec.Toggle(
+                    key = p(GLOBAL_RECOGNITION, "qr_decode"),
+                    labelKey = "pref.global_recognition.qr_decode",
+                    hintKey = "pref.global_recognition.qr_decode.hint",
+                    default = true,
+                ),
+            ),
         ),
         FeatureSpec(
             key = RECOGNITION_LOOK,
