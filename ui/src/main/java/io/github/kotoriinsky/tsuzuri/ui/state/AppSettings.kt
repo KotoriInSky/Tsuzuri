@@ -125,6 +125,34 @@ object AppSettings {
         prefs.edit().remove(KEY_HISTORY_ORDERED).remove(KEY_HISTORY).apply()
     }
 
+    /** 行为偏好的可备份快照（不含搜索历史文本本身，见 [resetBehavior] 注释）。 */
+    data class BehaviorSnapshot(
+        val hapticFeedback: Boolean,
+        val keepSearchHistory: Boolean,
+        val autoReload: Boolean,
+        val previewWallpaper: Boolean,
+    )
+
+    fun snapshotBehavior(): BehaviorSnapshot = BehaviorSnapshot(
+        hapticFeedback = stateHapticFeedback,
+        keepSearchHistory = stateKeepSearchHistory,
+        autoReload = stateAutoReload,
+        previewWallpaper = statePreviewWallpaper,
+    )
+
+    fun restoreBehavior(snapshot: BehaviorSnapshot) {
+        stateHapticFeedback = snapshot.hapticFeedback
+        stateKeepSearchHistory = snapshot.keepSearchHistory
+        stateAutoReload = snapshot.autoReload
+        statePreviewWallpaper = snapshot.previewWallpaper
+        prefs.edit()
+            .putBoolean(KEY_HAPTIC_FEEDBACK, snapshot.hapticFeedback)
+            .putBoolean(KEY_KEEP_SEARCH_HISTORY, snapshot.keepSearchHistory)
+            .putBoolean(KEY_AUTO_RELOAD, snapshot.autoReload)
+            .putBoolean("preview_wallpaper", snapshot.previewWallpaper)
+            .apply()
+    }
+
     /**
      * 行为开关恢复默认。
      *

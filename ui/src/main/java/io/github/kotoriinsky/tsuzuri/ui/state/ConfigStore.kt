@@ -238,10 +238,31 @@ object ConfigStore {
     enum class WriteResult { REMOTE, LOCAL, FAILED }
 
     /** 恢复计划一次提交，提交失败保留草稿并向调用方返回实际保存范围。 */
-    fun putAll(values: Map<String, Any>): WriteResult {
+    fun putAll(values: Map<String, Any>): WriteResult =
+        writeBatch(values, replaceAll = false)
+
+    /**
+     * 清空当前全部用户配置键（保留跨进程内部信号键）后再一次性写入 [values]。
+     *
+     * 在同一个 `SharedPreferences.Editor` 里先删后写，避免中断时留下半截空白配置。
+     */
+    fun replaceAll(values: Map<String, Any>): WriteResult =
+        writeBatch(values, replaceAll = true)
+
+    private fun writeBatch(values: Map<String, Any>, replaceAll: Boolean): WriteResult {
         require(values.values.all(ConfigDraftSync::isSupported))
         fun writeTo(target: SharedPreferences): Boolean {
+            val existing = if (replaceAll) {
+                target.all.keys.filter {
+                    it != ConfigDraftSync.DELETED_KEYS &&
+                        io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.isBackupConfigKey(it) &&
+                        it !in values
+                }
+            } else {
+                emptyList()
+            }
             val editor = target.edit()
+            for (key in existing) editor.remove(key)
             for ((key, value) in values) when (value) {
                 is Boolean -> editor.putBoolean(key, value)
                 is Int -> editor.putInt(key, value)
@@ -251,8 +272,11 @@ object ConfigStore {
                 is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
             }
             if (target === draft) {
-                val deleted = draft.getStringSet(ConfigDraftSync.DELETED_KEYS, emptySet()).orEmpty() - values.keys
-                editor.putStringSet(ConfigDraftSync.DELETED_KEYS, deleted)
+                val deleted = draft.getStringSet(ConfigDraftSync.DELETED_KEYS, emptySet()).orEmpty().toMutableSet()
+                deleted.removeAll(values.keys)
+                deleted.addAll(existing)
+                if (deleted.isEmpty()) editor.remove(ConfigDraftSync.DELETED_KEYS)
+                else editor.putStringSet(ConfigDraftSync.DELETED_KEYS, deleted)
             }
             return editor.commit()
         }
@@ -266,11 +290,20 @@ object ConfigStore {
         }
         lastWriteFailed = result == WriteResult.FAILED
         if (result == WriteResult.REMOTE) {
-            channelDegraded = !discardDraft(values.keys) || pendingCount > 0
+            val touched = if (replaceAll) {
+                draft.all.keys.filter { it != ConfigDraftSync.DELETED_KEYS }.toSet() + values.keys
+            } else {
+                values.keys
+            }
+            channelDegraded = !discardDraft(touched) || pendingCount > 0
+        }
+        if (result != WriteResult.FAILED) {
+            // 恢复旧版本备份后立刻补跑结构迁移，避免等到下次重启 App 才把老语义换算过来
+            migrate()
         }
         revision++
         if (result == WriteResult.REMOTE) scheduleAutoReload()
-        UiActionLog.log("批量恢复 ${values.size} 项：$result")
+        UiActionLog.log("${if (replaceAll) "覆盖恢复" else "批量恢复"} ${values.size} 项：$result")
         return result
     }
 

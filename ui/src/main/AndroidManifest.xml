@@ -216,6 +216,12 @@
         <provider android:name="io.github.kotoriinsky.tsuzuri.ui.state.HookStatusProvider" android:authorities="io.github.kotoriinsky.tsuzuri.hookstatus" android:exported="true" />
         <!-- 预览底图：只接受 SystemUI 推送（provider 内按调用 uid 校验），见 PreviewWallpaperContract -->
         <provider android:name="io.github.kotoriinsky.tsuzuri.ui.state.PreviewWallpaperProvider" android:authorities="io.github.kotoriinsky.tsuzuri.wallpaper" android:exported="true" />
+        <!-- 备份包分享出口：非导出，仅通过分享 Intent 的临时读授权对外提供 -->
+        <provider
+            android:name="io.github.kotoriinsky.tsuzuri.ui.state.BackupShareProvider"
+            android:authorities="io.github.kotoriinsky.tsuzuri.backupshare"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 
 </manifest>

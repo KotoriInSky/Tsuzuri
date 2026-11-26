@@ -148,8 +148,9 @@ private fun settingEntries(tr: (String) -> String): List<SearchEntry> {
     return listOf(
         entry("settings.setup", "settings.setup.hint", Dest.Setup, "onboarding lsposed scope 模块状态 作用域"),
         entry("log.title", "log.export.hint", Dest.LogViewer, "log 日志 诊断"),
-        entry("settings.export.config", "settings.backup.scope", Dest.SettingsPage("data"), "export backup 备份 导出"),
-        entry("settings.restore.config", "settings.restore.scope", Dest.SettingsPage("data"), "restore import 恢复 导入"),
+        entry("settings.export.config", "settings.backup.scope", Dest.SettingsPage("data"), "export backup zip 备份 导出"),
+        entry("settings.share.backup", "settings.share.backup.hint", Dest.SettingsPage("data"), "share backup zip 分享 备份"),
+        entry("settings.restore.config", "settings.restore.scope", Dest.SettingsPage("data"), "restore import zip json 恢复 导入"),
         entry("settings.copy.config", null, Dest.SettingsPage("data"), "export dump 复制配置"),
         entry("settings.reset.all", "settings.reset.all.hint", Dest.SettingsPage("data"), "reset default clear 重置"),
         entry("settings.reset.appearance", "settings.reset.appearance.hint", Dest.SettingsPage("data"), "reset appearance default"),

@@ -167,6 +167,63 @@ object IconOverridesStore {
 
     private var revision by mutableIntStateOf(0)
 
+    /** 外部批量恢复图标文件后刷新界面缓存订阅。 */
+    fun notifyChanged() {
+        revision++
+    }
+
+    /** 读取一组被配置引用且真实存在的自定义图标 PNG 字节（供备份打包使用）。 */
+    fun readIconFiles(context: Context, names: Set<String>): Map<String, ByteArray> {
+        if (names.isEmpty()) return emptyMap()
+        val out = LinkedHashMap<String, ByteArray>()
+        var totalBytes = 0
+        for (name in names) {
+            if (!io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.isSafeIconFileName(name)) continue
+            val file = IconFileProvider.resolveFile(context, name) ?: continue
+            if (!file.isFile) continue
+            val len = file.length()
+            if (len <= 0L || len > io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.MAX_SINGLE_ICON_BYTES) continue
+            if (totalBytes + len > io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.MAX_TOTAL_ICON_BYTES) break
+            val bytes = runCatching { file.readBytes() }.getOrNull() ?: continue
+            if (!io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.isPngBytes(bytes)) continue
+            out[name] = bytes
+            totalBytes += bytes.size
+        }
+        return out
+    }
+
+    /**
+     * 从备份包原子恢复一张自定义图标 PNG 到图标目录，并重新授权给读取方进程。
+     *
+     * 保持与 [importImage] 同样的安全与原子写入保障（`.part` → `renameTo` → 校验长度 → 授权）。
+     */
+    fun restoreIconFile(context: Context, name: String, pngBytes: ByteArray): Boolean {
+        if (!io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.isSafeIconFileName(name)) return false
+        if (pngBytes.isEmpty() || pngBytes.size > io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.MAX_SINGLE_ICON_BYTES) return false
+        if (!io.github.kotoriinsky.tsuzuri.core.BackupRestorePlan.isPngBytes(pngBytes)) return false
+        val dir = IconFileProvider.dir(context) ?: return false
+        if (!dir.isDirectory && !dir.mkdirs()) return false
+        val dst = IconFileProvider.resolveFile(context, name) ?: return false
+        val tmp = File(dir, "$name.part")
+        return try {
+            FileOutputStream(tmp).use { os ->
+                os.write(pngBytes)
+                os.flush()
+            }
+            if (!tmp.renameTo(dst)) {
+                deleteFileQuietly(tmp)
+                return false
+            }
+            if (!dst.isFile || dst.length() != pngBytes.size.toLong()) return false
+            grantToReaders(context, name)
+            true
+        } catch (t: Throwable) {
+            deleteFileQuietly(tmp)
+            Log.w(TAG, "恢复自定义图标失败（$name）：" + brief(t))
+            false
+        }
+    }
+
     /** 写一条覆盖（同一 targetKey 只会留一条 —— 图片与图标包覆盖互斥）。 */
     fun put(featureKey: String, target: String, entry: Entry): ConfigStore.WriteResult {
         val current = read(ConfigStore.prefs(), featureKey).toMutableMap()

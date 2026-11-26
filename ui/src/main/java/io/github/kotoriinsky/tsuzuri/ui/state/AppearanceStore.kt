@@ -75,4 +75,9 @@ object AppearanceStore {
     fun reset() {
         update { Appearance() }
     }
+
+    /** 从备份快照恢复外观设置。走 [update] 保证内存状态与磁盘同步落盘。 */
+    fun restore(snapshot: Appearance) {
+        update { snapshot }
+    }
 }
