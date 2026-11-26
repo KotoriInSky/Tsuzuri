@@ -441,7 +441,7 @@ class CatalogTest {
                 "corner_selection",
                 // 2026-10-22：清单移到排布之后（「内容」页 = 预览 → 排布 → 清单入口）
                 "corner_list",
-                "corner_motion",
+                // 2026-11-26：展开动画（原 corner_motion 单项）并入 corner_layout，消除单项碎卡
                 "corner_feedback",
                 // corner_advanced 没了：唯一一项（用 Root 打开页面）改为自动
             ),

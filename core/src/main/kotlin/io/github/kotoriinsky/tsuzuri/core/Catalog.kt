@@ -723,7 +723,7 @@ object Catalog {
                         PrefSpec.Choice.Option(FanMotion.BRISK, "pref.corner.motion.brisk"),
                         PrefSpec.Choice.Option(FanMotion.STILL, "pref.corner.motion.still"),
                     ),
-                    group = "corner_motion",
+                    group = "corner_layout",
                 ),
 
                 // ---- 振动 ----
@@ -947,7 +947,7 @@ object Catalog {
                 ),
                 PrefSpec.Toggle(
                     key = p(SIDE_INDEX, "hide_app_names"),
-                    group = "side_material",
+                    group = "side_panel",
                     labelKey = "pref.side_index.hide_app_names",
                     default = false,
                 ),
@@ -1523,7 +1523,7 @@ object Catalog {
                     labelKey = "pref.copy_direct.same_app",
                     hintKey = "pref.copy_direct.same_app.hint",
                     default = false,
-                    group = "copy_direct_content",
+                    group = "copy_direct_interaction",
                     dependsOn = PrefDependency(CopyDirect.ENGINE_ENABLED, "pref.copy_direct.engine.required"),
                 ),
                 PrefSpec.Screen(
