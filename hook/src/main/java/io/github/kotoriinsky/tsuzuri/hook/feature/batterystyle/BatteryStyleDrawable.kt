@@ -9,6 +9,7 @@ import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -56,13 +57,18 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     private val dp1 = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, dm)
 
     /*
-     * 间距与充电闪电照搬宿主的**可见**尺寸（真机 2026-11-25，520dpi 截图逐像素量）：
-     * 信号 → 胶囊 15px、胶囊 → 闪电 9px、闪电 18×38px，即 4.6 / 2.8 / 5.5×11.7 dp。
-     * 不用子视图的边距推：闪电 ImageView 自带内边距，视图边界和看到的闪电对不上。
+     * 间距与充电闪电对齐宿主真实尺寸（520dpi 实测 + 反编译宿主资源）：
+     * - 左侧图标（WiFi / 信号，20dp 画布）右侧本身自带 ~2.0–2.6dp 透明留白，
+     *   宿主电池（28dp 画布）胶囊左边缘在 2.6dp，两者拼出原生的 ~15–16px 可见间距；
+     *   所以 leadPx 只填电池自身那 2.6dp，不能把整段 4.6dp 填进来（否则双倍叠加到 22–24px）。
+     * - 纯数字无外框，贴在扇形 WiFi 旁视觉更空，左侧留白再收紧到 1.8dp，并抵消字形左 bearing。
+     * - 胶囊 → 闪电 9px、闪电 18×38px，即 2.8 / 5.5×11.7 dp。
      * HyperOS 的闪电是电池**右侧**一个独立图标，跟状态栏同色，电池里照常显示电量。
      */
-    /** 电池图形左侧留白（宿主 battery_icon_container 的左边距）。 */
-    var leadPx = 4.6f * dp1
+    /** 图形样式（环形 / 竖条 / 横向）左侧留白（对齐宿主 28dp 电池画布里的 2.6dp 左边距）。 */
+    var leadPx = 2.6f * dp1
+    /** 纯数字样式左侧留白（无边框数字在 WiFi 扇形旁视觉更空，比图形样式再收紧）。 */
+    var numberLeadPx = 1.8f * dp1
     /** 电池图形与右侧闪电的间距。 */
     var boltGapPx = 2.8f * dp1
     var boltWPx = 5.5f * dp1
@@ -128,6 +134,7 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
 
     /** 量文字专用，别跟绘制共用 [paint]：draw() 中途量宽会把已设好的颜色 reset 掉（闪电变黑就是这么来的）。 */
     private val measurePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val textBounds = Rect()
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -155,9 +162,27 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     /** 环与右侧数字的间距，与电池到闪电的可见间距相同。 */
     private val ringNumberGap get() = boltGapPx
 
+    private fun currentLeadPx(): Float =
+        if (style == BatteryStyle.NUMBER) numberLeadPx else leadPx
+
+    private fun numberLeftBearing(text: String): Float {
+        measurePaint.typeface = typeface; measurePaint.textSize = textPx
+        measurePaint.getTextBounds(text, 0, text.length, textBounds)
+        return max(0, textBounds.left).toFloat()
+    }
+
     private fun numberWidth(): Float {
         measurePaint.typeface = typeface; measurePaint.textSize = textPx
         return measurePaint.measureText(lvl().toString())
+    }
+
+    /** 纯数字扣掉字形左侧 bearing 后的宽度，避免第一位是 1/7 等字符时左侧多出空隙。 */
+    private fun tightNumberWidth(): Float {
+        val text = lvl().toString()
+        measurePaint.typeface = typeface; measurePaint.textSize = textPx
+        val advance = measurePaint.measureText(text)
+        measurePaint.getTextBounds(text, 0, text.length, textBounds)
+        return max(0f, advance - max(0, textBounds.left))
     }
 
     /** 电池图形本身多宽（不含左侧留白与闪电；环形右侧的数字算在图形里）。 */
@@ -165,17 +190,17 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
         BatteryStyle.RING -> ringD + ringNumberGap + numberWidth()
         BatteryStyle.VERTICAL -> vertW
         BatteryStyle.HORIZONTAL -> capsuleW + capW + dp1
-        else -> numberWidth()
+        else -> tightNumberWidth()
     }
 
     /** 这个样式要多宽（px，不含宿主 padding）：留白 + 图形 + 充电时的间距与闪电。 */
     fun contentWidth(): Int =
-        (leadPx + shapeWidth() + (if (sideBolt()) boltGapPx + boltWidth() else 0f) + 1f).toInt()
+        (currentLeadPx() + shapeWidth() + (if (sideBolt()) boltGapPx + boltWidth() else 0f) + 1f).toInt()
 
     /** 闪电画在右侧（环形的闪电在环里，不占右侧位置）。 */
     private fun sideBolt() = charging && style != BatteryStyle.RING
 
-    private val shapeLeft get() = bounds.left + leadPx
+    private val shapeLeft get() = bounds.left + currentLeadPx()
 
     override fun draw(canvas: Canvas) {
         if (bounds.isEmpty) return
@@ -213,13 +238,15 @@ internal class BatteryStyleDrawable(private val res: Resources) : Drawable() {
     // ── 纯数字（Flyme 式「⚡ 97」）────────────────────────────────────
 
     private fun drawNumber(c: Canvas) {
+        val text = lvl().toString()
+        val bearing = numberLeftBearing(text)
         val cy = bounds.exactCenterY()
         fresh()
         paint.typeface = typeface
         paint.textSize = textPx
         paint.color = stateColor()
         val fm = paint.fontMetrics
-        c.drawText(lvl().toString(), shapeLeft, cy - (fm.ascent + fm.descent) / 2f, paint)
+        c.drawText(text, shapeLeft - bearing, cy - (fm.ascent + fm.descent) / 2f, paint)
     }
 
     // ── 环形 ──────────────────────────────────────────────────────────
