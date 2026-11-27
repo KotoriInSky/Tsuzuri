@@ -110,6 +110,7 @@ internal class GlobalRecognitionWindow(
     private val root = Root(context)
     private val screen = ScreenView(context)
     private val bottom = FrameLayout(context)
+    private var multiEntryPill: View? = null
 
     /** 跟随系统深浅色的底部面板与提示卡配色。 */
     private data class Palette(
@@ -257,6 +258,30 @@ internal class GlobalRecognitionWindow(
             topMargin = statusBarHeight() + (8 * d).toInt()
             marginEnd = (16 * d).toInt()
         })
+        val multiPill = TextView(context).apply {
+            text = "多选图片"
+            setTextColor(palette.ink)
+            textSize = 13f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            isSingleLine = true
+            setPadding((16 * d).toInt(), (9 * d).toInt(), (16 * d).toInt(), (9 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 18 * d
+                setColor(palette.sheetBg)
+                setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
+            }
+            elevation = 6 * d
+            visibility = View.GONE
+            setOnClickListener { screen.enterMultiImageMode() }
+        }
+        multiEntryPill = multiPill
+        root.addView(
+            multiPill,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = (28 * d).toInt()
+            },
+        )
+        screen.onReady = { updateMultiEntryPill() }
         screen.onSelection = { image, hasText, qr, preferSource ->
             val state = SelectionState(image, hasText, qr, preferSource)
             if (screen.touching) deferredSelection = state else onSelection(state)
@@ -1058,10 +1083,20 @@ internal class GlobalRecognitionWindow(
     }
 
     /** 换面板内容；null 收起。 */
+    private fun updateMultiEntryPill() {
+        val pill = multiEntryPill ?: return
+        val show = !sheetShown && screen.regionCount() >= 2 && !screen.hasSelection()
+        pill.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
     private fun setSheet(content: View?) {
         if (content == null) {
-            if (!sheetShown) return
+            if (!sheetShown) {
+                updateMultiEntryPill()
+                return
+            }
             sheetShown = false
+            updateMultiEntryPill()
             sheet.animate().cancel()
             updateAvoid()
             sheet.animate().translationY(sheet.height.toFloat()).setDuration(SHEET_OUT_MS).setInterpolator(SHEET_OUT)
@@ -1085,6 +1120,7 @@ internal class GlobalRecognitionWindow(
         }
         if (!sheetShown) {
             sheetShown = true
+            updateMultiEntryPill()
             sheet.animate().cancel()
             if (sheet.visibility != View.VISIBLE) {
                 // 第一次出现还没布局过，先量出高度，从屏幕外正好一个面板高的位置滑上来
@@ -1291,7 +1327,7 @@ internal class GlobalRecognitionWindow(
         val qrSlot = FrameLayout(context)
         // 与选字面板保持统一「上预览、下操作」：上方同比例纯净预览图，下方原生 3+3 细线按钮区落在拇指热区
         container.addView(
-            imagePreviewBlock(rect, effectiveResult != null, crop, effectiveResult, qrSlot),
+            imagePreviewBlock(crop, effectiveResult, qrSlot),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         container.addView(
@@ -1334,8 +1370,6 @@ internal class GlobalRecognitionWindow(
      * 实况照片 / 动图在右下角叠一枚极克制角标，局部二维码直达条紧贴图下。
      */
     private fun imagePreviewBlock(
-        rect: RectF,
-        preferSource: Boolean,
         crop: Bitmap,
         result: SourceImageClient.Result?,
         qrSlot: FrameLayout,
@@ -1445,34 +1479,6 @@ internal class GlobalRecognitionWindow(
             }
         }
 
-        // 「转文字」与「多选」放在预览图下方居中胶囊行，避免窄图时互相挤压并保持缩略图纯净
-        val pillRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        fun previewPill(label: String, onClick: () -> Unit): View = TextView(context).apply {
-            text = label
-            setTextColor(palette.ink)
-            textSize = 11.5f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            isSingleLine = true
-            setPadding((11 * d).toInt(), (5 * d).toInt(), (11 * d).toInt(), (5 * d).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 12 * d
-                setColor(palette.pillBg)
-            }
-            setOnClickListener { onClick() }
-        }
-        pillRow.addView(previewPill("转文字") { runLocalCropOcr(crop, rect, preferSource) })
-        if (screen.regionCount() >= 2) {
-            pillRow.addView(
-                previewPill("多选") { screen.enterMultiImageMode() },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    marginStart = (8 * d).toInt()
-                },
-            )
-        }
-
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -1480,15 +1486,9 @@ internal class GlobalRecognitionWindow(
             setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
             addView(frame, LinearLayout.LayoutParams(previewW, previewH))
             addView(
-                pillRow,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (8 * d).toInt()
-                },
-            )
-            addView(
                 qrSlot,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (6 * d).toInt()
+                    topMargin = (8 * d).toInt()
                 },
             )
         }
@@ -2334,6 +2334,7 @@ internal class GlobalRecognitionWindow(
     private inner class ScreenView(context: Context) : View(context) {
         var onSelection: ((RectF?, Boolean, LocalQrScanner.Detection?, Boolean) -> Unit)? = null
         var onMultiImages: ((List<RectF>) -> Unit)? = null
+        var onReady: (() -> Unit)? = null
 
         /** 抬手（含取消）时回调；手指按着期间 [touching] 为 true。 */
         var onTouchEnd: (() -> Unit)? = null
@@ -2480,6 +2481,7 @@ internal class GlobalRecognitionWindow(
             regions = r
             qrDetections = qrs
             ready = true
+            onReady?.invoke()
             if (lines.isEmpty() && regions.isEmpty() && qrs.isEmpty()) {
                 // 什么都没识别到：光球塌缩消失，不炸，也不弹文字
                 fx.collapse(width, height)
@@ -2962,11 +2964,21 @@ internal class GlobalRecognitionWindow(
         private var downX = 0f
         private var downY = 0f
 
+        private var longPressedImage = false
+        private var pendingLongPress: Runnable? = null
+
+        private fun clearImageLongPress() {
+            pendingLongPress?.let { removeCallbacks(it) }
+            pendingLongPress = null
+        }
+
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouchEvent(e: MotionEvent): Boolean {
             if (dim < 1f || e.pointerCount > 1) return true
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    clearImageLongPress()
+                    longPressedImage = false
                     touching = true
                     downX = e.x; downY = e.y
                     val s = handlePos(true)
@@ -2984,9 +2996,27 @@ internal class GlobalRecognitionWindow(
                         else -> 6
                     }
                     onTarget = mode == 5 || regionAt(e.x, e.y) != null || qrAt(e.x, e.y) != null
+                    val hitImg = if (mode == 6 && !multiImageMode && regionCount() >= 2) {
+                        regionAt(e.x, e.y)?.takeUnless { isBackdrop(it) }
+                    } else null
+                    if (hitImg != null) {
+                        val rCopy = RectF(hitImg)
+                        val lp = Runnable {
+                            if (touching && !longPressedImage) {
+                                longPressedImage = true
+                                performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                image = rCopy
+                                enterMultiImageMode()
+                            }
+                        }
+                        pendingLongPress = lp
+                        postDelayed(lp, android.view.ViewConfiguration.getLongPressTimeout().toLong())
+                    }
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val moved = hypot(e.x - downX, e.y - downY) > (if (onTarget) tapSlop else slop)
+                    if (moved) clearImageLongPress()
+                    if (longPressedImage) return true
                     when (mode) {
                         1 -> { normalize(); selStart = nearest(e.x, e.y); showMagnifier(e.x, selStart) }
                         2 -> { normalize(); selEnd = nearest(e.x, e.y); showMagnifier(e.x, selEnd) }
@@ -3021,9 +3051,17 @@ internal class GlobalRecognitionWindow(
                     invalidate()
                 }
                 MotionEvent.ACTION_UP -> {
+                    clearImageLongPress()
                     // 先放开：点按在这里触发的选中要立即生效，不走「抬手再出面板」
                     touching = false
                     hideMagnifier()
+                    if (longPressedImage) {
+                        longPressedImage = false
+                        mode = 0
+                        invalidate()
+                        onTouchEnd?.invoke()
+                        return true
+                    }
                     when (mode) {
                         5, 6 -> tap(downX, downY)
                         4 -> {
@@ -3056,6 +3094,8 @@ internal class GlobalRecognitionWindow(
                     onTouchEnd?.invoke()
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    clearImageLongPress()
+                    longPressedImage = false
                     hideMagnifier()
                     dragRect = null; activeCropHandle = null; cropOrigin = null; mode = 0; touching = false; invalidate()
                     onTouchEnd?.invoke()

@@ -211,7 +211,8 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
                 win.show()
             }
             try {
-                val glyphs = recognize(context, shot)
+                val statusH = statusBarHeight(context).toFloat()
+                val glyphs = recognize(context, shot)?.filter { it.box.centerY() >= statusH }
                 // 找图顺序：来源应用按内容列出的 → 系统控件树 → 截图像素算法。
                 // 像素算法补进来的多半是导航栏图标、带留白的卡片，看上去就是「还在截图上猜」，所以只作最后兜底
                 val listed = runCatching { listing?.get() }.getOrNull()
@@ -222,7 +223,7 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
                     // SystemUI 没带包名时，等控件树拿到包名再请应用列一次；应用回了就以它为准
                     val late = if (pkg == null) frontPackage?.let { inAppRegions(context, it) } else null
                     late ?: views
-                }).ifEmpty { regions(context, shot, glyphs.orEmpty()) }
+                }).ifEmpty { regions(context, shot, glyphs.orEmpty()) }.filter { it.centerY() >= statusH }
                 val qrs = runCatching { qrTask?.get() }.getOrNull().orEmpty()
                 hookCtx?.log(Log.INFO, "[$TAG] 整屏 ${shot.width}x${shot.height}：文字 ${glyphs?.size ?: -1} 字，图片 ${regions.size} 块，二维码 ${qrs.size} 个，${SystemClock.uptimeMillis() - t0}ms")
                 hookCtx?.log(Log.INFO, "[$TAG] 图片区域：" + regions.take(12).joinToString { "[${it.left.toInt()},${it.top.toInt()} ${it.width().toInt()}x${it.height().toInt()}]" })
@@ -277,6 +278,11 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
             classes.entries.sortedByDescending { it.value }.take(15).joinToString { "${it.key}×${it.value}" })
         runCatching { java.io.File(context.cacheDir, "global_recog_tree.xml").writeText(xml) }
             .onSuccess { hookCtx?.log(Log.INFO, "[$TAG] 控件树已存：${context.cacheDir}/global_recog_tree.xml") }
+    }
+
+    private fun statusBarHeight(context: Context): Int {
+        val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id != 0) context.resources.getDimensionPixelSize(id) else 0
     }
 
     /** 对选定区域的高分位图单独跑一次端侧 OCR（图内局部精识别）。 */
