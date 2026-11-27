@@ -49,7 +49,68 @@ internal object WebImages {
 
     private class Cached(val at: Long, val items: List<Item>)
 
-    private val cache = WeakHashMap<WebView, Cached>()
+    private val cache = WeakHashMap<View, Cached>()
+    private val evalMethodCache = WeakHashMap<Class<*>, java.lang.reflect.Method?>()
+
+    /** 判断 [v] 是否为系统 `WebView` 或具备 `evaluateJavascript` 的三方内核（X5 / XWeb / UC 等）。 */
+    fun isSupportedWebView(v: View): Boolean =
+        v is WebView || findEvalMethod(v.javaClass) != null
+
+    private fun findEvalMethod(cls: Class<*>): java.lang.reflect.Method? {
+        if (evalMethodCache.containsKey(cls)) return evalMethodCache[cls]
+        val found = runCatching {
+            var c: Class<*>? = cls
+            var hit: java.lang.reflect.Method? = null
+            while (c != null && hit == null && c != View::class.java && c != Any::class.java) {
+                hit = c.methods.firstOrNull { m ->
+                    m.name == "evaluateJavascript" &&
+                        m.parameterTypes.size == 2 &&
+                        m.parameterTypes[0] == String::class.java &&
+                        m.parameterTypes[1].isInterface
+                }
+                c = c.superclass
+            }
+            hit
+        }.getOrNull()
+        evalMethodCache[cls] = found
+        return found
+    }
+
+    private fun evalJs(wv: View, script: String, onResult: (String?) -> Unit) {
+        if (wv is WebView) {
+            wv.evaluateJavascript(script) { onResult(it) }
+            return
+        }
+        val method = findEvalMethod(wv.javaClass) ?: run { onResult(null); return }
+        val cbType = method.parameterTypes[1]
+        val proxy = java.lang.reflect.Proxy.newProxyInstance(
+            cbType.classLoader,
+            arrayOf(cbType),
+        ) { _, m, args ->
+            if (m.name == "onReceiveValue") {
+                onResult(args?.firstOrNull() as? String)
+            }
+            null
+        }
+        method.invoke(wv, script, proxy)
+    }
+
+    fun readUserAgent(wv: View): String? =
+        if (wv is WebView) {
+            runCatching { wv.settings.userAgentString }.getOrNull()
+        } else {
+            runCatching {
+                val settings = wv.javaClass.getMethod("getSettings").invoke(wv) ?: return@runCatching null
+                settings.javaClass.getMethod("getUserAgentString").invoke(settings) as? String
+            }.getOrNull()
+        }
+
+    fun readUrl(wv: View): String? =
+        if (wv is WebView) {
+            runCatching { wv.url }.getOrNull()
+        } else {
+            runCatching { wv.javaClass.getMethod("getUrl").invoke(wv) as? String }.getOrNull()
+        }
 
     /**
      * 只读脚本：返回视口尺寸、视觉视口偏移（CSS 像素）和视口内每张图的 [左, 上, 右, 下, 地址]，
@@ -103,9 +164,9 @@ internal object WebImages {
     """.trimIndent()
 
     /** 主线程调用。列出 [wv] 视口里的图片，屏幕坐标、按可见矩形裁过；[done] 在主线程回调。 */
-    fun query(wv: WebView, done: (List<Item>) -> Unit) {
+    fun query(wv: View, done: (List<Item>) -> Unit) {
         try {
-            wv.evaluateJavascript(SCRIPT) { raw ->
+            evalJs(wv, SCRIPT) { raw ->
                 val items = runCatching { parse(wv, raw) }.getOrDefault(emptyList())
                 cache[wv] = Cached(SystemClock.uptimeMillis(), items)
                 done(items)
@@ -116,10 +177,10 @@ internal object WebImages {
     }
 
     /** 最近一次列表（[CACHE_MS] 内），没有返回 null。 */
-    fun cached(wv: WebView): List<Item>? =
+    fun cached(wv: View): List<Item>? =
         cache[wv]?.takeIf { SystemClock.uptimeMillis() - it.at <= CACHE_MS }?.items
 
-    private fun parse(wv: WebView, raw: String?): List<Item> {
+    private fun parse(wv: View, raw: String?): List<Item> {
         if (raw == null || raw == "null") return emptyList()
         // evaluateJavascript 把脚本返回的字符串再按 JSON 编码了一次
         val json = JSONObject(JSONTokener(raw).nextValue() as? String ?: return emptyList())
@@ -154,7 +215,7 @@ internal object WebImages {
     /**
      * 主线程调用：在 [wv] 内把 `blob:` 图片异步读成 DataURL 字节数组（兼容 Telegram Web、加密图床与现代 SPA）。
      */
-    fun fetchBlob(wv: WebView, blobUrl: String, done: (ByteArray?) -> Unit) {
+    fun fetchBlob(wv: View, blobUrl: String, done: (ByteArray?) -> Unit) {
         val quoted = JSONObject.quote(blobUrl)
         val js = """
             (function(){
@@ -171,11 +232,11 @@ internal object WebImages {
             })()
         """.trimIndent()
         try {
-            wv.evaluateJavascript(js) { rawKey ->
+            evalJs(wv, js) { rawKey ->
                 val key = runCatching { JSONTokener(rawKey).nextValue() as? String }.getOrNull()
                 if (key.isNullOrBlank()) {
                     done(null)
-                    return@evaluateJavascript
+                    return@evalJs
                 }
                 pollBlob(wv, key, 0, done)
             }
@@ -184,7 +245,7 @@ internal object WebImages {
         }
     }
 
-    private fun pollBlob(wv: WebView, key: String, attempt: Int, done: (ByteArray?) -> Unit) {
+    private fun pollBlob(wv: View, key: String, attempt: Int, done: (ByteArray?) -> Unit) {
         if (attempt > 12) {
             done(null)
             return
@@ -192,7 +253,7 @@ internal object WebImages {
         wv.postDelayed({
             try {
                 val qk = JSONObject.quote(key)
-                wv.evaluateJavascript("(function(){var v=window[$qk];if(v!==null&&v!==undefined){delete window[$qk];return v;}return null;})()") { raw ->
+                evalJs(wv, "(function(){var v=window[$qk];if(v!==null&&v!==undefined){delete window[$qk];return v;}return null;})()") { raw ->
                     val v = runCatching { if (raw == null || raw == "null") null else JSONTokener(raw).nextValue() as? String }.getOrNull()
                     when {
                         v == null -> pollBlob(wv, key, attempt + 1, done)
@@ -287,9 +348,9 @@ internal object WebImages {
         return if (o.outWidth > 0 && o.outHeight > 0) o.outWidth to o.outHeight else null
     }
 
-    /** 屏幕上可见、且不是 `android.webkit.WebView` 的「WebView」类名，给日志用（X5、XWeb 等）。 */
+    /** 屏幕上可见、且不支持 `evaluateJavascript` 的自绘 WebView 类名，给日志用。 */
     fun foreignWebViewName(v: View): String? {
-        if (v is WebView) return null
+        if (isSupportedWebView(v)) return null
         val n = v.javaClass.name
         return if (n.contains("WebView", ignoreCase = true)) n else null
     }

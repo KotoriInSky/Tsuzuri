@@ -256,7 +256,7 @@ object SourceImageServer {
         val view = findView(target)
         // 0. 优先探测原文件与动图（Glide GifDrawable / 大图查看器本地原图 / Fresco・Glide・Coil 原始来源）：
         // 拿到原字节直接通过 TX_MEDIA 无损回传（保留 GIF/动态 WebP/HEIF/原画分辨率）
-        if (view != null && view !is WebView) {
+        if (view != null && !WebImages.isSupportedWebView(view)) {
             when (val media = MediaSourceFinder.find(view)) {
                 is MediaSourceFinder.Found.Raw -> {
                     sendMedia(cb, media, view.javaClass.name, t0)
@@ -282,7 +282,7 @@ object SourceImageServer {
     private fun tryNativeBitmapFallback(view: View?, target: Rect, cb: IBinder, t0: Long, notes: MutableList<String>) {
         // 控件自己持有位图（ImageView、带位图的 Drawable）最可靠，先取；
         // 否则（Compose、自绘控件）在整窗记录里找，再退回画布拦截与网页
-        if (view != null && view !is WebView && DrawableBitmapFinder.largest(view) != null) {
+        if (view != null && !WebImages.isSupportedWebView(view) && DrawableBitmapFinder.largest(view) != null) {
             pick(view)?.let { picked ->
                 softCopy(picked.first)?.let { sendBitmap(cb, it, "${picked.second} ${view.javaClass.simpleName}", view.javaClass.name, t0); return }
             }
@@ -290,7 +290,7 @@ object SourceImageServer {
         if (tryDrawn(target, cb, t0, notes)) return
         when {
             view == null -> notes += "没有与 $target 对得上的控件"
-            view is WebView -> {}
+            WebImages.isSupportedWebView(view) -> {}
             else -> {
                 val picked = pick(view)
                 if (picked != null) {
@@ -358,8 +358,8 @@ object SourceImageServer {
 
     /** [target] 中心落在哪个 WebView 里，就在它的图片列表里找那张，按地址取原文件。 */
     private fun tryWeb(target: Rect, cb: IBinder, t0: Long, notes: MutableList<String>) {
-        var found: WebView? = null
-        forEachShown { v, visible -> if (v is WebView && visible.contains(target.centerX(), target.centerY())) found = v }
+        var found: View? = null
+        forEachShown { v, visible -> if (WebImages.isSupportedWebView(v) && visible.contains(target.centerX(), target.centerY())) found = v }
         val web = found
         if (web == null) { fail(cb, notes.joinToString("；")); return }
         val onItems = { items: List<WebImages.Item> ->
@@ -378,8 +378,8 @@ object SourceImageServer {
                     }
                 }
             } else {
-                val ua = runCatching { web.settings.userAgentString }.getOrNull()
-                val referer = runCatching { web.url }.getOrNull()
+                val ua = WebImages.readUserAgent(web)
+                val referer = WebImages.readUrl(web)
                 Thread({ sendWeb(cb, best.src, ua, referer, t0) }, "FP-SourceImage").start()
             }
         }
@@ -530,7 +530,7 @@ object SourceImageServer {
         val dm = context.resources.displayMetrics
         val screenArea = dm.widthPixels.toLong() * dm.heightPixels
         val found = ArrayList<Rect>()
-        val webViews = ArrayList<WebView>()
+        val webViews = ArrayList<View>()
         val foreign = LinkedHashSet<String>()
         var videos = 0
         var covered = 0
@@ -546,7 +546,7 @@ object SourceImageServer {
             val h = visible.height()
             WebImages.foreignWebViewName(v)?.let { foreign += it }
             // 被上层盖住的不列：大图查看器底下的列表页
-            if (v is WebView) { if (shown.mostlyExposed(n, MIN_VISIBLE_RATIO)) webViews += v else covered++; continue }
+            if (WebImages.isSupportedWebView(v)) { if (shown.mostlyExposed(n, MIN_VISIBLE_RATIO)) webViews += v else covered++; continue }
             val isVideo = VideoFrames.isVideo(v)
             if (w >= minSide && h >= minSide &&
                 (w.toLong() * h <= screenArea * MAX_SCREEN_RATIO || v is ImageView || isVideo) &&
@@ -566,7 +566,7 @@ object SourceImageServer {
         var drawnCount = 0
         if (!truncated && android.os.SystemClock.uptimeMillis() <= deadline) {
             val owned = ArrayList<Rect>()
-            for (n in shown.nodes) if (n.view !is WebView && DrawableBitmapFinder.largest(n.view) != null) { owned += n.rect; if (n.content != n.rect) owned += n.content }
+            for (n in shown.nodes) if (!WebImages.isSupportedWebView(n.view) && DrawableBitmapFinder.largest(n.view) != null) { owned += n.rect; if (n.content != n.rect) owned += n.content }
             for (root in shown.nodes) {
                 if (root.depth != 0 || !shown.mostlyExposed(root, MIN_VISIBLE_RATIO)) continue
                 if (android.os.SystemClock.uptimeMillis() > deadline) { truncated = true; break }
