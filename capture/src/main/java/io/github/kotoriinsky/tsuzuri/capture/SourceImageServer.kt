@@ -75,12 +75,15 @@ object SourceImageServer {
     /** PixelCopy 回调、下载看门狗用的后台线程；不放主线程，免得和来源应用抢。 */
     private val io by lazy { Handler(HandlerThread("FP-SourceImage-io").apply { start() }.looper) }
 
+    private var appContext: Context? = null
+
     /** 影子抓取器构造时调用；每个进程只注册一次，失败下次再试。 */
     @JvmStatic
     fun ensureRegistered() {
         if (!registered.compareAndSet(false, true)) return
         try {
             val app = Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as Application
+            appContext = app.applicationContext
             app.registerReceiver(
                 Receiver,
                 IntentFilter(SourceImageContract.ACTION),
@@ -125,8 +128,30 @@ object SourceImageServer {
             tryLivePhoto(livePair, target, cb, t0)
             return
         }
-        tryVideo(videoHits(target), 0, target, cb, t0, ArrayList())
+        val vHits = videoHits(target)
+        if (vHits.isNotEmpty()) {
+            val audioActive = appContext?.let(::isForegroundAudioActive) == true
+            Log.i(TAG, "区域取图命中视频控件 ${vHits.size} 个，前台音频活跃=$audioActive")
+        }
+        tryVideo(vHits, 0, target, cb, t0, ArrayList())
     }
+
+    /**
+     * 复刻 Flyme ResultSender 的音频焦点/发声进程判定：
+     * 查 `AudioManager.getParameters("getActiveTrackPid=3")` 判断当前发声轨道是否属于本应用进程，
+     * 区分「正在播放的视频场景」与「后台别的应用在放歌」。
+     */
+    private fun isForegroundAudioActive(context: Context): Boolean = runCatching {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager ?: return false
+        val raw = am.getParameters("getActiveTrackPid=3").orEmpty()
+        val pids = Regex("\\d+").findAll(raw).mapNotNull { it.value.toIntOrNull() }.toSet()
+        if (pids.isEmpty()) return false
+        val myPid = android.os.Process.myPid()
+        if (myPid in pids) return true
+        val pkg = context.packageName
+        val actMgr = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return false
+        actMgr.runningAppProcesses?.any { it.pid in pids && it.pkgList?.contains(pkg) == true } == true
+    }.getOrDefault(false)
 
     private fun tryLivePhoto(pair: LivePhotoSniffer.PairCandidate, target: Rect, cb: IBinder, t0: Long) {
         val stillFound = MediaSourceFinder.find(pair.stillView)
@@ -661,7 +686,12 @@ object SourceImageServer {
             if (s >= MIN_IOU && shown.mostlyExposed(n, MIN_VISIBLE_RATIO)) hits += Hit(n.view, s, n.depth)
         }
         val top = hits.maxOfOrNull { it.score } ?: return null
-        return hits.filter { it.score >= top - 0.02f }.maxByOrNull { it.depth }?.view
+        val nearTop = hits.filter { it.score >= top - 0.05f }
+        // 优先选择真正持有位图或媒体源的控件，避免上层空渐变遮罩/容器抢走命中
+        return nearTop
+            .filter { DrawableBitmapFinder.largest(it.view) != null || MediaSourceFinder.find(it.view) != null }
+            .maxByOrNull { it.depth }?.view
+            ?: nearTop.maxByOrNull { it.depth }?.view
     }
 
     /** 先看控件自己持有的位图（应用解码进内存的那张），再用画布拦截；本身没有就到子控件里找。 */
