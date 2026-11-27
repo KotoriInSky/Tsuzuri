@@ -258,6 +258,10 @@ internal class GlobalRecognitionWindow(
             val state = SelectionState(image, hasText, qr, preferSource)
             if (screen.touching) deferredSelection = state else onSelection(state)
         }
+        screen.onMultiImages = { rects ->
+            if (rects.isEmpty()) setSheet(null) else showMultiImageBar(rects)
+            updateAvoid()
+        }
         screen.onTouchEnd = {
             deferredSelection?.let { state -> deferredSelection = null; onSelection(state) }
             if (screen.selectedText().isNotEmpty() && sheetShown) {
@@ -624,6 +628,186 @@ internal class GlobalRecognitionWindow(
 
     private fun showQrBar(detection: LocalQrScanner.Detection) {
         setSheet(qrBar(detection))
+    }
+
+    /** 多图批量勾选底部面板：沿用识屏同款浅/深色圆角卡片与胶囊按钮排布。 */
+    private fun showMultiImageBar(rects: List<RectF>) {
+        collapsed = false
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = (16 * d).toInt()
+            setPadding(padH, (10 * d).toInt(), padH, (14 * d).toInt())
+        }
+        val top = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(
+            TextView(context).apply {
+                text = "已选 ${rects.size} 张图片"
+                setTextColor(palette.ink)
+                textSize = 14f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                isSingleLine = true
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        fun miniPill(label: String, onClick: () -> Unit): View = TextView(context).apply {
+            text = label
+            setTextColor(palette.inkSecondary)
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            isSingleLine = true
+            setPadding((11 * d).toInt(), (5 * d).toInt(), (11 * d).toInt(), (5 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 13 * d
+                setColor(palette.pillBg)
+            }
+            setOnClickListener { onClick() }
+        }
+        top.addView(
+            miniPill("全选") { screen.selectAllRegions() },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (8 * d).toInt()
+            },
+        )
+        top.addView(miniPill("退出") { screen.exitMultiImageMode() })
+        root.addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val actions = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun actionBtn(label: String, primary: Boolean, onClick: () -> Unit): View = TextView(context).apply {
+            text = label
+            gravity = Gravity.CENTER
+            setTextColor(if (primary) Color.WHITE else palette.ink)
+            textSize = 13.5f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            isSingleLine = true
+            setPadding((14 * d).toInt(), (10 * d).toInt(), (14 * d).toInt(), (10 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 14 * d
+                setColor(if (primary) 0xFF3482FF.toInt() else palette.pillBg)
+            }
+            setOnClickListener { onClick() }
+        }
+        actions.addView(
+            actionBtn("保存全部", primary = true) { batchSaveOrShare(rects, share = false) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = (10 * d).toInt()
+            },
+        )
+        actions.addView(
+            actionBtn("分享", primary = false) { batchSaveOrShare(rects, share = true) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        root.addView(
+            actions,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = (10 * d).toInt()
+            },
+        )
+        setSheet(root)
+    }
+
+    /** 批量取源图（拿不到则裁截图）并写入相册或打包为多图分享。 */
+    private fun batchSaveOrShare(rects: List<RectF>, share: Boolean) {
+        if (rects.isEmpty()) return
+        toast(if (share) "正在准备分享 ${rects.size} 张图片…" else "正在保存 ${rects.size} 张图片…")
+        val snapshot = rects.map { RectF(it) }
+        Thread({
+            val uris = ArrayList<android.net.Uri>(snapshot.size)
+            val resolver = context.contentResolver
+            val baseTs = System.currentTimeMillis()
+            for ((idx, rect) in snapshot.withIndex()) {
+                val res = fetchSourceSync(rect)
+                val rawBytes = res?.rawBytes
+                val liveVideo = res?.liveVideoBytes
+                val mime = res?.mime
+                val fmt: PortalMediaContract.Format
+                val bytes: ByteArray?
+                if (rawBytes != null && liveVideo != null) {
+                    fmt = PortalMediaContract.Format.JPEG
+                    val prefix = PortalMotionPhoto.jpegPrefix(rawBytes, liveVideo.size.toLong(), 0L)
+                    bytes = if (prefix != null) prefix + liveVideo else rawBytes
+                } else if (rawBytes != null) {
+                    fmt = PortalMediaContract.sniff(rawBytes) ?: when (mime) {
+                        "image/gif" -> PortalMediaContract.Format.GIF
+                        "image/webp" -> PortalMediaContract.Format.WEBP
+                        "image/avif" -> PortalMediaContract.Format.AVIF
+                        "image/heic" -> PortalMediaContract.Format.HEIC
+                        "image/heif" -> PortalMediaContract.Format.HEIF
+                        "image/png" -> PortalMediaContract.Format.PNG
+                        else -> PortalMediaContract.Format.JPEG
+                    }
+                    bytes = rawBytes
+                } else {
+                    val bmp = res?.bitmap ?: crop(rect)
+                    if (bmp == null) continue
+                    val baos = java.io.ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 95, baos)
+                    if (res?.bitmap != null) bmp.recycle()
+                    fmt = PortalMediaContract.Format.JPEG
+                    bytes = baos.toByteArray()
+                }
+                if (bytes == null) continue
+                val name = PortalMediaContract.savedName(baseTs + idx, fmt)
+                runCatching {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                        put(MediaStore.Images.Media.MIME_TYPE, fmt.mime)
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Tsuzuri")
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching
+                    try {
+                        resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw IllegalStateException("stream null")
+                        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+                        uris += uri
+                    } catch (t: Throwable) {
+                        runCatching { resolver.delete(uri, null, null) }
+                    }
+                }
+            }
+            main.post {
+                if (closing) return@post
+                if (uris.isEmpty()) {
+                    toast("未获取到可保存的图片")
+                    return@post
+                }
+                if (!share) {
+                    screen.exitMultiImageMode()
+                    confirm("已保存 ${uris.size} 张图片", true)
+                } else {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).apply {
+                        type = "image/*"
+                        putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, uris)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val chooser = android.content.Intent.createChooser(intent, "分享图片").apply {
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    runCatching {
+                        context.startActivity(chooser)
+                        close()
+                    }.onFailure {
+                        toast("拉起分享失败")
+                    }
+                }
+            }
+        }, "fp-gr-batch-img").start()
+    }
+
+    private fun fetchSourceSync(rect: RectF): SourceImageClient.Result? {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var out: SourceImageClient.Result? = null
+        host.requestSourceImage(context, rect) { res ->
+            out = res
+            latch.countDown()
+        }
+        latch.await(900L, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return out
     }
 
     private fun showTextBar() {
@@ -1098,6 +1282,28 @@ internal class GlobalRecognitionWindow(
                     FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply {
                         marginEnd = (8 * d).toInt()
                         bottomMargin = (8 * d).toInt()
+                    },
+                )
+            }
+            if (screen.regionCount() >= 2) {
+                val multiPill = TextView(context).apply {
+                    text = "多选"
+                    setTextColor(Color.WHITE)
+                    textSize = 11f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    isSingleLine = true
+                    setPadding((9 * d).toInt(), (4 * d).toInt(), (9 * d).toInt(), (4 * d).toInt())
+                    background = GradientDrawable().apply {
+                        cornerRadius = 10 * d
+                        setColor(0x99121418.toInt())
+                    }
+                    setOnClickListener { screen.enterMultiImageMode() }
+                }
+                addView(
+                    multiPill,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
+                        marginEnd = (8 * d).toInt()
+                        topMargin = (8 * d).toInt()
                     },
                 )
             }
@@ -1851,11 +2057,15 @@ internal class GlobalRecognitionWindow(
     @SuppressLint("ViewConstructor")
     private inner class ScreenView(context: Context) : View(context) {
         var onSelection: ((RectF?, Boolean, LocalQrScanner.Detection?, Boolean) -> Unit)? = null
+        var onMultiImages: ((List<RectF>) -> Unit)? = null
 
         /** 抬手（含取消）时回调；手指按着期间 [touching] 为 true。 */
         var onTouchEnd: (() -> Unit)? = null
         var touching = false
             private set
+
+        private val multiImages = ArrayList<RectF>()
+        private var multiImageMode = false
 
         private var glyphs: List<PortalOcrSelect.Glyph> = emptyList()
         private var lines: List<RectF> = emptyList()
@@ -2004,7 +2214,44 @@ internal class GlobalRecognitionWindow(
             postDelayed(startBurst, wait)
         }
 
-        fun hasSelection(): Boolean = selStart >= 0 || image != null || selectedQr != null
+        fun hasSelection(): Boolean = selStart >= 0 || image != null || selectedQr != null || multiImages.isNotEmpty()
+
+        fun regionCount(): Int = regions.size
+
+        fun enterMultiImageMode() {
+            multiImages.clear()
+            image?.let { multiImages.add(RectF(it)) }
+            image = null
+            selStart = -1; selEnd = -1
+            selectedQr = null
+            multiImageMode = true
+            focus = 1f
+            onMultiImages?.invoke(multiImages.toList())
+            invalidate()
+        }
+
+        fun selectAllRegions() {
+            multiImageMode = true
+            for (r in regions) {
+                if (isBackdrop(r)) continue
+                if (multiImages.none { sameRect(it, r) }) multiImages.add(RectF(r))
+            }
+            onMultiImages?.invoke(multiImages.toList())
+            invalidate()
+        }
+
+        fun exitMultiImageMode() {
+            multiImages.clear()
+            multiImageMode = false
+            onMultiImages?.invoke(emptyList())
+            invalidate()
+        }
+
+        private fun sameRect(a: RectF, b: RectF): Boolean =
+            kotlin.math.abs(a.left - b.left) < 4f &&
+                kotlin.math.abs(a.top - b.top) < 4f &&
+                kotlin.math.abs(a.right - b.right) < 4f &&
+                kotlin.math.abs(a.bottom - b.bottom) < 4f
 
         fun selectQr(det: LocalQrScanner.Detection) {
             selStart = -1; selEnd = -1; image = null
@@ -2055,7 +2302,7 @@ internal class GlobalRecognitionWindow(
             val hi = maxOf(selStart, selEnd)
             val fade = (focus * SELECT_MS / SELECT_FADE_MS).coerceAtMost(1f)
             // 有选中项时其余可选区域降亮度，主次分明（A5）；选中所在的行保持全亮
-            val others = if (lo >= 0 || image != null || selectedQr != null) 1f - (1f - OTHERS_DIM) * fade else 1f
+            val others = if (lo >= 0 || image != null || selectedQr != null || multiImages.isNotEmpty()) 1f - (1f - OTHERS_DIM) * fade else 1f
             val selLines = if (lo >= 0) glyphs[lo].line..glyphs[hi].line else IntRange.EMPTY
             for ((i, r) in lines.withIndex()) {
                 var k = revealAt(lineAt.getOrElse(i) { 0f })
@@ -2097,6 +2344,14 @@ internal class GlobalRecognitionWindow(
                 canvas.drawRoundRect(v, radius, radius, imageStroke)
                 drawCropHandles(canvas, v, fade)
                 canvas.restore()
+            }
+            for ((idx, r) in multiImages.withIndex()) {
+                bmpPaint.alpha = 255
+                val v = RectF(toView(r))
+                spot(canvas, b, r, 0f)
+                imageStroke.alpha = 255
+                canvas.drawRoundRect(v, radius, radius, imageStroke)
+                drawMultiIndexBadge(canvas, v, idx + 1)
             }
             for (det in qrDetections) {
                 val r = det.bounds ?: continue
@@ -2264,6 +2519,31 @@ internal class GlobalRecognitionWindow(
          * 山和太阳用**实心**画，线条只留外框：第一版全用描边，24dp 里线宽一粗就糊成一块白方块
          * （2026-10-28 真机截图），看不出是图片。每次绘制前显式设 style，不依赖 Paint 上次的状态。
          */
+        private fun drawMultiIndexBadge(canvas: Canvas, v: RectF, index: Int) {
+            val r = 10.5f * d
+            val cx = (v.right - 14f * d).coerceAtLeast(v.left + r + 2f * d)
+            val cy = (v.top + 14f * d).coerceAtMost(v.bottom - r - 2f * d)
+            val p = badgePaint
+            p.style = Paint.Style.FILL
+            p.color = 0xFF3482FF.toInt()
+            p.alpha = 255
+            canvas.drawCircle(cx, cy, r, p)
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1.5f * d
+            p.color = Color.WHITE
+            p.alpha = 230
+            canvas.drawCircle(cx, cy, r, p)
+            p.style = Paint.Style.FILL
+            p.color = Color.WHITE
+            p.alpha = 255
+            p.textSize = 11.5f * d
+            p.textAlign = Paint.Align.CENTER
+            p.typeface = android.graphics.Typeface.DEFAULT_BOLD
+            val fm = p.fontMetrics
+            val baseline = cy - (fm.ascent + fm.descent) * 0.5f
+            canvas.drawText(index.toString(), cx, baseline, p)
+        }
+
         private fun drawImageBadge(canvas: Canvas, v: RectF, alpha: Float) {
             val r = BADGE_DP * d / 2
             val cx = v.right - BADGE_MARGIN_DP * d - r
@@ -2446,7 +2726,12 @@ internal class GlobalRecognitionWindow(
                             val r = dragRect
                             dragRect = null
                             if (r != null && r.width() >= MIN_FRAME_DP * d && r.height() >= MIN_FRAME_DP * d) {
-                                selectImage(r, preferSource = false)
+                                if (multiImageMode) {
+                                    multiImages.add(r)
+                                    onMultiImages?.invoke(multiImages.toList())
+                                } else {
+                                    selectImage(r, preferSource = false)
+                                }
                             } else {
                                 tap(downX, downY)
                             }
@@ -2481,6 +2766,18 @@ internal class GlobalRecognitionWindow(
             val g = glyphAt(x, y)
             val r = regionAt(x, y)?.takeUnless { g >= 0 && isBackdrop(it) }
             host.log(Log.INFO, "点击 (${x.toInt()},${y.toInt()})：码=${qr != null} 字=${g >= 0} 图=${r?.let { "${it.width().toInt()}x${it.height().toInt()}" }}")
+            if (multiImageMode) {
+                if (r != null) {
+                    val idx = multiImages.indexOfFirst { sameRect(it, r) }
+                    if (idx >= 0) multiImages.removeAt(idx) else multiImages.add(RectF(r))
+                    if (multiImages.isEmpty()) multiImageMode = false
+                    onMultiImages?.invoke(multiImages.toList())
+                    invalidate()
+                    return
+                }
+                multiImages.clear()
+                multiImageMode = false
+            }
             when {
                 qr != null -> selectQr(qr)
                 r != null -> selectImage(RectF(r))
@@ -2514,11 +2811,25 @@ internal class GlobalRecognitionWindow(
 
         private fun clear() {
             selStart = -1; selEnd = -1; image = null; selectedQr = null
+            multiImages.clear(); multiImageMode = false
             onSelection?.invoke(null, false, null, true)
+        }
+
+        /** 清除选中（底部面板随之收起）。@return 原来是否选着东西 */
+        fun clearSelection(): Boolean {
+            if (selStart < 0 && image == null && selectedQr == null && multiImages.isEmpty()) return false
+            clear()
+            invalidate()
+            return true
         }
 
         /** 当前选中项在本视图坐标里（不含平移）的范围，文字选区含两端手柄；没选中返回 null。 */
         fun selectionBounds(): RectF? {
+            if (multiImages.isNotEmpty()) {
+                val out = RectF(toView(multiImages[0]))
+                for (i in 1 until multiImages.size) out.union(toView(multiImages[i]))
+                return out
+            }
             selectedQr?.bounds?.let { return RectF(toView(it)) }
             image?.let { return RectF(toView(it)) }
             val lo = minOf(selStart, selEnd)
@@ -2529,14 +2840,6 @@ internal class GlobalRecognitionWindow(
             out.top -= handleR * 2
             out.bottom += handleR * 2
             return out
-        }
-
-        /** 清除选中（底部面板随之收起）。@return 原来是否选着东西 */
-        fun clearSelection(): Boolean {
-            if (selStart < 0 && image == null && selectedQr == null) return false
-            clear()
-            invalidate()
-            return true
         }
 
         private fun normalize() {
