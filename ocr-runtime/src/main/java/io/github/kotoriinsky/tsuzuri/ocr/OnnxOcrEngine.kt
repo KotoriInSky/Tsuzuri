@@ -91,6 +91,7 @@ internal object OnnxOcrEngine {
         if (bitmap.isRecycled || bitmap.width < 8 || bitmap.height < 8) return null
         val t0 = SystemClock.uptimeMillis()
         val model = ensureLoaded(context, tier, backend) ?: return null
+        val loadMs = SystemClock.uptimeMillis() - t0
         val tDet0 = SystemClock.uptimeMillis()
         val boxes = runDet(model.detSession, bitmap)
         val detMs = SystemClock.uptimeMillis() - tDet0
@@ -115,6 +116,7 @@ internal object OnnxOcrEngine {
             jobs += RecJob(lineNo, box, x, y, cw, ch, alignedW)
         }
 
+        val tRec0 = SystemClock.uptimeMillis()
         // 按行宽升序分组批处理，最大程度减少同批内无效 padding
         val sortedJobs = jobs.sortedBy { it.targetW }
         val perLine = arrayOfNulls<List<OnnxOcr.GlyphData>>(boxes.size)
@@ -135,6 +137,7 @@ internal object OnnxOcrEngine {
             }
             offset = end
         }
+        val recMs = SystemClock.uptimeMillis() - tRec0
 
         val glyphs = ArrayList<OnnxOcr.GlyphData>(boxes.size * 12)
         for (lineGlyphs in perLine) {
@@ -142,7 +145,7 @@ internal object OnnxOcrEngine {
         }
         val elapsed = SystemClock.uptimeMillis() - t0
         val label = "PP-OCRv6-${tier.id}/${model.actualBackend}"
-        Log.i(TAG, "$label ${bitmap.width}x${bitmap.height}：${boxes.size} 行（$batchCount 批）/ ${glyphs.size} 字，det=${detMs}ms total=${elapsed}ms")
+        Log.i(TAG, "$label ${bitmap.width}x${bitmap.height}：${boxes.size} 行（$batchCount 批）/ ${glyphs.size} 字，load=${loadMs}ms det=${detMs}ms rec=${recMs}ms total=${elapsed}ms")
         return RecognitionOutput(glyphs, label, elapsed)
     }
 
@@ -171,29 +174,10 @@ internal object OnnxOcrEngine {
     private fun loadSessions(
         detPath: String,
         recPath: String,
-        backend: OnnxOcr.Backend,
+        @Suppress("UNUSED_PARAMETER") backend: OnnxOcr.Backend,
     ): Triple<OrtSession, OrtSession, String> {
-        if (backend == OnnxOcr.Backend.AUTO) {
-            try {
-                val opts = OrtSession.SessionOptions().apply {
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                    setIntraOpNumThreads(1)
-                    addXnnpack(mapOf("intra_op_num_threads" to "4"))
-                }
-                val det = env.createSession(detPath, opts)
-                val rec = try {
-                    env.createSession(recPath, opts)
-                } catch (t: Throwable) {
-                    runCatching { det.close() }
-                    throw t
-                }
-                opts.close()
-                Log.i(TAG, "已启用 XNNPACK 加速加载模型")
-                return Triple(det, rec, "XNNPACK")
-            } catch (t: Throwable) {
-                Log.i(TAG, "XNNPACK 不可用，自动回落通用 CPU：${t.message}")
-            }
-        }
+        // ONNX Runtime 1.29.0 的 XNNPACK EP 在骁龙 8 Elite Gen 5（ARMv9 SVE）动态尺寸推理时触发 SIGSEGV (SEGV_ACCERR)，
+        // 暂统一走通用 CPU（4 线程）以保证稳定性并实测基准耗时。
         val cpuOpts = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             setIntraOpNumThreads(4)
