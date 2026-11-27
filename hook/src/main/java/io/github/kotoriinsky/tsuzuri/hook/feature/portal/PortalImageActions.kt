@@ -1301,50 +1301,59 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
         val anchor = if (anchorId != 0) card.findViewById<TextView>(anchorId) else null
         val ink = anchor?.let { iconTint(it) } ?: Color.BLACK
         val isDarkText = (Color.red(ink) * 299 + Color.green(ink) * 587 + Color.blue(ink) * 114) / 1000 < 128
-        val cardBgColor = if (isDarkText) 0x12000000 else 0x1EFFFFFF
+        val cardBgColor = if (isDarkText) 0x0F000000 else 0x1EFFFFFF
+        val strokeColor = if (isDarkText) 0x18000000 else 0x26FFFFFF
         val subColor = if (isDarkText) 0x99000000.toInt() else 0xB3FFFFFF.toInt()
         val action = detected.action
         val accent = LocalQrScanner.accentColor(action.accent)
+
+        var dotView: View? = null
+        var titleView: TextView? = null
+        var subtitleView: TextView? = null
 
         val banner = LinearLayout(context).apply {
             tag = QR_BAR_TAG
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val ph = (14 * d).toInt()
-            val pv = (10 * d).toInt()
+            val pv = (11 * d).toInt()
             setPadding(ph, pv, ph, pv)
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 14 * d
                 setColor(cardBgColor)
+                setStroke((1 * d).toInt().coerceAtLeast(1), strokeColor)
+            }
+            dotView = View(context).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(accent)
+                }
             }
             addView(
-                View(context).apply {
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(accent)
-                    }
-                },
+                dotView,
                 LinearLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt()).apply {
                     marginEnd = (10 * d).toInt()
                 },
             )
             val texts = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(TextView(context).apply {
+                titleView = TextView(context).apply {
                     text = action.title
                     setTextColor(ink)
                     textSize = 14f
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
-                    isSingleLine = true
+                    maxLines = 2
                     ellipsize = android.text.TextUtils.TruncateAt.END
-                })
-                addView(TextView(context).apply {
+                }
+                subtitleView = TextView(context).apply {
                     text = action.subtitle
                     setTextColor(subColor)
                     textSize = 12f
                     isSingleLine = true
                     ellipsize = android.text.TextUtils.TruncateAt.END
-                })
+                }
+                addView(titleView)
+                addView(subtitleView)
             }
             addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
@@ -1402,11 +1411,24 @@ object PortalImageActions : Feature(Catalog.require(Catalog.SCREEN_IMAGE)) {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply {
-            val mh = (16 * d).toInt()
-            setMargins(mh, (8 * d).toInt(), mh, (4 * d).toInt())
+            val mh = (24 * d).toInt()
+            setMargins(mh, (4 * d).toInt(), mh, (6 * d).toInt())
         }
         parent.addView(banner, 0, lp)
         ctx.log(Log.INFO, "识图卡片二维码命中：${action.title} (${action.kind})")
+
+        val bannerRef = java.lang.ref.WeakReference(banner)
+        QrLinkPrefetcher.prefetchAsync(action) { preview ->
+            val b = bannerRef.get() ?: return@prefetchAsync
+            if (!b.isAttachedToWindow) return@prefetchAsync
+            if (!preview.title.isNullOrBlank()) {
+                titleView?.text = preview.title
+            }
+            subtitleView?.text = QrLinkPrefetcher.formatSubtitle(action, preview)
+            if (preview.isRiskyDownload) {
+                (dotView?.background as? android.graphics.drawable.GradientDrawable)?.setColor(0xFFFF9500.toInt())
+            }
+        }
     }
 
     // ── 私有临时图：编辑与分享共用，但绝不进入 MediaStore ────────────────

@@ -145,7 +145,7 @@ internal object LocalQrScanner {
         )
     }
 
-    /** 依次尝试主目标与备选链接跳转；全部解析失败返回 false。 */
+    /** 依次尝试主目标与备选链接跳转（有已知平台包名时优先直达应用）；全部解析失败返回 false。 */
     fun launch(context: Context, action: QrJumpResolver.Action): Boolean {
         val candidates = buildList {
             action.primaryTarget?.takeIf { it.isNotBlank() }?.let { add(it) }
@@ -153,8 +153,32 @@ internal object LocalQrScanner {
                 if (alt.isNotBlank() && alt !in this) add(alt)
             }
         }
+        val pkgCandidates = buildList {
+            action.platformPkg?.takeIf { it.isNotBlank() }?.let { pkg ->
+                add(pkg)
+                // B站同时存在国内版与国际/Play 版，主包不可用时顺带尝试 Play 版
+                if (pkg == "tv.danmaku.bili") add("com.bilibili.app.in")
+            }
+        }
+        val pm = context.packageManager
         for (target in candidates) {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target)).apply {
+            val uri = Uri.parse(target)
+            for (pkg in pkgCandidates) {
+                val pkgIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                    setPackage(pkg)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val canHandle = runCatching {
+                    pm.queryIntentActivities(pkgIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                        .any { it.activityInfo?.packageName == pkg }
+                }.getOrDefault(false)
+                if (canHandle && runCatching { context.startActivity(pkgIntent); true }.getOrDefault(false)) {
+                    Log.i(TAG, "二维码直达应用成功：${action.title} ($pkg) -> $target")
+                    return true
+                }
+            }
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             val ok = runCatching {

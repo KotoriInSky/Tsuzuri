@@ -1353,10 +1353,9 @@ internal class GlobalRecognitionWindow(
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
-        val qrSlot = FrameLayout(context)
         // 与选字面板保持统一「上预览、下操作」：上方同比例纯净预览图，下方原生 3+3 细线按钮区落在拇指热区
         container.addView(
-            imagePreviewBlock(crop, effectiveResult, qrSlot),
+            imagePreviewBlock(crop, effectiveResult),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         container.addView(
@@ -1365,8 +1364,6 @@ internal class GlobalRecognitionWindow(
         )
         setSheet(container)
         closeAfterActions(c, skipSaveTouch = hasCustomSave)
-        // 对选定/微调后的高分裁图做一次局部二维码精扫（补齐整屏初扫可能漏掉的超小码/反色码）
-        scanCroppedQrAsync(crop, qrSlot)
     }
 
     /**
@@ -1396,12 +1393,11 @@ internal class GlobalRecognitionWindow(
 
     /**
      * 纯净同比例预览图区块：去除一切文字参数条，仅保留居中同比例不裁切圆角图；
-     * 实况照片 / 动图在右下角叠一枚极克制角标，局部二维码直达条紧贴图下。
+     * 实况照片 / 动图在右下角叠一枚极克制角标。
      */
     private fun imagePreviewBlock(
         crop: Bitmap,
         result: SourceImageClient.Result?,
-        qrSlot: FrameLayout,
     ): View {
         val rawBytes = result?.rawBytes
         val liveVideo = result?.liveVideoBytes
@@ -1512,14 +1508,8 @@ internal class GlobalRecognitionWindow(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             val padH = (24 * d).toInt()
-            setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
+            setPadding(padH, (10 * d).toInt(), padH, (4 * d).toInt())
             addView(frame, LinearLayout.LayoutParams(previewW, previewH))
-            addView(
-                qrSlot,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (8 * d).toInt()
-                },
-            )
         }
     }
 
@@ -1722,51 +1712,6 @@ internal class GlobalRecognitionWindow(
         }, "fp-gr-save-raw").start()
     }
 
-    private fun scanCroppedQrAsync(crop: Bitmap, qrSlot: FrameLayout) {
-        if (crop.isRecycled) return
-        val copy = runCatching { crop.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return
-        val slotRef = java.lang.ref.WeakReference(qrSlot)
-        Thread({
-            val det = try {
-                LocalQrScanner.scanFirst(copy)
-            } catch (_: Throwable) {
-                null
-            } finally {
-                if (!copy.isRecycled) copy.recycle()
-            }
-            if (det == null) return@Thread
-            main.post {
-                val slot = slotRef.get() ?: return@post
-                if (closing || !slot.isAttachedToWindow || ourCrop !== crop) return@post
-                val action = det.action
-                val accent = LocalQrScanner.accentColor(action.accent)
-                slot.removeAllViews()
-                slot.addView(
-                    TextView(context).apply {
-                        text = if (action.canLaunch) action.actionLabel else "复制码内容"
-                        setTextColor(Color.WHITE)
-                        textSize = 12.5f
-                        typeface = android.graphics.Typeface.DEFAULT_BOLD
-                        setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
-                        background = GradientDrawable().apply {
-                            cornerRadius = 16 * d
-                            setColor(accent)
-                        }
-                        setOnClickListener {
-                            if (action.canLaunch && LocalQrScanner.launch(context, action)) {
-                                close()
-                            } else if (LocalQrScanner.copy(context, action.copyText)) {
-                                confirm("已复制", true)
-                            } else {
-                                toast("无法打开此二维码")
-                            }
-                        }
-                    },
-                )
-            }
-        }, "fp-gr-crop-qr").start()
-    }
-
     /**
      * 不要卡片里的大图预览：选中的那块已经在屏幕上框出来了。而且预览区在布局里是 `0dp + weight=1`，
      * 放进自适应高度的面板会被撑到几乎整屏（2026-10-27 真机用户反馈「圈选的图全屏展示」）。
@@ -1961,94 +1906,101 @@ internal class GlobalRecognitionWindow(
     // ── 底栏 ────────────────────────────────────────────────────────────
 
     /**
-     * 二维码直达面板：左栏展示平台/类型标题与清洗后的摘要，右侧提供「直达」与「复制」按钮。
+     * 二维码直达面板：与单图内嵌提示卡、选字实体卡片保持同一视觉规范（圆角灰底卡 + 细描边 + 24dp 边距），
+     * 并通过分层安全预加载补充真实网页标题与跨域名风险提示。
      */
     private fun qrBar(detection: LocalQrScanner.Detection): View {
         val action = detection.action
         val accent = LocalQrScanner.accentColor(action.accent)
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            val padH = (20 * d).toInt()
-            setPadding(padH, (18 * d).toInt(), padH, (14 * d).toInt())
+        var dotView: View? = null
+        var titleView: TextView? = null
+        var subtitleView: TextView? = null
 
-            val header = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val ph = (14 * d).toInt()
+            val pv = (12 * d).toInt()
+            setPadding(ph, pv, ph, pv)
+            background = GradientDrawable().apply {
+                cornerRadius = 14 * d
+                setColor(palette.pillBg)
+                setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
             }
-            // 品牌色圆点，与超级岛语言统一
-            header.addView(
-                View(context).apply {
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(accent)
-                    }
-                },
-                LinearLayout.LayoutParams((10 * d).toInt(), (10 * d).toInt()).apply {
+            dotView = View(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(accent)
+                }
+            }
+            addView(
+                dotView,
+                LinearLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt()).apply {
                     marginEnd = (10 * d).toInt()
                 },
             )
-            header.addView(
-                TextView(context).apply {
-                    text = action.title
-                    setTextColor(palette.ink)
-                    textSize = 16f
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD
-                    isSingleLine = true
-                    ellipsize = android.text.TextUtils.TruncateAt.END
+            addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    titleView = TextView(context).apply {
+                        text = action.title
+                        setTextColor(palette.ink)
+                        textSize = 14.5f
+                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    }
+                    subtitleView = TextView(context).apply {
+                        text = action.subtitle
+                        setTextColor(palette.inkSecondary)
+                        textSize = 12f
+                        isSingleLine = true
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    }
+                    addView(titleView)
+                    addView(
+                        subtitleView,
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            topMargin = (2 * d).toInt()
+                        },
+                    )
                 },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
             )
-            addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-            addView(
-                TextView(context).apply {
-                    text = action.subtitle
-                    setTextColor(palette.inkSecondary)
-                    textSize = 13f
-                    maxLines = 2
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (6 * d).toInt()
-                },
-            )
-
-            val buttons = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            }
-            fun pill(label: String, primary: Boolean, onClick: () -> Unit): TextView = TextView(context).apply {
-                text = label
-                textSize = 14f
-                setTextColor(if (primary) Color.WHITE else palette.ink)
-                typeface = if (primary) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
-                gravity = Gravity.CENTER
-                val ph = (18 * d).toInt()
-                val pv = (9 * d).toInt()
-                setPadding(ph, pv, ph, pv)
-                background = GradientDrawable().apply {
-                    cornerRadius = 20 * d
-                    setColor(if (primary) accent else palette.pillBg)
-                }
-                setOnClickListener { onClick() }
-            }
-
             if (action.canLaunch) {
-                buttons.addView(
-                    pill("复制", primary = false) {
-                        if (LocalQrScanner.copy(context, action.copyText)) {
-                            confirm("已复制", true)
-                            host.log(Log.INFO, "复制二维码内容 ${action.copyText.length} 字")
-                        } else {
-                            toast("复制失败")
+                addView(
+                    TextView(context).apply {
+                        text = "复制"
+                        setTextColor(palette.ink)
+                        textSize = 12.5f
+                        setPadding((10 * d).toInt(), (7 * d).toInt(), (10 * d).toInt(), (7 * d).toInt())
+                        setOnClickListener {
+                            if (LocalQrScanner.copy(context, action.copyText)) {
+                                confirm("已复制", true)
+                                host.log(Log.INFO, "复制二维码内容 ${action.copyText.length} 字")
+                            } else {
+                                toast("复制失败")
+                            }
                         }
                     },
                     LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        marginEnd = (10 * d).toInt()
+                        marginStart = (6 * d).toInt()
                     },
                 )
-                buttons.addView(
-                    pill(action.actionLabel, primary = true) {
+            }
+            val primaryBtn = TextView(context).apply {
+                text = action.actionLabel
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setPadding((14 * d).toInt(), (7 * d).toInt(), (14 * d).toInt(), (7 * d).toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = 16 * d
+                    setColor(accent)
+                }
+                setOnClickListener {
+                    if (action.canLaunch) {
                         if (LocalQrScanner.launch(context, action)) {
                             close()
                         } else if (LocalQrScanner.copy(context, action.copyText)) {
@@ -2056,30 +2008,41 @@ internal class GlobalRecognitionWindow(
                         } else {
                             toast("未找到可打开此链接的应用")
                         }
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-                )
-            } else {
-                buttons.addView(
-                    pill(action.actionLabel, primary = true) {
-                        if (LocalQrScanner.copy(context, action.copyText)) {
-                            confirm("已复制", true)
-                            host.log(Log.INFO, "复制二维码内容 ${action.copyText.length} 字")
-                        } else {
-                            toast("复制失败")
-                        }
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
-                )
+                    } else if (LocalQrScanner.copy(context, action.copyText)) {
+                        confirm("已复制", true)
+                        host.log(Log.INFO, "复制二维码内容 ${action.copyText.length} 字")
+                    } else {
+                        toast("复制失败")
+                    }
+                }
             }
-
             addView(
-                buttons,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = (14 * d).toInt()
+                primaryBtn,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = (6 * d).toInt()
                 },
             )
+            setOnClickListener { primaryBtn.performClick() }
         }
+
+        val wrapper = FrameLayout(context).apply {
+            val padH = (24 * d).toInt()
+            setPadding(padH, (14 * d).toInt(), padH, (18 * d).toInt())
+            addView(card, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val wrapperRef = java.lang.ref.WeakReference(wrapper)
+        io.github.kotoriinsky.tsuzuri.hook.feature.portal.QrLinkPrefetcher.prefetchAsync(action) { preview ->
+            val w = wrapperRef.get() ?: return@prefetchAsync
+            if (closing || !w.isAttachedToWindow) return@prefetchAsync
+            if (!preview.title.isNullOrBlank()) {
+                titleView?.text = preview.title
+            }
+            subtitleView?.text = io.github.kotoriinsky.tsuzuri.hook.feature.portal.QrLinkPrefetcher.formatSubtitle(action, preview)
+            if (preview.isRiskyDownload) {
+                (dotView?.background as? GradientDrawable)?.setColor(0xFFFF9500.toInt())
+            }
+        }
+        return wrapper
     }
 
     /**
