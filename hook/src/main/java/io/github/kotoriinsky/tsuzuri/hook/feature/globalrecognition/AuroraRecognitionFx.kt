@@ -47,11 +47,11 @@ internal interface RecognitionEffect {
 /**
  * 流光扫描动效（AGSL RuntimeShader + Canvas 降级）：
  *
- * 1. **唤起压感**：前 260ms 画面轻轻下压到 0.992 再缓弹回 1.0，提供清晰的「已冻结当前屏」触感反馈；
- * 2. **边缘流体光晕**：3 组低饱和谐波色（冰川蓝 / 鸢尾紫 / 清澈青）沿屏幕四周边框流动呼吸，
+ * 1. **唤起压感**：前 340ms 画面轻轻下压到 0.992 再缓弹回 1.0，提供清晰的「已冻结当前屏」触感反馈；
+ * 2. **边缘流体光晕**：以洁白为主色调（辅以极淡的冰白 / 珍珠白微光）沿屏幕四周边框流动呼吸，
  *    屏幕中央完全通透无遮挡；
- * 3. **柔光幕扫屏**：等待 OCR 时屏幕底部泛起柔光预热；结果到达瞬间，一道柔和宽光带在 420ms 内
- *    自下而上掠过画面，所过之处文字与图片顺势点亮，随后边缘光晕自然退隐。
+ * 3. **柔光幕扫屏**：等待 OCR 时一道柔和白光幕以 1.7s 周期自下而上持续轻扫；结果到达后，
+ *    一道更明亮的宽光带在 580ms 内自下而上掠过画面，所过之处文字与图片顺势点亮，随后边缘光晕自然退隐。
  */
 internal class AuroraRecognitionFx(
     private val d: Float,
@@ -109,8 +109,10 @@ internal class AuroraRecognitionFx(
         }
         val now = SystemClock.uptimeMillis()
         val elapsed = (now - t0).coerceAtLeast(0L)
-        // 等待期间底光已经向上预推进了一小段，从那里丝滑接续扫屏，不跳变
-        scanHeadAtBurst = (0.04f + 0.16f * (1f - kotlin.math.exp(-elapsed / 420f))).coerceIn(0.04f, 0.20f)
+        val cycleU = (elapsed % SCAN_CYCLE_MS) / SCAN_CYCLE_MS.toFloat()
+        val curPos = -0.06f + 1.14f * easeInOut(cycleU)
+        // 若当前扫描带刚好处于底部起步区，直接从该位置丝滑接续；否则从底部重新起一道揭晓光幕与文字亮起同步
+        scanHeadAtBurst = if (curPos in 0.0f..0.28f) curPos else 0.0f
         tPhase = now
         wave = 0f
         phase = Phase.REVEAL
@@ -165,12 +167,17 @@ internal class AuroraRecognitionFx(
         when (phase) {
             Phase.SCANNING -> {
                 val fadeIn = ((now - t0) / EDGE_IN_MS.toFloat()).coerceIn(0f, 1f)
-                val breathe = 0.85f + 0.15f * sin(elapsedSec * 3.4f)
+                val breathe = 0.82f + 0.18f * sin(elapsedSec * 2.4f)
                 edgeAlpha = easeOut(fadeIn) * breathe
-                // 等待期在底部泛起柔光准备推进
-                val warm = 0.04f + 0.16f * (1f - kotlin.math.exp(-(now - t0) / 420f))
-                sweepPos = warm
-                sweepAlpha = easeOut(fadeIn) * 0.55f
+                // 等待期持续自下而上轻扫，避免长耗时 OCR 期间光幕停滞
+                val cycleU = ((now - t0) % SCAN_CYCLE_MS) / SCAN_CYCLE_MS.toFloat()
+                sweepPos = -0.06f + 1.14f * easeInOut(cycleU)
+                val cycleFade = when {
+                    cycleU < 0.18f -> cycleU / 0.18f
+                    cycleU > 0.72f -> ((1f - cycleU) / 0.28f).coerceIn(0f, 1f)
+                    else -> 1f
+                }
+                sweepAlpha = easeOut(fadeIn) * 0.52f * cycleFade
             }
             Phase.REVEAL -> {
                 val u = ((now - tPhase) / REVEAL_MS.toFloat()).coerceIn(0f, 1f)
@@ -178,8 +185,9 @@ internal class AuroraRecognitionFx(
                 wave = eased
                 sweepPos = scanHeadAtBurst + (1.18f - scanHeadAtBurst) * eased
                 // 扫描带前段亮起、到达顶端前柔和消散
+                val startAlpha = if (scanHeadAtBurst > 0.01f) 0.45f else 0.12f
                 sweepAlpha = when {
-                    u < 0.15f -> 0.55f + 0.45f * (u / 0.15f)
+                    u < 0.18f -> startAlpha + (1f - startAlpha) * (u / 0.18f)
                     u > 0.72f -> (1f - (u - 0.72f) / 0.28f).coerceIn(0f, 1f)
                     else -> 1f
                 }
@@ -252,8 +260,8 @@ internal class AuroraRecognitionFx(
                 cy + bandH * 0.6f,
                 intArrayOf(
                     Color.TRANSPARENT,
-                    (a shl 24) or 0x6AA8FF,
-                    ((a * 2 / 3) shl 24) or 0xA88BFF,
+                    (a shl 24) or 0xFFFFFF,
+                    ((a * 2 / 3) shl 24) or 0xE6EEFF,
                     Color.TRANSPARENT,
                 ),
                 floatArrayOf(0f, 0.55f, 0.78f, 1f),
@@ -266,7 +274,7 @@ internal class AuroraRecognitionFx(
             fallbackPaint.shader = null
             fallbackPaint.style = Paint.Style.STROKE
             fallbackPaint.strokeWidth = stroke
-            fallbackPaint.color = (((0x70 * edgeAlpha).toInt().coerceIn(0, 255)) shl 24) or 0x6AA8FF
+            fallbackPaint.color = (((0x70 * edgeAlpha).toInt().coerceIn(0, 255)) shl 24) or 0xFFFFFF
             canvas.drawRoundRect(stroke / 2f, stroke / 2f, w - stroke / 2f, h - stroke / 2f, 28 * d, 28 * d, fallbackPaint)
             fallbackPaint.style = Paint.Style.FILL
         }
@@ -288,20 +296,21 @@ internal class AuroraRecognitionFx(
     }
 
     private companion object {
-        const val MIN_SCAN_MS = 140L
-        const val EDGE_IN_MS = 200L
-        const val PRESS_MS = 260L
+        const val MIN_SCAN_MS = 450L
+        const val SCAN_CYCLE_MS = 1700L
+        const val EDGE_IN_MS = 280L
+        const val PRESS_MS = 340L
         const val PRESS_DIP = 0.008f
-        const val REVEAL_MS = 440L
-        const val COLLAPSE_MS = 220L
+        const val REVEAL_MS = 580L
+        const val COLLAPSE_MS = 280L
         const val EDGE_WIDTH_DP = 44f
         const val CORNER_DP = 36f
         const val DONE_WAVE = 10f
 
         /**
          * AGSL 着色器：
-         * - 边缘流体光晕：圆角矩形内距 SDF，三色谐波随角度与时间柔和流转；
-         * - 自下而上柔光扫描幕：高斯型非对称光带（前沿略锐、尾迹柔长），带轻微蓝紫青色散。
+         * - 边缘流体光晕：圆角矩形内距 SDF，以洁白为主色调并带极淡的冰白 / 珍珠白微光流转；
+         * - 自下而上柔光扫描幕：高斯型非对称光带（前沿略锐、尾迹柔长）。
          */
         const val AURORA_AGSL = """
             uniform float2 uRes;
@@ -318,14 +327,14 @@ internal class AuroraRecognitionFx(
             }
 
             half3 auroraColor(float phase) {
-                // 克制的蓝 / 鸢尾紫 / 清澈青三色流转
-                half3 c1 = half3(0.26, 0.56, 1.00);
-                half3 c2 = half3(0.58, 0.42, 0.98);
-                half3 c3 = half3(0.18, 0.80, 0.92);
+                // 以纯白为主色调，辅以极淡的冰白 / 珍珠白微光保持流体层次
+                half3 c1 = half3(0.99, 0.99, 1.00);
+                half3 c2 = half3(0.86, 0.92, 1.00);
+                half3 c3 = half3(0.95, 0.95, 1.00);
                 float w1 = 0.5 + 0.5 * sin(phase);
                 float w2 = 0.5 + 0.5 * sin(phase + 2.094);
-                half3 mix1 = mix(c1, c2, half(w1));
-                return mix(mix1, c3, half(w2 * 0.55));
+                half3 mix1 = mix(c1, c2, half(w1 * 0.55));
+                return mix(mix1, c3, half(w2 * 0.45));
             }
 
             half4 main(float2 fragCoord) {
@@ -354,8 +363,8 @@ internal class AuroraRecognitionFx(
                 float sweepMask = band * sideBoost * uSweepAlpha * 0.42;
                 half3 sweepCol = auroraColor(uv.x * 2.6 + uTime * 2.6 + dy * 4.0) * half(sweepMask);
                 // 极细的前沿亮丝
-                float crest = exp(-(dy * dy) / (2.0 * 0.008 * 0.008)) * uSweepAlpha * 0.34;
-                half3 crestCol = half3(0.86, 0.94, 1.0) * half(crest);
+                float crest = exp(-(dy * dy) / (2.0 * 0.008 * 0.008)) * uSweepAlpha * 0.38;
+                half3 crestCol = half3(1.0, 1.0, 1.0) * half(crest);
 
                 half3 rgb = clamp(edgeCol + sweepCol + crestCol, half3(0.0), half3(1.0));
                 half alpha = clamp(max(max(rgb.r, rgb.g), rgb.b), half(0.0), half(1.0));
