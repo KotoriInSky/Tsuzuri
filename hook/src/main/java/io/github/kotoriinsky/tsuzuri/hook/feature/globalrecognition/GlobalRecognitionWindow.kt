@@ -91,6 +91,9 @@ internal class GlobalRecognitionWindow(
 
         /** 向来源应用要 [rect] 里那张图的源位图或原文件字节；回调可能在任意线程。 */
         fun requestSourceImage(context: Context, rect: RectF, done: (SourceImageClient.Result) -> Unit)
+
+        /** 对选定区域的高分位图单独跑一次端侧 OCR。 */
+        fun recognizeBitmap(context: Context, bitmap: Bitmap): List<PortalOcrSelect.Glyph>?
     }
 
     /** 截图被窗口和识别线程同时持有，最后一个放手的人回收。 */
@@ -695,7 +698,13 @@ internal class GlobalRecognitionWindow(
         actions.addView(
             actionBtn("保存全部", primary = true) { batchSaveOrShare(rects, share = false) },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = (10 * d).toInt()
+                marginEnd = (8 * d).toInt()
+            },
+        )
+        actions.addView(
+            actionBtn("拼图", primary = false) { batchStitchAndSave(rects) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = (8 * d).toInt()
             },
         )
         actions.addView(
@@ -808,6 +817,123 @@ internal class GlobalRecognitionWindow(
         }
         latch.await(900L, java.util.concurrent.TimeUnit.MILLISECONDS)
         return out
+    }
+
+    /**
+     * 复刻 Flyme `mergeBitmap(bmps, columnCount)`：
+     * 按选区在屏幕上的阅读顺序分行（同行按左到右），等比缩放拼成一张高清长图/网格图写入相册。
+     */
+    private fun batchStitchAndSave(rects: List<RectF>) {
+        if (rects.isEmpty()) return
+        toast("正在拼合 ${rects.size} 张图片…")
+        val snapshot = rects.map { RectF(it) }
+        Thread({
+            val rows = ArrayList<MutableList<RectF>>()
+            val sorted = snapshot.sortedWith(compareBy<RectF> { it.top }.thenBy { it.left })
+            for (r in sorted) {
+                val lastRow = rows.lastOrNull()
+                if (lastRow != null) {
+                    val rowTop = lastRow.minOf { it.top }
+                    val rowBottom = lastRow.maxOf { it.bottom }
+                    val overlapY = minOf(rowBottom, r.bottom) - maxOf(rowTop, r.top)
+                    val minH = minOf(rowBottom - rowTop, r.height()).coerceAtLeast(1f)
+                    if (overlapY >= minH * 0.45f) {
+                        lastRow += r
+                        continue
+                    }
+                }
+                rows += mutableListOf(r)
+            }
+            for (row in rows) row.sortBy { it.left }
+
+            val bmps = ArrayList<Pair<List<Bitmap>, Boolean>>(rows.size)
+            for (row in rows) {
+                val rowBmps = ArrayList<Bitmap>(row.size)
+                for (r in row) {
+                    val res = fetchSourceSync(r)
+                    val b = res?.bitmap ?: crop(r)
+                    if (b != null) rowBmps += b
+                }
+                if (rowBmps.isNotEmpty()) bmps += rowBmps to false
+            }
+            if (bmps.isEmpty()) {
+                main.post { if (!closing) toast("未获取到可拼合的图片") }
+                return@Thread
+            }
+
+            val gap = (6 * d).toInt().coerceAtLeast(4)
+            val maxCanvasW = 2160
+            val maxCols = bmps.maxOf { it.first.size }.coerceAtLeast(1)
+            val targetCellW = ((maxCanvasW - gap * (maxCols + 1)) / maxCols).coerceAtLeast(240)
+            val rowHeights = IntArray(bmps.size)
+            var totalH = gap
+            for ((ri, pair) in bmps.withIndex()) {
+                val rowList = pair.first
+                val cols = rowList.size
+                val cellW = ((maxCanvasW - gap * (cols + 1)) / cols).coerceAtLeast(targetCellW)
+                val maxH = rowList.maxOf { b ->
+                    (b.height.toFloat() * cellW / b.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+                }
+                rowHeights[ri] = maxH
+                totalH += maxH + gap
+            }
+            val totalW = maxCanvasW
+            val stitched = Bitmap.createBitmap(totalW, totalH.coerceAtMost(12000), Bitmap.Config.ARGB_8888)
+            val c = Canvas(stitched)
+            c.drawColor(if (palette.dark) 0xFF14161A.toInt() else Color.WHITE)
+            var y = gap
+            val dst = RectF()
+            for ((ri, pair) in bmps.withIndex()) {
+                val rowList = pair.first
+                val cols = rowList.size
+                val cellW = (totalW - gap * (cols + 1)) / cols
+                val rh = rowHeights[ri]
+                if (y + rh > stitched.height) break
+                var x = gap
+                for (b in rowList) {
+                    val drawH = (b.height.toFloat() * cellW / b.width.coerceAtLeast(1)).coerceAtMost(rh.toFloat())
+                    val top = y + (rh - drawH) * 0.5f
+                    dst.set(x.toFloat(), top, (x + cellW).toFloat(), top + drawH)
+                    c.drawBitmap(b, null, dst, null)
+                    x += cellW + gap
+                }
+                y += rh + gap
+            }
+
+            val baos = java.io.ByteArrayOutputStream()
+            stitched.compress(Bitmap.CompressFormat.JPEG, 94, baos)
+            stitched.recycle()
+            val outBytes = baos.toByteArray()
+            val name = PortalMediaContract.savedName(System.currentTimeMillis(), PortalMediaContract.Format.JPEG)
+            val saved = runCatching {
+                val resolver = context.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Tsuzuri")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching false
+                try {
+                    resolver.openOutputStream(uri)?.use { it.write(outBytes) } ?: return@runCatching false
+                    resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+                    true
+                } catch (_: Throwable) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    false
+                }
+            }.getOrDefault(false)
+
+            main.post {
+                if (closing) return@post
+                if (saved) {
+                    screen.exitMultiImageMode()
+                    confirm("已拼合保存长图", true)
+                } else {
+                    toast("拼合保存失败")
+                }
+            }
+        }, "fp-gr-stitch").start()
     }
 
     private fun showTextBar() {
@@ -1139,7 +1265,7 @@ internal class GlobalRecognitionWindow(
         val qrSlot = FrameLayout(context)
         // 与选字面板保持统一「上预览、下操作」：上方同比例纯净预览图，下方原生 3+3 细线按钮区落在拇指热区
         container.addView(
-            imagePreviewBlock(crop, result, qrSlot),
+            imagePreviewBlock(rect, result != null, crop, result, qrSlot),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         container.addView(
@@ -1181,7 +1307,13 @@ internal class GlobalRecognitionWindow(
      * 纯净同比例预览图区块：去除一切文字参数条，仅保留居中同比例不裁切圆角图；
      * 实况照片 / 动图在右下角叠一枚极克制角标，局部二维码直达条紧贴图下。
      */
-    private fun imagePreviewBlock(crop: Bitmap, result: SourceImageClient.Result?, qrSlot: FrameLayout): View {
+    private fun imagePreviewBlock(
+        rect: RectF,
+        preferSource: Boolean,
+        crop: Bitmap,
+        result: SourceImageClient.Result?,
+        qrSlot: FrameLayout,
+    ): View {
         val rawBytes = result?.rawBytes
         val liveVideo = result?.liveVideoBytes
         val isLive = rawBytes != null && liveVideo != null
@@ -1285,6 +1417,26 @@ internal class GlobalRecognitionWindow(
                     },
                 )
             }
+            val ocrPill = TextView(context).apply {
+                text = "转文字"
+                setTextColor(Color.WHITE)
+                textSize = 11f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                isSingleLine = true
+                setPadding((9 * d).toInt(), (4 * d).toInt(), (9 * d).toInt(), (4 * d).toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = 10 * d
+                    setColor(0x99121418.toInt())
+                }
+                setOnClickListener { runLocalCropOcr(crop, rect, preferSource) }
+            }
+            addView(
+                ocrPill,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
+                    marginStart = (8 * d).toInt()
+                    topMargin = (8 * d).toInt()
+                },
+            )
             if (screen.regionCount() >= 2) {
                 val multiPill = TextView(context).apply {
                     text = "多选"
@@ -1322,6 +1474,112 @@ internal class GlobalRecognitionWindow(
                 },
             )
         }
+    }
+
+    /** 对当前选中的高分图片单独跑一次端侧精识别，并在窗内展示可编辑文字结果。 */
+    private fun runLocalCropOcr(crop: Bitmap, rect: RectF, preferSource: Boolean) {
+        setSheet(loadingContent())
+        Thread({
+            val glyphs = runCatching { host.recognizeBitmap(context, crop) }.getOrNull().orEmpty()
+            val sb = StringBuilder()
+            for (i in glyphs.indices) {
+                if (i > 0 && glyphs[i].line != glyphs[i - 1].line) {
+                    if (sb.endsWith("-")) sb.setLength(sb.length - 1) else sb.append('\n')
+                }
+                sb.append(glyphs[i].text)
+            }
+            val text = sb.toString().trim()
+            main.post {
+                if (closing) return@post
+                if (text.isEmpty()) {
+                    toast("图片中未识别到文字")
+                    showCard(rect, preferSource)
+                } else {
+                    showCropOcrResult(text, rect, preferSource)
+                }
+            }
+        }, "fp-gr-crop-ocr").start()
+    }
+
+    private fun showCropOcrResult(initialText: String, rect: RectF, preferSource: Boolean) {
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = (16 * d).toInt()
+            setPadding(padH, (10 * d).toInt(), padH, (14 * d).toInt())
+        }
+        val editor = EditText(context).apply {
+            setText(initialText)
+            setTextColor(palette.ink)
+            textSize = 14f
+            background = GradientDrawable().apply {
+                cornerRadius = 14 * d
+                setColor(palette.pillBg)
+            }
+            val p = (12 * d).toInt()
+            setPadding(p, p, p, p)
+            maxLines = 6
+        }
+        root.addView(editor, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun btn(label: String, primary: Boolean, onClick: () -> Unit): View = TextView(context).apply {
+            text = label
+            gravity = Gravity.CENTER
+            setTextColor(if (primary) Color.WHITE else palette.ink)
+            textSize = 13.5f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            isSingleLine = true
+            setPadding((12 * d).toInt(), (10 * d).toInt(), (12 * d).toInt(), (10 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 14 * d
+                setColor(if (primary) 0xFF3482FF.toInt() else palette.pillBg)
+            }
+            setOnClickListener { onClick() }
+        }
+        row.addView(
+            btn("复制", primary = true) {
+                val t = editor.text?.toString().orEmpty()
+                runCatching {
+                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("ocr", t))
+                    confirm("已复制", true)
+                }.onFailure { toast("复制失败") }
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = (8 * d).toInt() },
+        )
+        row.addView(
+            btn("分享", primary = false) {
+                val t = editor.text?.toString().orEmpty()
+                if (t.isNotEmpty()) {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, t)
+                    }
+                    val chooser = android.content.Intent.createChooser(intent, "分享文字").apply {
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    runCatching {
+                        context.startActivity(chooser)
+                        close()
+                    }.onFailure { toast("分享失败") }
+                }
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = (8 * d).toInt() },
+        )
+        row.addView(
+            btn("返回", primary = false) { showCard(rect, preferSource) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        root.addView(
+            row,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = (10 * d).toInt()
+            },
+        )
+        setSheet(root)
     }
 
     /** 把主静图 JPEG 与短视频 MP4 拼成标准 Google/MIUI Motion Photo 实况照片写入系统图库。 */

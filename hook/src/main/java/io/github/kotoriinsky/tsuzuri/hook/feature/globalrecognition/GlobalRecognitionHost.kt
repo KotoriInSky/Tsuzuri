@@ -279,6 +279,10 @@ internal object GlobalRecognitionHost : Feature(Catalog.require(Catalog.GLOBAL_R
             .onSuccess { hookCtx?.log(Log.INFO, "[$TAG] 控件树已存：${context.cacheDir}/global_recog_tree.xml") }
     }
 
+    /** 对选定区域的高分位图单独跑一次端侧 OCR（图内局部精识别）。 */
+    override fun recognizeBitmap(context: Context, bitmap: Bitmap): List<PortalOcrSelect.Glyph>? =
+        recognize(context, bitmap)
+
     private fun recognize(context: Context, bitmap: Bitmap): List<PortalOcrSelect.Glyph>? {
         // 优先走用户启用的多语种 PP-OCRv6（ONNX Runtime / QNN NPU）；未开启或未下载模型时无缝回落系统太乙 OCR
         OnnxOcrClient.recognize(context, bitmap)?.let { return it }
