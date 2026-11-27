@@ -27,8 +27,16 @@ internal object OnnxOcrEngine {
     private const val TAG = "FP-OnnxOcrEngine"
     private const val DET_MAX_SIDE = 736
     private const val REC_HEIGHT = 48
-    private const val REC_MAX_WIDTH = 1280
-    private const val REC_BATCH_SIZE = 6
+    private const val REC_MAX_WIDTH = 640
+    private const val REC_BATCH_SIZE = 8
+    private val REC_BUCKETS = intArrayOf(96, 160, 240, 320, 416, 512, 640)
+
+    private fun bucketWidth(rawW: Int): Int {
+        for (b in REC_BUCKETS) {
+            if (rawW <= b) return b
+        }
+        return REC_MAX_WIDTH
+    }
 
     data class RecognitionOutput(
         val glyphs: List<OnnxOcr.GlyphData>,
@@ -111,8 +119,8 @@ internal object OnnxOcrEngine {
             val ch = (box.bottom.roundToInt() - y).coerceIn(1, bitmap.height - y)
             if (cw < 4 || ch < 4) continue
             val rawW = max(16, (cw.toFloat() * REC_HEIGHT / ch).roundToInt()).coerceAtMost(REC_MAX_WIDTH)
-            // 对齐到 8 像素，减少 XNNPACK 动态内核切换
-            val alignedW = (((rawW + 7) / 8) * 8).coerceIn(16, REC_MAX_WIDTH)
+            // 归入固定宽度桶，降低超长行注意力/卷积计算量并复用内存布局
+            val alignedW = bucketWidth(rawW)
             jobs += RecJob(lineNo, box, x, y, cw, ch, alignedW)
         }
 
@@ -180,7 +188,7 @@ internal object OnnxOcrEngine {
         // 暂统一走通用 CPU（4 线程）以保证稳定性并实测基准耗时。
         val cpuOpts = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            setIntraOpNumThreads(4)
+            setIntraOpNumThreads(6)
         }
         val det = env.createSession(detPath, cpuOpts)
         val rec = try {
