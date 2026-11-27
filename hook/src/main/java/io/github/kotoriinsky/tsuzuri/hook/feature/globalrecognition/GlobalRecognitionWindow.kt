@@ -2113,7 +2113,22 @@ internal class GlobalRecognitionWindow(
                 selPaint.alpha = (0x66 * fade).toInt()
                 handlePaint.alpha = (255 * fade).toInt()
                 stemPaint.alpha = (255 * fade).toInt()
-                for (i in lo..hi) canvas.drawRect(toView(glyphs[i].box), selPaint)
+                // 同行连续选区合并为整段矩形再绘制，消除逐字框半透明叠加接缝与间隙
+                var runRect: RectF? = null
+                var runLine = Int.MIN_VALUE
+                for (i in lo..hi) {
+                    val g = glyphs[i]
+                    val vr = toView(g.box)
+                    val cur = runRect
+                    if (cur != null && g.line == runLine && vr.left - cur.right <= vr.height() * 1.2f) {
+                        cur.union(vr)
+                    } else {
+                        cur?.let { canvas.drawRoundRect(it, 4 * d, 4 * d, selPaint) }
+                        runRect = RectF(vr)
+                        runLine = g.line
+                    }
+                }
+                runRect?.let { canvas.drawRoundRect(it, 4 * d, 4 * d, selPaint) }
                 drawHandle(canvas, RectF(toView(glyphs[lo].box)), true)
                 drawHandle(canvas, RectF(toView(glyphs[hi].box)), false)
             }
