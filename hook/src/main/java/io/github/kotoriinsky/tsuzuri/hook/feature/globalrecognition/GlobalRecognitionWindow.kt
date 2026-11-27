@@ -752,11 +752,10 @@ internal class GlobalRecognitionWindow(
                     }
                     bytes = rawBytes
                 } else {
-                    val bmp = res?.bitmap ?: crop(rect)
-                    if (bmp == null) continue
+                    val bmp = pickBestBitmap(rect, res) ?: continue
                     val baos = java.io.ByteArrayOutputStream()
                     bmp.compress(Bitmap.CompressFormat.JPEG, 95, baos)
-                    if (res?.bitmap != null) bmp.recycle()
+                    bmp.recycle()
                     fmt = PortalMediaContract.Format.JPEG
                     bytes = baos.toByteArray()
                 }
@@ -851,7 +850,7 @@ internal class GlobalRecognitionWindow(
                 val rowBmps = ArrayList<Bitmap>(row.size)
                 for (r in row) {
                     val res = fetchSourceSync(r)
-                    val b = res?.bitmap ?: crop(r)
+                    val b = pickBestBitmap(r, res)
                     if (b != null) rowBmps += b
                 }
                 if (rowBmps.isNotEmpty()) bmps += rowBmps to false
@@ -1237,10 +1236,32 @@ internal class GlobalRecognitionWindow(
         }
     }
 
-    private fun showCardWith(rect: RectF, result: SourceImageClient.Result?) {
+    /**
+     * 分辨率更高优先调度：除动图 / 实况照片外，若源位图面积小于截屏裁图，
+     * 优先选用分辨率更高的截屏裁图（避免列表低清缩略图盖过屏幕清晰度）。
+     */
+    private fun pickBestBitmap(rect: RectF, result: SourceImageClient.Result?): Bitmap? {
         val source = result?.bitmap
-        val crop = source ?: crop(rect)
+        val screenCrop = crop(rect)
+        if (source == null) return screenCrop
+        val isSpecialRaw = result.rawBytes != null && (result.animated || result.liveVideoBytes != null)
+        if (screenCrop == null || isSpecialRaw) return source
+        val srcArea = source.width.toLong() * source.height
+        val cropArea = screenCrop.width.toLong() * screenCrop.height
+        return if (srcArea >= cropArea) {
+            screenCrop.recycle()
+            source
+        } else {
+            host.log(Log.INFO, "源位图 ${source.width}x${source.height} 小于截屏裁图 ${screenCrop.width}x${screenCrop.height}，改用高分裁图")
+            source.recycle()
+            screenCrop
+        }
+    }
+
+    private fun showCardWith(rect: RectF, result: SourceImageClient.Result?) {
+        val crop = pickBestBitmap(rect, result)
         if (crop == null) { setSheet(null); return }
+        val effectiveResult = if (crop === result?.bitmap) result else null
         if (!swappedHost) {
             savedHostBitmap = host.hostBitmap()
             swappedHost = true
@@ -1258,14 +1279,14 @@ internal class GlobalRecognitionWindow(
             return
         }
         compactCard(c)
-        val hasCustomSave = upgradeSaveAction(c, result)
+        val hasCustomSave = upgradeSaveAction(c, effectiveResult)
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
         val qrSlot = FrameLayout(context)
         // 与选字面板保持统一「上预览、下操作」：上方同比例纯净预览图，下方原生 3+3 细线按钮区落在拇指热区
         container.addView(
-            imagePreviewBlock(rect, result != null, crop, result, qrSlot),
+            imagePreviewBlock(rect, effectiveResult != null, crop, effectiveResult, qrSlot),
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
         )
         container.addView(
