@@ -2088,6 +2088,7 @@ internal class GlobalRecognitionWindow(
         private var ready = false
         private var selStart = -1
         private var selEnd = -1
+        private var activeTextScope: RectF? = null
         private var image: RectF? = null
         private var dragRect: RectF? = null
         private var transOverlayBounds: RectF? = null
@@ -2608,8 +2609,25 @@ internal class GlobalRecognitionWindow(
 
         /** 离 (x,y) 最近的字；同一行优先（纵向距离权重更大），拖动时手感才稳。 */
         private fun nearest(x: Float, y: Float): Int {
+            val scope = activeTextScope
+            val pad = 4 * d
             var best = -1
             var bestD = Float.MAX_VALUE
+            glyphs.forEachIndexed { i, g ->
+                if (scope != null) {
+                    val cx = g.box.centerX()
+                    val cy = g.box.centerY()
+                    if (cx < scope.left - pad || cx > scope.right + pad || cy < scope.top - pad || cy > scope.bottom + pad) {
+                        return@forEachIndexed
+                    }
+                }
+                val r = toView(g.box)
+                val dx = if (x < r.left) r.left - x else if (x > r.right) x - r.right else 0f
+                val dy = if (y < r.top) r.top - y else if (y > r.bottom) y - r.bottom else 0f
+                val dist = dx + dy * 3
+                if (dist < bestD) { bestD = dist; best = i }
+            }
+            if (best >= 0 || scope == null) return best
             glyphs.forEachIndexed { i, g ->
                 val r = toView(g.box)
                 val dx = if (x < r.left) r.left - x else if (x > r.right) x - r.right else 0f
@@ -2618,6 +2636,16 @@ internal class GlobalRecognitionWindow(
                 if (dist < bestD) { bestD = dist; best = i }
             }
             return best
+        }
+
+        /** 起手选中的字落在非底图图片内时，把拖拽选字范围锁定在该图内，防止拖出图片外。 */
+        private fun textScopeFor(box: RectF): RectF? {
+            val cx = box.centerX()
+            val cy = box.centerY()
+            val pad = 4 * d
+            return regions
+                .filter { !isBackdrop(it) && cx >= it.left - pad && cx <= it.right + pad && cy >= it.top - pad && cy <= it.bottom + pad }
+                .minByOrNull { it.width() * it.height() }
         }
 
         /** 盖住大半屏的图：大图查看器里的那张。在它上面点字选字，点别处才选它。 */
@@ -2797,12 +2825,13 @@ internal class GlobalRecognitionWindow(
             image = null
             selectedQr = null
             selStart = a; selEnd = b
+            activeTextScope = if (a in glyphs.indices) textScopeFor(glyphs[a].box) else null
             if (a >= 0) focusAnim.start()
             onSelection?.invoke(null, a >= 0, null, true)
         }
 
         private fun selectImage(r: RectF, preferSource: Boolean = true, pop: Boolean = true) {
-            selStart = -1; selEnd = -1
+            selStart = -1; selEnd = -1; activeTextScope = null
             selectedQr = null
             image = r
             if (pop) focusAnim.start() else focus = 1f
@@ -2810,7 +2839,7 @@ internal class GlobalRecognitionWindow(
         }
 
         private fun clear() {
-            selStart = -1; selEnd = -1; image = null; selectedQr = null
+            selStart = -1; selEnd = -1; activeTextScope = null; image = null; selectedQr = null
             multiImages.clear(); multiImageMode = false
             onSelection?.invoke(null, false, null, true)
         }
