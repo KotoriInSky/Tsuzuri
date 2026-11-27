@@ -110,7 +110,6 @@ internal class GlobalRecognitionWindow(
     private val root = Root(context)
     private val screen = ScreenView(context)
     private val bottom = FrameLayout(context)
-    private var multiEntryPill: View? = null
 
     /** 跟随系统深浅色的底部面板与提示卡配色。 */
     private data class Palette(
@@ -258,30 +257,6 @@ internal class GlobalRecognitionWindow(
             topMargin = statusBarHeight() + (8 * d).toInt()
             marginEnd = (16 * d).toInt()
         })
-        val multiPill = TextView(context).apply {
-            text = "多选图片"
-            setTextColor(palette.ink)
-            textSize = 13f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            isSingleLine = true
-            setPadding((16 * d).toInt(), (9 * d).toInt(), (16 * d).toInt(), (9 * d).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 18 * d
-                setColor(palette.sheetBg)
-                setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
-            }
-            elevation = 6 * d
-            visibility = View.GONE
-            setOnClickListener { screen.enterMultiImageMode() }
-        }
-        multiEntryPill = multiPill
-        root.addView(
-            multiPill,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                bottomMargin = (28 * d).toInt()
-            },
-        )
-        screen.onReady = { updateMultiEntryPill() }
         screen.onSelection = { image, hasText, qr, preferSource ->
             val state = SelectionState(image, hasText, qr, preferSource)
             if (screen.touching) deferredSelection = state else onSelection(state)
@@ -658,7 +633,7 @@ internal class GlobalRecognitionWindow(
         setSheet(qrBar(detection))
     }
 
-    /** 多图批量勾选底部面板：沿用识屏同款浅/深色圆角卡片与胶囊按钮排布。 */
+    /** 多图批量勾选底部面板：与单图/选字面板保持统一「上预览、下操作」布局。 */
     private fun showMultiImageBar(rects: List<RectF>) {
         collapsed = false
         val root = LinearLayout(context).apply {
@@ -701,6 +676,71 @@ internal class GlobalRecognitionWindow(
         )
         top.addView(miniPill("退出") { screen.exitMultiImageMode() })
         root.addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // 横向缩略图预览条：点任意缩略图即可取消该张选中
+        val thumbSize = (58 * d).toInt()
+        val thumbCorner = 10 * d
+        val stripRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        for ((idx, r) in rects.withIndex()) {
+            val thumb = crop(r)
+            val cell = FrameLayout(context).apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = thumbCorner
+                    setColor(if (palette.dark) 0xFF14161A.toInt() else 0xFFEAECEF.toInt())
+                    setStroke((1 * d).toInt().coerceAtLeast(1), palette.sheetStroke)
+                }
+                val iv = ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    clipToOutline = true
+                    outlineProvider = object : android.view.ViewOutlineProvider() {
+                        override fun getOutline(v: View, o: android.graphics.Outline) {
+                            o.setRoundRect(0, 0, v.width, v.height, thumbCorner)
+                        }
+                    }
+                    if (thumb != null) setImageBitmap(thumb)
+                }
+                addView(iv, FrameLayout.LayoutParams(thumbSize, thumbSize))
+                val idxBadge = TextView(context).apply {
+                    text = (idx + 1).toString()
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    textSize = 10f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(0xFF3482FF.toInt())
+                    }
+                }
+                val badgePx = (16 * d).toInt()
+                addView(
+                    idxBadge,
+                    FrameLayout.LayoutParams(badgePx, badgePx, Gravity.TOP or Gravity.END).apply {
+                        topMargin = (4 * d).toInt()
+                        marginEnd = (4 * d).toInt()
+                    },
+                )
+                setOnClickListener { screen.removeMultiImageAt(idx) }
+            }
+            stripRow.addView(
+                cell,
+                LinearLayout.LayoutParams(thumbSize, thumbSize).apply {
+                    if (idx < rects.lastIndex) marginEnd = (8 * d).toInt()
+                },
+            )
+        }
+        val stripScroll = android.widget.HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(stripRow, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        root.addView(
+            stripScroll,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = (10 * d).toInt()
+            },
+        )
 
         val actions = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1083,20 +1123,10 @@ internal class GlobalRecognitionWindow(
     }
 
     /** 换面板内容；null 收起。 */
-    private fun updateMultiEntryPill() {
-        val pill = multiEntryPill ?: return
-        val show = !sheetShown && screen.regionCount() >= 2 && !screen.hasSelection()
-        pill.visibility = if (show) View.VISIBLE else View.GONE
-    }
-
     private fun setSheet(content: View?) {
         if (content == null) {
-            if (!sheetShown) {
-                updateMultiEntryPill()
-                return
-            }
+            if (!sheetShown) return
             sheetShown = false
-            updateMultiEntryPill()
             sheet.animate().cancel()
             updateAvoid()
             sheet.animate().translationY(sheet.height.toFloat()).setDuration(SHEET_OUT_MS).setInterpolator(SHEET_OUT)
@@ -1120,7 +1150,6 @@ internal class GlobalRecognitionWindow(
         }
         if (!sheetShown) {
             sheetShown = true
-            updateMultiEntryPill()
             sheet.animate().cancel()
             if (sheet.visibility != View.VISIBLE) {
                 // 第一次出现还没布局过，先量出高度，从屏幕外正好一个面板高的位置滑上来
@@ -2334,7 +2363,6 @@ internal class GlobalRecognitionWindow(
     private inner class ScreenView(context: Context) : View(context) {
         var onSelection: ((RectF?, Boolean, LocalQrScanner.Detection?, Boolean) -> Unit)? = null
         var onMultiImages: ((List<RectF>) -> Unit)? = null
-        var onReady: (() -> Unit)? = null
 
         /** 抬手（含取消）时回调；手指按着期间 [touching] 为 true。 */
         var onTouchEnd: (() -> Unit)? = null
@@ -2481,7 +2509,6 @@ internal class GlobalRecognitionWindow(
             regions = r
             qrDetections = qrs
             ready = true
-            onReady?.invoke()
             if (lines.isEmpty() && regions.isEmpty() && qrs.isEmpty()) {
                 // 什么都没识别到：光球塌缩消失，不炸，也不弹文字
                 fx.collapse(width, height)
@@ -2523,6 +2550,14 @@ internal class GlobalRecognitionWindow(
             multiImages.clear()
             multiImageMode = false
             onMultiImages?.invoke(emptyList())
+            invalidate()
+        }
+
+        fun removeMultiImageAt(index: Int) {
+            if (index !in multiImages.indices) return
+            multiImages.removeAt(index)
+            if (multiImages.isEmpty()) multiImageMode = false
+            onMultiImages?.invoke(multiImages.toList())
             invalidate()
         }
 
