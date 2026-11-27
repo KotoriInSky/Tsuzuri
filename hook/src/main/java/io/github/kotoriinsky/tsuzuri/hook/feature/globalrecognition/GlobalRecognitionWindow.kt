@@ -1133,6 +1133,11 @@ internal class GlobalRecognitionWindow(
      */
     private fun updateAvoid(height: Int = sheet.height) {
         if (screen.touching) return
+        // 切换面板内容后 sheet 尚未重新 layout 时，sheet.height 仍是上一张卡片的旧高度，延后一帧避免错误抬高
+        if (sheetShown && height == sheet.height && sheet.isLayoutRequested) {
+            sheet.post { if (!closing) updateAvoid() }
+            return
+        }
         val sel = screen.selectionBounds()
         var target = 0f
         if (sel != null && sheetShown && root.height > 0) {
@@ -1438,48 +1443,34 @@ internal class GlobalRecognitionWindow(
                     },
                 )
             }
-            val ocrPill = TextView(context).apply {
-                text = "转文字"
-                setTextColor(Color.WHITE)
-                textSize = 11f
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-                isSingleLine = true
-                setPadding((9 * d).toInt(), (4 * d).toInt(), (9 * d).toInt(), (4 * d).toInt())
-                background = GradientDrawable().apply {
-                    cornerRadius = 10 * d
-                    setColor(0x99121418.toInt())
-                }
-                setOnClickListener { runLocalCropOcr(crop, rect, preferSource) }
+        }
+
+        // 「转文字」与「多选」放在预览图下方居中胶囊行，避免窄图时互相挤压并保持缩略图纯净
+        val pillRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun previewPill(label: String, onClick: () -> Unit): View = TextView(context).apply {
+            text = label
+            setTextColor(palette.ink)
+            textSize = 11.5f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            isSingleLine = true
+            setPadding((11 * d).toInt(), (5 * d).toInt(), (11 * d).toInt(), (5 * d).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 12 * d
+                setColor(palette.pillBg)
             }
-            addView(
-                ocrPill,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
+            setOnClickListener { onClick() }
+        }
+        pillRow.addView(previewPill("转文字") { runLocalCropOcr(crop, rect, preferSource) })
+        if (screen.regionCount() >= 2) {
+            pillRow.addView(
+                previewPill("多选") { screen.enterMultiImageMode() },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     marginStart = (8 * d).toInt()
-                    topMargin = (8 * d).toInt()
                 },
             )
-            if (screen.regionCount() >= 2) {
-                val multiPill = TextView(context).apply {
-                    text = "多选"
-                    setTextColor(Color.WHITE)
-                    textSize = 11f
-                    typeface = android.graphics.Typeface.DEFAULT_BOLD
-                    isSingleLine = true
-                    setPadding((9 * d).toInt(), (4 * d).toInt(), (9 * d).toInt(), (4 * d).toInt())
-                    background = GradientDrawable().apply {
-                        cornerRadius = 10 * d
-                        setColor(0x99121418.toInt())
-                    }
-                    setOnClickListener { screen.enterMultiImageMode() }
-                }
-                addView(
-                    multiPill,
-                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
-                        marginEnd = (8 * d).toInt()
-                        topMargin = (8 * d).toInt()
-                    },
-                )
-            }
         }
 
         return LinearLayout(context).apply {
@@ -1489,9 +1480,15 @@ internal class GlobalRecognitionWindow(
             setPadding(padH, (10 * d).toInt(), padH, (2 * d).toInt())
             addView(frame, LinearLayout.LayoutParams(previewW, previewH))
             addView(
-                qrSlot,
+                pillRow,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = (8 * d).toInt()
+                },
+            )
+            addView(
+                qrSlot,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = (6 * d).toInt()
                 },
             )
         }
