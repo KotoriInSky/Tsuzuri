@@ -393,7 +393,8 @@ object OnnxOcr {
     ): List<GlyphData> {
         val steps = argmaxIds.size
         if (steps == 0 || dict.isEmpty() || lineBox.width <= 0f || lineBox.height <= 0f) return emptyList()
-        val out = ArrayList<GlyphData>(steps / 2)
+        val chars = ArrayList<String>(steps / 2)
+        val centers = ArrayList<Float>(steps / 2)
         var prev = 0
         var i = 0
         while (i < steps) {
@@ -408,11 +409,9 @@ object OnnxOcr {
                     else -> null
                 }
                 if (ch != null) {
-                    val x0 = lineBox.left + lineBox.width * (startStep.toFloat() / steps)
-                    val x1 = lineBox.left + lineBox.width * (endStep.toFloat() / steps)
-                    val minW = (lineBox.width / steps.toFloat()).coerceAtLeast(1f)
-                    val r = max(x1, x0 + minW).coerceAtMost(lineBox.right)
-                    out += GlyphData(ch, BoxF(x0.coerceAtLeast(lineBox.left), lineBox.top, r, lineBox.bottom), lineNo)
+                    val cx = lineBox.left + lineBox.width * ((startStep + endStep) * 0.5f / steps)
+                    chars += ch
+                    centers += cx
                 }
                 prev = id
                 i = endStep
@@ -420,6 +419,31 @@ object OnnxOcr {
             }
             prev = id
             i++
+        }
+        if (chars.isEmpty()) return emptyList()
+
+        // CTC 峰值通常只占 1~2 个时间步，直接取时间步区间会产生细条状字框与大段空白；
+        // 按相邻字符中心中点无缝拼接，使拖拽选字的高亮条与系统太乙 OCR 一致连贯。
+        val halfMax = (lineBox.height * 0.55f).coerceAtLeast(2f)
+        val gapLimit = lineBox.height * 1.5f
+        val out = ArrayList<GlyphData>(chars.size)
+        for (k in chars.indices) {
+            val cx = centers[k]
+            val left = if (k == 0) {
+                max(lineBox.left, cx - halfMax)
+            } else {
+                val prevCx = centers[k - 1]
+                if (cx - prevCx <= gapLimit) (prevCx + cx) * 0.5f else max(prevCx, cx - halfMax)
+            }
+            val right = if (k == chars.lastIndex) {
+                min(lineBox.right, cx + halfMax)
+            } else {
+                val nextCx = centers[k + 1]
+                if (nextCx - cx <= gapLimit) (cx + nextCx) * 0.5f else min(lineBox.right, cx + halfMax)
+            }
+            val l = left.coerceIn(lineBox.left, lineBox.right)
+            val r = max(right, l + 1f).coerceAtMost(lineBox.right)
+            out += GlyphData(chars[k], BoxF(l, lineBox.top, r, lineBox.bottom), lineNo)
         }
         return out
     }

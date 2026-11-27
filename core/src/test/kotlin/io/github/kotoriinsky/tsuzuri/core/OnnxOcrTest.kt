@@ -36,9 +36,10 @@ class OnnxOcrTest {
         val glyphs = OnnxOcr.decodeCtcLine(ids, dict, OnnxOcr.BoxF(100f, 20f, 280f, 60f), lineNo = 2)
         assertEquals("Hi あ", glyphs.joinToString("") { it.text })
         assertTrue(glyphs.all { it.line == 2 })
-        // 坐标单调递增且落在行框内
+        // 坐标单调递增、相邻字框无缝衔接且落在行框内
         for (i in 1 until glyphs.size) {
             assertTrue(glyphs[i].box.left >= glyphs[i - 1].box.left)
+            assertEquals(glyphs[i - 1].box.right, glyphs[i].box.left, 0.01f)
         }
         assertTrue(glyphs.first().box.left >= 100f)
         assertTrue(glyphs.last().box.right <= 280f)
